@@ -1,0 +1,587 @@
+import * as THREE from 'three'
+import { useCallback, useEffect, useMemo, useRef, type MutableRefObject } from 'react'
+import { useFrame } from '@react-three/fiber'
+import { makeKnitMaps, tiled, type KnitMaps } from '../core/knit'
+import { SpringBone } from '../core/springBone'
+import { turntable } from '../core/turntable'
+import { mulberry32 } from '../core/rand'
+import { useDisposable, useDisposableList } from '../core/useDisposable'
+import { headGeometry, torsoGeometry, limbGeometry, tipGeometry } from './geometry'
+import { ButtonEye, CrossStitch, Pin, jitterColor, pinColor } from './parts'
+import { makeWoodTexture } from './wood'
+import { hairLook, useTraitSlots, woolTone, type LimbSlot, type TraitId } from './traits'
+import { makeCordTexture } from '../core/cord'
+import { Locks, useLockAnchors } from './hair'
+import {
+  holeShader,
+  makeFiberTexture,
+  makeHoleUniforms,
+  shellAlphaTest,
+  shellGeometries,
+  shellShade,
+} from './fuzz'
+import { dollLayout } from './layout'
+import type { PatchHoles } from './patch'
+import { headWidth, onHead, onHeadPolar, onTorso } from './surface'
+import type { DollParams } from './params'
+
+const UP = new THREE.Vector3(0, 1, 0)
+const DOWN = new THREE.Vector3(0, -1, 0)
+
+// ---------------------------------------------------------------- matière
+
+type WoolMaps = readonly [THREE.Texture, THREE.Texture, THREE.Texture, THREE.Texture]
+
+/**
+ * Répétition des fibres, relative à celle de la maille.
+ *
+ * Contre-intuitif : monter ce facteur ne donne pas « plus de duvet » mais moins.
+ * À 5, chaque fibre tombait sous le pixel à l'écran et le duvet se lissait en
+ * velours. Il faut que la fibre reste résolue pour qu'elle se lise comme telle.
+ */
+const FIBER_SCALE = 1.2
+
+function useTiled(knit: KnitMaps, fiber: THREE.Texture, rx: number, ry = rx): WoolMaps {
+  const maps = useMemo(
+    () =>
+      [
+        tiled(knit.map, rx, ry),
+        tiled(knit.normalMap, rx, ry),
+        tiled(knit.roughnessMap, rx, ry),
+        tiled(fiber, rx * FIBER_SCALE, ry * FIBER_SCALE),
+      ] as const,
+    [knit, fiber, rx, ry],
+  )
+  useEffect(() => () => maps.forEach((m) => m.dispose()), [maps])
+  return maps
+}
+
+/**
+ * Coques de duvet posées sur un maillage.
+ *
+ * Chacune est le même volume repoussé un peu plus loin, percé d'un masque de
+ * fibres de plus en plus sélectif. C'est ce qui donne au contour son irrégularité
+ * — une normal map, elle, laisse la silhouette parfaitement lisse, et c'est
+ * précisément ce bord net qui trahit le rendu 3D.
+ */
+function Fuzz({
+  geometry,
+  maps,
+  p,
+  holes,
+}: {
+  geometry: THREE.BufferGeometry
+  maps: WoolMaps
+  p: DollParams
+  /** Pièces cousues sous lesquelles retirer la laine — le torse seul en a. */
+  holes?: PatchHoles
+}) {
+  const shells = useDisposableList(
+    () => shellGeometries(geometry, p.shell.count, p.shell.height),
+    [geometry, p.shell.count, p.shell.height],
+  )
+  const shades = useMemo(
+    () => shells.map((_, i) => new THREE.Color().setScalar(shellShade(i, shells.length))),
+    [shells],
+  )
+
+  // Uniformes stables, valeurs réécrites : la poupée change, le programme non.
+  // Remplacer l'objet à chaque génération recompilerait le shader six fois par
+  // clic sur « générer ».
+  const uni = useMemo(makeHoleUniforms, [])
+  const compile = useMemo(() => holeShader(uni), [uni])
+  useMemo(() => {
+    uni.uHoleMask.value = holes?.mask ?? null
+    uni.uHoleCount.value = holes?.count ?? 0
+    holes?.rects.forEach((r, i) => uni.uHole.value[i].copy(r))
+  }, [uni, holes])
+
+  return (
+    <>
+      {shells.map((g, i) => (
+        <mesh key={i} geometry={g} renderOrder={i + 1}>
+          <meshPhysicalMaterial
+            {...(holes ? { onBeforeCompile: compile } : {})}
+            map={maps[0]}
+            alphaMap={maps[3]}
+            alphaTest={shellAlphaTest(i, shells.length)}
+            color={shades[i]}
+            roughness={1}
+            metalness={0}
+            sheen={p.wool.sheen}
+            sheenColor={p.wool.sheenColor}
+            sheenRoughness={0.92}
+          />
+        </mesh>
+      ))}
+    </>
+  )
+}
+
+function Wool({ maps, p, color }: { maps: WoolMaps; p: DollParams; color?: string }) {
+  // Réglable : c'est le premier levier contre le scintillement, avant même de
+  // toucher à la texture.
+  const normalScale = useMemo(
+    () => new THREE.Vector2(p.wool.normalStrength, p.wool.normalStrength),
+    [p.wool.normalStrength],
+  )
+  return (
+    <meshPhysicalMaterial
+      map={maps[0]}
+      normalMap={maps[1]}
+      // La carte de rugosité est ce qui casse le vernis uniforme : sans elle,
+      // toute la surface renvoie la lumière de la même façon et lit plastique.
+      roughnessMap={maps[2]}
+      normalScale={normalScale}
+      color={color ?? '#ffffff'}
+      roughness={p.wool.roughness}
+      metalness={0}
+      sheen={p.wool.sheen}
+      sheenColor={p.wool.sheenColor}
+      sheenRoughness={p.wool.sheenRoughness}
+    />
+  )
+}
+
+// ---------------------------------------------------------------- poupée
+
+export function Doll({
+  p,
+  position,
+  trait = 'nu',
+  tone: forced,
+  hairColor,
+}: {
+  p: DollParams
+  position?: [number, number, number]
+  /** Laine imposée par la planche, pour que les six teintes soient distinctes. */
+  tone?: { base: string; stitch: string }
+  /** Laine de locks imposée par la planche, même raison. */
+  hairColor?: string
+  /** Signe distinctif greffé sur les emplacements nommés de la poupée. */
+  trait?: TraitId
+}) {
+  const root = useRef<THREE.Group>(null!)
+  const body = useRef<THREE.Group>(null!)
+  const headBone = useRef<THREE.Group>(null!)
+  const armL = useRef<THREE.Group>(null!)
+  const armR = useRef<THREE.Group>(null!)
+  const legL = useRef<THREE.Group>(null!)
+  const legR = useRef<THREE.Group>(null!)
+
+  const L = useMemo(() => dollLayout(p), [p])
+  const s = p.shape
+  const lb = p.limbs
+
+  // --- laine ---
+  // La laine varie d'une poupée à l'autre autour de la couleur du panneau.
+  const tone = useMemo(() => forced ?? woolTone(p), [forced, p])
+
+  const knit = useDisposable(
+    () => makeKnitMaps({
+      cols: 12,
+      rows: 15,
+      base: tone.base,
+      stitch: tone.stitch,
+      relief: p.wool.relief,
+      fuzz: p.wool.fuzz,
+      seed: p.seed,
+    }),
+    [tone, p.wool.relief, p.wool.fuzz, p.seed],
+  )
+
+  // Chaque partie a ses propres répétitions pour que la maille garde la même
+  // taille physique partout : les UV vont de 0 à 1 quelle que soit la surface.
+  // On prend donc la tête comme étalon et on met les autres à l'échelle de leur
+  // périmètre réel (u) et de leur méridienne (v) — des facteurs approximatifs
+  // donnaient des membres à densité presque double, d'où l'aspect étiré.
+  const wood = useDisposable(() => makeWoodTexture(256, p.seed + 555), [p.seed])
+
+  const fiber = useDisposable(
+    () => makeFiberTexture(512, p.shell.density, p.seed + 4242),
+    [p.shell.density, p.seed],
+  )
+
+  const k = p.wool.knitScale
+  const headCirc = 2 * Math.PI * s.headRadius * 1.08
+  const headMeridian = Math.PI * s.headRadius * s.headSquash
+
+  const headMaps = useTiled(knit, fiber, k)
+  const torsoMaps = useTiled(
+    knit,
+    fiber,
+    (k * (2 * Math.PI * s.torsoRadius * 0.9)) / headCirc,
+    (k * (Math.PI * s.torsoHeight * 0.5)) / headMeridian,
+  )
+  const armMaps = useTiled(
+    knit,
+    fiber,
+    (k * (2 * Math.PI * lb.armRadius)) / headCirc,
+    (k * (lb.armLength + lb.armRadius * 2)) / headMeridian,
+  )
+  // Les jambes sont plus épaisses et plus courtes : leur propre échelle, sinon
+  // la maille y est décalée par rapport aux bras.
+  const legMaps = useTiled(
+    knit,
+    fiber,
+    (k * (2 * Math.PI * lb.legRadius)) / headCirc,
+    (k * (lb.legLength + lb.legRadius * 2)) / headMeridian,
+  )
+
+  // Après les cartes : les ornements en tissu portent la même maille que le
+  // corps.
+  // Cartes **brutes** : les ornements en tissu calculent leurs propres UV en
+  // unités monde, une répétition déjà appliquée les déformerait.
+  const slots = useTraitSlots(trait, { p, wood })
+
+  // --- volumes ---
+  const headGeo = useDisposable(
+    () =>
+      headGeometry(
+        s.headRadius, s.headEgg, s.headSquash,
+        s.headPuff, s.headCheekY, s.headCheekSpread,
+        s.lumps, s.lumpScale, p.seed,
+      ),
+    [
+      s.headRadius, s.headEgg, s.headSquash,
+      s.headPuff, s.headCheekY, s.headCheekSpread,
+      s.lumps, s.lumpScale, p.seed,
+    ],
+  )
+  const torsoGeo = useDisposable(
+    () => torsoGeometry(s.torsoRadius, s.torsoHeight, s.torsoTaper, s.lumps, s.lumpScale, p.seed),
+    [s.torsoRadius, s.torsoHeight, s.torsoTaper, s.lumps, s.lumpScale, p.seed],
+  )
+  const armGeo = useDisposable(
+    () => limbGeometry(lb.armRadius, lb.armLength, s.lumps, s.lumpScale, p.seed),
+    [lb.armRadius, lb.armLength, s.lumps, s.lumpScale, p.seed],
+  )
+  const legGeo = useDisposable(
+    () => limbGeometry(lb.legRadius, lb.legLength, s.lumps, s.lumpScale, p.seed + 3),
+    [lb.legRadius, lb.legLength, s.lumps, s.lumpScale, p.seed],
+  )
+  const handGeo = useDisposable(
+    () => tipGeometry(lb.armRadius * 1.35, s.lumps, s.lumpScale, p.seed),
+    [lb.armRadius, s.lumps, s.lumpScale, p.seed],
+  )
+  const footGeo = useDisposable(
+    () => tipGeometry(lb.legRadius * 1.3, s.lumps, s.lumpScale, p.seed + 5),
+    [lb.legRadius, s.lumps, s.lumpScale, p.seed],
+  )
+
+  // --- locks en ficelle ---
+  //
+  // Densité, longueur, épaisseur et laine sont tirées de la graine autour des
+  // valeurs du panneau : deux poupées d'une même planche n'ont pas la même
+  // tignasse. Tout passe par cet objet, jamais par `p.hair` directement — les
+  // cotes dérivées (enfouissement, dégagement du collider, longueur de segment)
+  // s'en déduisent, et une seule lecture oubliée les désaccorderait.
+  const hair = useMemo(() => hairLook(p, hairColor), [p, hairColor])
+
+  const cord = useDisposable(
+    () => makeCordTexture(256, p.hair.strands, p.hair.turns, p.seed + 808),
+    [p.hair.strands, p.hair.turns, p.seed],
+  )
+  const headWidthAt = useCallback(
+    (sy: number, lateral: number) => headWidth(p, sy, lateral),
+    [p],
+  )
+  // Enfouissement borné à une fraction du segment : si l'écart entre la racine
+  // enfouie et la sphère de collision dépasse la longueur d'un segment, la
+  // contrainte n'a plus de solution oblique et tous les locks se dressent.
+  const segLen = hair.length / hair.segments
+  const sink = Math.min(hair.thickness * hair.rooting, segLen * 0.42)
+  /**
+   * Dégagement du collider, borné par ce qui **reste** du budget.
+   *
+   * Le premier segment part de la racine enfouie et doit ressortir du collider :
+   * il lui faut franchir `sink + clearance` avec une seule longueur de segment.
+   * Au-delà, la sphère qu'il peut atteindre est tout entière dans le collider,
+   * la contrainte n'a plus de solution oblique et toutes les racines se dressent
+   * en épis — le piège documenté.
+   *
+   * Or c'est la **somme** qui compte, et seul `sink` était borné. Le dégagement
+   * se déduit de l'épaisseur, donc à mèche courte et fil gros il débordait tout
+   * seul : mesuré, le rapport passait à 1,18 dans ce coin. Le plafond ne mord
+   * que là — aux réglages courants la valeur est inchangée.
+   */
+  const clearance = Math.min(hair.thickness * 0.45, Math.max(0, segLen * 0.92 - sink))
+
+  const locks = useLockAnchors(
+    hair.count,
+    p.seed,
+    s.headRadius,
+    s.headSquash,
+    headWidthAt,
+    hair.droop,
+    sink,
+    clearance,
+    hair.crown,
+  )
+
+  // --- visage ---
+  const lift = s.lumps * s.headRadius * 0.7 + 0.004
+  /**
+   * Hauteur et plongeon de la bouche.
+   *
+   * La bouche se coud **plus bas que les yeux** : un bouton est un objet posé
+   * sur la laine, une passe de fil y est enfoncée. Elle ne prend donc que le
+   * dégagement des bosses, sans la marge qui met les boutons en avant — avec
+   * elle, le sommet du fil passait au-dessus de la pointe des fibres et la
+   * bouche restait décollée quoi qu'on fasse aux bouts.
+   *
+   * Et les bouts plongent sous la peau : le duvet est un halo troué, il ne
+   * cache pas une passe qui s'arrête en l'air, et c'est ce plongeon qui coud.
+   */
+  const mouthLift = s.lumps * s.headRadius * 0.7
+  const stitchDip = mouthLift + s.lumps * s.headRadius * 0.55
+
+  // Boutons : taille, écartement et teinte varient autour des valeurs du
+  // panneau, dans une fourchette serrée. Assez pour que deux poupées ne se
+  // ressemblent pas, pas assez pour qu'un visage sorte du gabarit.
+  const eyes = useMemo(() => {
+    const rnd = mulberry32(p.seed + 2024)
+    return {
+      spacing: p.face.eyeSpacing * (0.88 + rnd() * 0.24),
+      leftSize: p.face.leftSize * (0.86 + rnd() * 0.28),
+      rightSize: p.face.rightSize * (0.86 + rnd() * 0.28),
+      leftColor: jitterColor(p.face.leftColor, rnd),
+      rightColor: jitterColor(p.face.rightColor, rnd),
+    }
+  }, [p])
+
+  const eyeL = useMemo(() => onHead(p, -eyes.spacing * 0.5, p.face.eyeHeight, lift), [p, eyes, lift])
+  const eyeR = useMemo(() => onHead(p, eyes.spacing * 0.5, p.face.eyeHeight, lift), [p, eyes, lift])
+
+  const mouth = useMemo(() => {
+    const n = p.face.mouthStitches
+    const half = p.face.mouthWidth * 0.5
+    return Array.from({ length: n }, (_, i) => {
+      const u = n === 1 ? 0 : (i / (n - 1)) * 2 - 1
+      const x = u * half
+      const sag = (1 - u * u) * p.face.mouthWidth * 0.14
+      return onHead(p, x, p.face.mouthHeight - sag, mouthLift)
+    })
+  }, [p, mouthLift])
+
+  // --- épingles plantées dans le crâne ---
+  const headPins = useMemo(() => {
+    const rnd = mulberry32(p.seed + 4711)
+    const length = s.headRadius * 0.85
+    // Une poupée déjà couronnée d'épingles n'en porte pas une isolée en plus.
+    const count = trait === 'couronne' ? 0 : p.pins.head
+
+    return Array.from({ length: count }, () => {
+      // Sur le côté du crâne, à hauteur de tempe : de face on voit la tige
+      // entrer dans la laine, ce qui est tout l'effet recherché. Côté tiré au
+      // sort, pas alterné.
+      const side = rnd() < 0.5 ? 1 : -1
+      const az = side * (Math.PI / 2 + (rnd() - 0.5) * 0.45)
+      const sy = 0.05 + rnd() * 0.35
+
+      // Enfoncée aux trois quarts : seules la fin de la tige et la tête
+      // colorée dépassent, comme une épingle réellement plantée.
+      const surf = onHeadPolar(p, az, sy, -length * 0.72)
+      const quat = new THREE.Quaternion().setFromUnitVectors(UP, surf.normal)
+
+      return { pos: surf.pos, quat, length, color: pinColor(rnd) }
+    })
+  }, [p, s.headRadius, trait])
+
+  // --- épingles plantées dans le torse ---
+  const pins = useMemo(() => {
+    const rnd = mulberry32(p.seed + 211)
+    const colors = ['#a8342f', '#2f4f7a', '#c9a227', '#3f7a4a']
+    return Array.from({ length: p.pins.count }, (_, i) => {
+      const az = (rnd() - 0.5) * 1.5
+      const y = (rnd() - 0.35) * p.shape.torsoHeight * 0.5
+      const surf = onTorso(p, az, y, -p.shape.torsoRadius * 0.12)
+      // L'épingle sort le long de la normale : son axe local Y doit s'y aligner.
+      const q = new THREE.Quaternion().setFromUnitVectors(UP, surf.normal)
+      const tilt = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(1, 0, 0),
+        (rnd() - 0.5) * 0.7,
+      )
+      return { pos: surf.pos, quat: q.multiply(tilt), color: colors[i % colors.length] }
+    })
+  }, [p])
+
+  // --- ressorts ---
+  const springs = useRef<Record<string, SpringBone> | null>(null)
+  const springKey = `${s.headRadius}|${lb.armLength}|${lb.legLength}`
+  const lastKey = useRef('')
+
+  useFrame((state, dt) => {
+    // La platine et la caméra sont pilotées par <Rig>, en amont : ici on ne
+    // fait que lire son état, sinon trois poupées le feraient avancer trois
+    // fois par frame.
+    root.current.rotation.set(turntable.pitch, turntable.yaw, 0)
+
+    const breathe = Math.sin(state.clock.elapsedTime * 1.4) * p.motion.breathe
+    body.current.scale.set(1 + breathe, 1 - breathe * 0.55, 1 + breathe)
+
+    if (!springs.current || lastKey.current !== springKey) {
+      springs.current = {
+        head: new SpringBone(headBone.current, s.headRadius * 0.9, UP),
+        armL: new SpringBone(armL.current, lb.armLength, DOWN),
+        armR: new SpringBone(armR.current, lb.armLength, DOWN),
+        legL: new SpringBone(legL.current, lb.legLength, DOWN),
+        legR: new SpringBone(legR.current, lb.legLength, DOWN),
+      }
+      lastKey.current = springKey
+    }
+
+    const limbCfg = p.spring
+    // La tête est rappelée plus fort : elle acquiesce, elle ne pendouille pas.
+    const headCfg = {
+      stiffness: p.spring.headStiffness,
+      drag: p.spring.drag,
+      gravity: p.spring.gravity * 0.15,
+    }
+    springs.current.head.update(dt, headCfg)
+    springs.current.armL.update(dt, limbCfg)
+    springs.current.armR.update(dt, limbCfg)
+    springs.current.legL.update(dt, limbCfg)
+    springs.current.legR.update(dt, limbCfg)
+  })
+
+  const arm = (side: -1 | 1, ref: MutableRefObject<THREE.Group>) => {
+    const key: LimbSlot = side === -1 ? 'leftArm' : 'rightArm'
+    return (
+    <group position={[side * L.shoulderX, L.shoulderY, 0]} rotation={[0, 0, side * lb.armSpread]}>
+      <group ref={ref}>
+        <mesh geometry={armGeo} castShadow receiveShadow>
+          <Wool maps={armMaps} p={p} color={slots.tints?.[key]} />
+        </mesh>
+        <Fuzz geometry={armGeo} maps={armMaps} p={p} />
+        <group position={[0, -lb.armLength - lb.armRadius * 0.35, 0]}>
+          <mesh geometry={handGeo} castShadow>
+            <Wool maps={armMaps} p={p} color={slots.tints?.[key]} />
+          </mesh>
+          <Fuzz geometry={handGeo} maps={armMaps} p={p} />
+        </group>
+        {slots.limbs?.[key]}
+      </group>
+    </group>
+    )
+  }
+
+  const leg = (side: -1 | 1, ref: MutableRefObject<THREE.Group>) => {
+    const key: LimbSlot = side === -1 ? 'leftLeg' : 'rightLeg'
+    return (
+    <group position={[side * L.hipX, L.hipY, 0]} rotation={[0, 0, side * lb.legSpread]}>
+      <group ref={ref}>
+        <mesh geometry={legGeo} castShadow receiveShadow>
+          <Wool maps={legMaps} p={p} color={slots.tints?.[key]} />
+        </mesh>
+        <Fuzz geometry={legGeo} maps={legMaps} p={p} />
+        <group position={[0, -lb.legLength - lb.legRadius * 0.3, 0]}>
+          <mesh geometry={footGeo} castShadow>
+            <Wool maps={legMaps} p={p} color={slots.tints?.[key]} />
+          </mesh>
+          <Fuzz geometry={footGeo} maps={legMaps} p={p} />
+        </group>
+        {slots.limbs?.[key]}
+      </group>
+    </group>
+    )
+  }
+
+  return (
+    <group ref={root} position={position}>
+      <group ref={body} position={[0, -L.centerY, 0]}>
+        {/* torse */}
+        <mesh geometry={torsoGeo} castShadow receiveShadow>
+          <Wool maps={torsoMaps} p={p} />
+        </mesh>
+        <Fuzz geometry={torsoGeo} maps={torsoMaps} p={p} holes={slots.holes} />
+        {slots.torso}
+        {pins.map((pin, i) => (
+          <Pin
+            key={i}
+            length={s.torsoRadius * 0.85}
+            color={pin.color}
+            position={[pin.pos.x, pin.pos.y, pin.pos.z]}
+            quaternion={pin.quat}
+          />
+        ))}
+
+        {arm(-1, armL)}
+        {arm(1, armR)}
+        {leg(-1, legL)}
+        {leg(1, legR)}
+
+        {/* cou → tête */}
+        <group position={[0, L.neckY, 0]}>
+          {slots.neck}
+          <group ref={headBone}>
+            <group position={[0, L.headY, 0]}>
+              <mesh geometry={headGeo} castShadow receiveShadow>
+                <Wool maps={headMaps} p={p} />
+              </mesh>
+              <Fuzz geometry={headGeo} maps={headMaps} p={p} />
+              {slots.head}
+
+              <Locks
+                anchors={locks.anchors}
+                length={hair.length}
+                radius={hair.thickness}
+                segments={hair.segments}
+                color={hair.color}
+                tipColor={hair.tipColor}
+                tipped={hair.tipped}
+                cord={cord}
+                skullRadius={locks.skullRadius}
+                spring={{
+                  stiffness: p.hair.stiffness,
+                  drag: p.hair.drag,
+                  gravity: p.hair.gravity,
+                }}
+              />
+
+              <group position={eyeL.pos} quaternion={eyeL.quat}>
+                <ButtonEye
+                  radius={eyes.leftSize}
+                  color={eyes.leftColor}
+                  threadColor={p.thread.color}
+                  threadRadius={p.thread.radius * 0.6}
+                  wood={wood}
+                />
+              </group>
+              <group position={eyeR.pos} quaternion={eyeR.quat}>
+                <ButtonEye
+                  radius={eyes.rightSize}
+                  color={eyes.rightColor}
+                  threadColor={p.thread.color}
+                  threadRadius={p.thread.radius * 0.6}
+                  wood={wood}
+                />
+              </group>
+
+              {headPins.map((pin, i) => (
+                <Pin
+                  key={i}
+                  length={pin.length}
+                  color={pin.color}
+                  position={[pin.pos.x, pin.pos.y, pin.pos.z]}
+                  quaternion={pin.quat}
+                />
+              ))}
+
+              {mouth.map((m, i) => (
+                <group key={i} position={m.pos} quaternion={m.quat}>
+                  <CrossStitch
+                    size={p.face.mouthWidth * 0.28}
+                    radius={p.thread.radius}
+                    color={p.thread.mouthColor}
+                    dip={stitchDip}
+                  />
+                </group>
+              ))}
+            </group>
+          </group>
+        </group>
+      </group>
+    </group>
+  )
+}

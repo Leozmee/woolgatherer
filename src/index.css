@@ -1,0 +1,65 @@
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: #efeae2;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  overflow: hidden;
+}
+#stage { position: fixed; inset: 0; touch-action: none; cursor: grab; }
+#stage.dragging { cursor: grabbing; }
+#hint {
+  position: fixed; left: 24px; bottom: 20px; z-index: 5;
+  font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  color: #8c8477; pointer-events: none; user-select: none;
+}
+
+.label {
+  text-align: center;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+.label .name {
+  font-size: 11px;
+  letter-spacing: .2em;
+  color: #6b6357;
+}
+.label .note {
+  margin-top: 3px;
+  font-size: 9px;
+  letter-spacing: .06em;
+  color: #a09786;
+}
+
+#crash {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  padding: 24px;
+  overflow: auto;
+  background: #efeae2;
+  color: #6b3a30;
+  font: 12px/1.5 ui-monospace, Menlo, monospace;
+  white-space: pre-wrap;
+  z-index: 10;
+}
+
+#generate {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  padding: 9px 20px;
+  border: 1px solid #cfc6b6;
+  border-radius: 999px;
+  background: #faf7f1;
+  color: #5b5347;
+  font: 11px/1 ui-monospace, Menlo, monospace;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(90, 80, 66, .12);
+}
+#generate:hover { background: #fff; border-color: #b9ae9b; }
+#generate:active { transform: translateX(-50%) translateY(1px); }
