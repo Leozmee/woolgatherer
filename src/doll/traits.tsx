@@ -264,8 +264,13 @@ export type TraitSlots = {
   torso?: ReactNode
   head?: ReactNode
   neck?: ReactNode
-  /** Ornements greffés sur un membre précis. */
+  /** Ornements greffés sur un membre précis, moitié haute (au-dessus du pli). */
   limbs?: Partial<Record<LimbSlot, ReactNode>>
+  /**
+   * Idem, moitié basse : ils suivent l'avant-bras ou le tibia quand le membre
+   * plie (voir `limbs.ts`). Coordonnées dans le repère du membre entier.
+   */
+  limbEnds?: Partial<Record<LimbSlot, ReactNode>>
   /** Teintes des membres recousus : ils viennent visiblement d'ailleurs. */
   tints?: Partial<Record<LimbSlot, string>>
   /** Contours à retirer du duvet du torse — la laine sous les pièces cousues. */
@@ -642,7 +647,9 @@ function bandage(p: DollParams, limb: LimbSlot, atEnd: boolean): ReactNode {
   const onLeg = isLeg(limb)
   const r = onLeg ? lb.legRadius : lb.armRadius
   const limbLen = onLeg ? lb.legLength : lb.armLength
-  const top = -limbLen * (atEnd ? 0.58 : 0.24)
+  // Mi-membre : tout entier au-dessus du pli (0,5), sinon le manchon rigide
+  // resterait droit dans un genou plié. Au bout : tout entier en dessous.
+  const top = -limbLen * (atEnd ? 0.6 : 0.05)
   const len = limbLen * 0.34
   const sleeve = r * 1.07
   const linen = '#e8ddc9'
@@ -961,21 +968,24 @@ function useBase(id: TraitId, ctx: TraitCtx, patches: Patch[], occupied: Placeme
     )
 
     const limbs: Partial<Record<LimbSlot, ReactNode>> = {}
-    const push = (slot: LimbSlot, node: ReactNode) => {
-      limbs[slot] = limbs[slot] ? (
+    const limbEnds: Partial<Record<LimbSlot, ReactNode>> = {}
+    const push = (to: typeof limbs, slot: LimbSlot, node: ReactNode) => {
+      to[slot] = to[slot] ? (
         <>
-          {limbs[slot]}
+          {to[slot]}
           {node}
         </>
       ) : (
         node
       )
     }
-    if (hasBracelet) push(braceletOn, bracelet)
-    if (hasBandage) push(bandageOn, bandage(p, bandageOn, bandageAtEnd))
+    // Bracelet au poignet : sous le coude.
+    if (hasBracelet) push(limbEnds, braceletOn, bracelet)
+    if (hasBandage) push(bandageAtEnd ? limbEnds : limbs, bandageOn, bandage(p, bandageOn, bandageAtEnd))
 
     return {
       limbs,
+      limbEnds,
       tints,
       torso: (
         <group>
@@ -1414,15 +1424,19 @@ export function useTraitSlots(id: TraitId, ctx: TraitCtx): TraitSlots {
   return useMemo(
     () => {
       const limbs: Partial<Record<LimbSlot, ReactNode>> = {}
+      const limbEnds: Partial<Record<LimbSlot, ReactNode>> = {}
       for (const slot of LIMBS) {
         const node = join(base.limbs?.[slot], extra.limbs?.[slot])
         if (node) limbs[slot] = node
+        const end = join(base.limbEnds?.[slot], extra.limbEnds?.[slot])
+        if (end) limbEnds[slot] = end
       }
       return {
         torso: join(base.torso, extra.torso),
         head: join(base.head, extra.head),
         neck: join(base.neck, extra.neck),
         limbs,
+        limbEnds,
         tints: { ...base.tints, ...extra.tints },
         holes,
       }

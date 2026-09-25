@@ -16,21 +16,27 @@ import { bindTurntable, turntable } from './core/turntable'
 import { Outline } from './scene/Outline'
 import { KeepPrograms } from './scene/KeepPrograms'
 import { RENDER_LOOK, setRenderLook } from './scene/toon'
-import { Fighter, type Press } from './doll/fighter'
-import { WeaponTrail } from './scene/Arena'
+import { ARENA, Fighter, type Press } from './doll/fighter'
+import { ArenaFloor, Dust, WeaponTrail } from './scene/Arena'
 
 /**
  * Gestes de l'arène : touche clavier, boutons de manette (disposition
- * standard) et libellé. Manette : X attaque, A esquive, gâchettes hautes
- * parade, stick gauche déplacement.
+ * standard) et libellé. Manette : X attaque, A saut, B esquive, gâchettes
+ * hautes parade, gâchettes basses (ou stick cliqué) sprint, stick gauche
+ * déplacement.
  */
 const MOVES: { press: Press; keys: string[]; pad: number[] }[] = [
   { press: 'attack', keys: ['j'], pad: [2] },
-  { press: 'dodge', keys: ['l', ' '], pad: [0] },
+  { press: 'jump', keys: [' '], pad: [0] },
+  { press: 'dodge', keys: ['l'], pad: [1] },
   { press: 'parry', keys: ['k'], pad: [4, 5] },
   { press: 'hit', keys: ['h'], pad: [3] },
-  { press: 'ko', keys: ['x'], pad: [1] },
+  { press: 'ko', keys: ['x'], pad: [8] },
 ]
+/** Sprint : touche tenue, ou gâchettes basses / stick cliqué. */
+const SPRINT_KEY = 'shift'
+const SPRINT_PAD = [6, 7, 10]
+const JUMP_PAD = 0
 /** Directions tenues : ZQSD (AZERTY), WASD, flèches. */
 const DIRS: Record<string, [number, number]> = {
   z: [0, 1], w: [0, 1], arrowup: [0, 1],
@@ -40,6 +46,8 @@ const DIRS: Record<string, [number, number]> = {
 }
 /** Touches de direction tenues. */
 const held = new Set<string>()
+/** Autres touches tenues : sprint, saut (sa hauteur dépend de l'appui). */
+const mods = new Set<string>()
 
 /**
  * Interface de combat : nom et barre de vie de la poupée, en feutre cousu.
@@ -91,11 +99,15 @@ function Controls({ fighter }: { fighter: Fighter }) {
       x += DIRS[k][0]
       y += DIRS[k][1]
     }
+    let sprint = mods.has(SPRINT_KEY)
+    let jump = mods.has(' ')
     const pad = navigator.getGamepads?.().find((g) => g)
     if (pad) {
       const down = pad.buttons.map((b) => b.pressed)
       for (const m of MOVES) if (m.pad.some((i) => down[i] && !was.current[i])) fighter.press(m.press)
       was.current = down
+      sprint ||= SPRINT_PAD.some((i) => down[i])
+      jump ||= !!down[JUMP_PAD]
       const ax = pad.axes[0] ?? 0
       const ay = pad.axes[1] ?? 0
       // Zone morte, puis l'amplitude du stick passe telle quelle : on peut
@@ -107,6 +119,9 @@ function Controls({ fighter }: { fighter: Fighter }) {
     }
     fighter.input.x = x
     fighter.input.y = y
+    fighter.sprint = sprint
+    if (fighter.jumpHeld && !jump) fighter.release('jump')
+    else fighter.jumpHeld = jump
   }, -3)
   return null
 }
@@ -345,6 +360,10 @@ export default function App() {
         e.preventDefault()
         return
       }
+      if (k === SPRINT_KEY || k === ' ') {
+        mods.add(k)
+        e.preventDefault()
+      }
       if (e.repeat) return
       const m = MOVES.find((m) => m.keys.includes(k))
       if (m) {
@@ -352,8 +371,15 @@ export default function App() {
         e.preventDefault()
       }
     }
-    const up = (e: KeyboardEvent) => held.delete(e.key.toLowerCase())
-    const blur = () => held.clear()
+    const up = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase()
+      held.delete(k)
+      mods.delete(k)
+    }
+    const blur = () => {
+      held.clear()
+      mods.clear()
+    }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
     window.addEventListener('blur', blur)
@@ -362,6 +388,7 @@ export default function App() {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', blur)
       held.clear()
+      mods.clear()
     }
   }, [inArena, fighter])
 
@@ -431,11 +458,13 @@ export default function App() {
           <KeepPrograms />
           {arena && <Controls fighter={fighter} />}
           {arena && <WeaponTrail fighter={fighter} />}
+          {arena && <Dust fighter={fighter} />}
+          {arena && <ArenaFloor y={floorY} radius={ARENA} />}
           {/* monté avant les poupées : son useFrame doit passer en premier */}
           <Rig spin={selecting ? p.motion.spin : 0} distanceScale={selecting ? 2.6 : arena ? 1.6 : 1} follow={arena ? fighter : null} />
           {/* En planche les ombres de contact laissent la place aux blobs :
               une passe hors écran par poupée serait payée pour rien. */}
-          <Lights floorY={floorY} contact={!selecting} lighting={look.lighting} />
+          <Lights floorY={floorY} contact={!selecting} lighting={look.lighting} follow={arena ? fighter : null} />
           {look.ink && (
             <Outline color={look.ink.color} width={look.ink.width} threshold={look.ink.threshold} tint={look.ink.tint}
               complement={look.ink.mode === 'complement'}
@@ -485,8 +514,10 @@ export default function App() {
           <Hud fighter={fighter} name={chosen.trait.name} sub={chosen.subtitle} />
           <div id="legend">
             <div><b>ZQSD</b> · stick — se déplacer</div>
-            <div><b>J</b> · clic · X — attaquer (×3)</div>
-            <div><b>L</b> · espace · A — esquiver</div>
+            <div><b>Maj</b> · gâchette — sprinter</div>
+            <div><b>espace</b> · A — sauter (tenir : plus haut)</div>
+            <div><b>J</b> · clic · X — attaquer (×3, en l'air : plongeon)</div>
+            <div><b>L</b> · B — pas de côté</div>
             <div><b>K</b> · RB — parer</div>
             <div><b>glisser</b> — caméra · <b>échap</b> — quitter</div>
           </div>

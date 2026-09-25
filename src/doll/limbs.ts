@@ -3,46 +3,144 @@ import * as THREE from 'three'
 /**
  * Membres de peluche : des boudins de tissu, pas des bâtons.
  *
- * Deux choses faisaient « poupée rigide » : des jambes qui pivotent en bloc à
- * la hanche — les pieds glissent et flottent sous un corps qui avance — et des
- * membres qui restent droits quoi qu'il arrive. Ici :
+ * Trois choses faisaient « poupée rigide » : des jambes qui pivotent en bloc à
+ * la hanche — les pieds glissent et flottent sous un corps qui avance —, des
+ * membres qui restent droits quoi qu'il arrive, et l'absence de genou ou de
+ * coude. Ici :
  *
  * - **les pieds se posent** (`Stepper`) : chacun reste planté au sol tant que
  *   le corps passe au-dessus, puis fait un pas quand il est trop loin de là où
- *   il devrait être. La jambe se réoriente pour rejoindre son pied, s'étire ou
- *   se tasse — c'est ce qui les ancre au sol ;
- * - **les membres se courbent** (`bowShader`) : le milieu du boudin sort de
- *   l'axe, les deux bouts restent en place. Une jambe tassée plie comme un
- *   genou de tissu, un bras qui traîne derrière son mouvement se cambre comme
- *   une corde molle.
+ *   il devrait être ;
+ * - **chaque membre plie à mi-longueur** (`jointShader`) : genou, coude. Le
+ *   boudin reste d'un seul tenant — c'est une pièce cousue —, mais sa moitié
+ *   basse suit un second os, et la zone de pli se fond sur un quart du membre,
+ *   comme un tissu bourré qui se plisse. La jambe rejoint son pied planté par
+ *   une IK à deux segments (`solveLeg`) : quand le corps se tasse, le genou
+ *   avance au lieu que la jambe rapetisse en télescope.
  */
 
-// ---------------------------------------------------------------- courbure
+// ---------------------------------------------------------------- articulation
 
-/** Courbure d'un membre : décalage du milieu, dans le repère du membre. */
-export type Bow = { uBow: { value: THREE.Vector3 }; uLen: { value: number } }
+/** Position de l'articulation, fraction de la longueur du membre. */
+export const JOINT = 0.5
+/** Demi-largeur de la zone de pli, fraction de la longueur. */
+const BLEND = 0.13
 
-export function makeBow(length: number): Bow {
-  return { uBow: { value: new THREE.Vector3() }, uLen: { value: length } }
+/**
+ * Pli d'un membre : où il plie, de combien il s'étire, et où est passée sa
+ * moitié basse. `uJoint` envoie un sommet de la moitié basse, pris au repos
+ * dans le repère du membre, là où l'os du bas l'a emmené.
+ */
+export type Joint = {
+  uJoint: { value: THREE.Matrix4 }
+  uJointY: { value: number }
+  uBlend: { value: number }
+  uStretch: { value: number }
+}
+
+export function makeJoint(length: number): Joint {
+  return {
+    uJoint: { value: new THREE.Matrix4() },
+    uJointY: { value: -length * JOINT },
+    uBlend: { value: length * BLEND },
+    uStretch: { value: 1 },
+  }
+}
+
+const _m = new THREE.Matrix4()
+
+/**
+ * Relit l'os du bas (`pose` : l'angle du geste, puis `spring` : son ressort)
+ * pour le shader. Le sommet au repos est ramené au pli (+ longueur haute), puis
+ * passé par les deux os.
+ */
+export function updateJoint(j: Joint, pose: THREE.Object3D, spring: THREE.Object3D) {
+  pose.updateMatrix()
+  spring.updateMatrix()
+  _m.makeTranslation(0, -j.uJointY.value * j.uStretch.value, 0)
+  j.uJoint.value.multiplyMatrices(pose.matrix, spring.matrix).multiply(_m)
 }
 
 /**
- * Le membre descend le long de −y depuis l'articulation : chaque sommet est
- * décalé de `uBow × sin(π t)`, `t` allant de 0 à l'épaule à 1 au bout. Les deux
- * extrémités ne bougent pas — main et pied restent où ils sont. À composer
- * avec d'autres injections (duvet) : on ne touche qu'à `begin_vertex`.
+ * Le membre descend le long de −y depuis l'articulation. Au-dessous du pli les
+ * sommets suivent `uJoint`, au-dessus ils restent ; entre les deux, fondu.
+ *
+ * Deux injections :
+ * - la **normale** avant `defaultnormal_vertex`, puis rendue telle quelle :
+ *   le duvet (`shellShader`) repousse ses coques le long de la normale **au
+ *   repos**, dans le repère où elles sont encore droites ;
+ * - la **position** juste avant la projection, après toutes les autres
+ *   (duvet compris) : on plie le membre déjà habillé.
  */
-export function bowShader(bow: Bow) {
+export function jointShader(j: Joint) {
   return (sh: THREE.WebGLProgramParametersWithUniforms) => {
-    sh.uniforms.uBow = bow.uBow
-    sh.uniforms.uLen = bow.uLen
+    Object.assign(sh.uniforms, j)
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uBow;\nuniform float uLen;')
       .replace(
-        '#include <begin_vertex>',
-        '#include <begin_vertex>\ntransformed += uBow * sin(3.14159265 * clamp(-position.y / uLen, 0.0, 1.0));',
+        '#include <common>',
+        `#include <common>
+uniform mat4 uJoint;
+uniform float uJointY;
+uniform float uBlend;
+uniform float uStretch;
+float jointWeight(float y) { return smoothstep(uJointY + uBlend, uJointY - uBlend, y); }`,
+      )
+      .replace(
+        '#include <defaultnormal_vertex>',
+        `vec3 restNormal = objectNormal;
+objectNormal = normalize(mix(objectNormal, mat3(uJoint) * objectNormal, jointWeight(position.y)));
+#include <defaultnormal_vertex>
+objectNormal = restNormal;`,
+      )
+      .replace(
+        '#include <project_vertex>',
+        `{
+  transformed.y *= uStretch;
+  vec3 bent = (uJoint * vec4(transformed, 1.0)).xyz;
+  transformed = mix(transformed, bent, jointWeight(position.y));
+}
+#include <project_vertex>`,
       )
   }
+}
+
+// ---------------------------------------------------------------- IK
+
+const _f = new THREE.Vector3()
+const _x = new THREE.Vector3()
+const _y = new THREE.Vector3()
+const _z = new THREE.Vector3()
+const _basis = new THREE.Matrix4()
+
+/**
+ * IK à deux segments : cuisse `a`, tibia `b` (pied compris), de la hanche à
+ * `d` (hanche → pied), dans le repère du parent. Le genou part **vers
+ * l'avant** (`fwd`). Écrit l'orientation voulue du fémur dans `out` (son −y le
+ * long de la cuisse, son +z vers l'avant : un angle de genou positif autour de
+ * son x replie le tibia vers l'arrière) et renvoie l'angle du genou.
+ */
+export function solveLeg(d: THREE.Vector3, a: number, b: number, fwd: THREE.Vector3, out: THREE.Quaternion) {
+  const D = THREE.MathUtils.clamp(d.length(), Math.abs(a - b) + 1e-4, a + b - 1e-5)
+  const dir = _y.copy(d).normalize()
+  // Avant, orthogonalisé contre la direction du pied. Jambe tendue droit
+  // devant (roulade, repli) : on se rabat sur le haut.
+  _f.copy(fwd).addScaledVector(dir, -fwd.dot(dir))
+  if (_f.lengthSq() < 1e-6) _f.set(0, 1, 0).addScaledVector(dir, -dir.y)
+  _f.normalize()
+  const cosA = THREE.MathUtils.clamp((a * a + D * D - b * b) / (2 * a * D), -1, 1)
+  const sinA = Math.sqrt(1 - cosA * cosA)
+  // Cuisse : la direction du pied, tournée vers l'avant de l'angle de hanche.
+  // L'avant du fémur est sa perpendiculaire dans le même plan, prise
+  // directement : obtenue en projetant `fwd`, elle se retournait dès que la
+  // cuisse dépassait l'horizontale (jambe très repliée) et le genou pliait à
+  // l'envers.
+  _z.copy(_f).multiplyScalar(cosA).addScaledVector(dir, -sinA)
+  _y.multiplyScalar(-cosA).addScaledVector(_f, -sinA)
+  _x.crossVectors(_y, _z)
+  _basis.makeBasis(_x, _y, _z)
+  out.setFromRotationMatrix(_basis)
+  const cosK = THREE.MathUtils.clamp((a * a + b * b - D * D) / (2 * a * b), -1, 1)
+  return Math.PI - Math.acos(cosK)
 }
 
 // ---------------------------------------------------------------- pas
@@ -200,7 +298,17 @@ export class Stepper {
      * balayait plus de sol qu'elles n'en couvrent (jambe à 1,3 fois sa
      * longueur en médiane). Elle trottine : pas vifs et courts.
      */
-    const dur = moving ? THREE.MathUtils.clamp(0.22 - speed * 0.05, 0.1, 0.2) : 0.16
+    /*
+     * Au sprint (au-delà de 2 u/s) la cadence monte encore, jusqu'à 13 pas par
+     * seconde : des pas longs mettraient la jambe hors de portée — un tibia et
+     * une cuisse ne s'étirent pas. Petites jambes, moulinet rapide : c'est la
+     * course d'une peluche.
+     */
+    const dur = !moving
+      ? 0.16
+      : speed <= 2
+        ? THREE.MathUtils.clamp(0.22 - speed * 0.05, 0.1, 0.2)
+        : THREE.MathUtils.lerp(0.12, 0.075, Math.min(1, (speed - 2) / 3))
     const err = (side: -1 | 1) => {
       const f = this.feet[side]
       const i = ideal(side)
@@ -223,7 +331,8 @@ export class Stepper {
     if (e < thresh) return
     const f = this.feet[side]
     f.dur = dur
-    f.lift = (moving ? 0.3 : 0.14) * o.legLength
+    // Au sprint, genoux hauts : le pied monte plus, et le genou plie avec lui.
+    f.lift = (moving ? 0.3 + 0.12 * Math.min(1, Math.max(0, speed - 2) / 3) : 0.14) * o.legLength
     f.from.copy(f.plant)
     f.to.copy(ideal(side)).addScaledVector(o.vel, dur * 1.5)
     // Trop loin (téléport, fin de roulade) : on repose sans enjamber le monde.

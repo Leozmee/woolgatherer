@@ -4,6 +4,7 @@ import type { DollParams } from './params'
 import { dollLayout } from './layout'
 import type { Collider } from '../core/springBone'
 import { ARM_T, LEG_T } from './surface'
+import { JOINT } from './limbs'
 
 /**
  * Squelette de la poupée : des **os rigides**, pas un maillage déformé.
@@ -24,13 +25,22 @@ import { ARM_T, LEG_T } from './surface'
  * - `neck` — la tête ;
  * - `arm-1`, `arm1`, `leg-1`, `leg1` — membres, par côté (−1 : x négatif, la
  *   main droite de la poupée, qui fait face à +z) ;
+ * - `elbow-1`, `elbow1`, `knee-1`, `knee1` — le pli à mi-membre (voir
+ *   `limbs.ts`), un angle autour de x : négatif, le coude ramène l'avant-bras
+ *   devant ; positif, le genou replie le tibia derrière. Lui aussi a son
+ *   ressort : l'avant-bras arrive après le bras, c'est le fouet d'un coup ;
  * - `hand-1`, `hand1` — emboîtures au bout des bras, pour l'arme.
  *
  * Ce qui oriente les os de pose — gestes, locomotion, ressorts de pose — vit
  * dans `fighter.ts`.
  */
-export type BoneName = 'hips' | 'neck' | 'arm-1' | 'arm1' | 'leg-1' | 'leg1'
-export const BONES: BoneName[] = ['hips', 'neck', 'arm-1', 'arm1', 'leg-1', 'leg1']
+export type BoneName =
+  | 'hips' | 'neck' | 'arm-1' | 'arm1' | 'leg-1' | 'leg1'
+  | 'elbow-1' | 'elbow1' | 'knee-1' | 'knee1'
+export const BONES: BoneName[] = [
+  'hips', 'neck', 'arm-1', 'arm1', 'leg-1', 'leg1',
+  'elbow-1', 'elbow1', 'knee-1', 'knee1',
+]
 
 /** Angles d'Euler (x, y, z) en radians ; déplacement du bassin en unités monde. */
 export type Pose = Record<BoneName, [number, number, number]> & { hipsPos: [number, number, number] }
@@ -43,6 +53,10 @@ export function restPose(): Pose {
     arm1: [0, 0, 0],
     'leg-1': [0, 0, 0],
     leg1: [0, 0, 0],
+    'elbow-1': [0, 0, 0],
+    elbow1: [0, 0, 0],
+    'knee-1': [0, 0, 0],
+    knee1: [0, 0, 0],
     hipsPos: [0, 0, 0],
   }
 }
@@ -85,10 +99,14 @@ export type RigBones = {
   /** Os à ressort des membres (le dernier étage : ce qu'on voit). */
   arm: Record<-1 | 1, THREE.Object3D | null>
   leg: Record<-1 | 1, THREE.Object3D | null>
+  /** Os du bas (avant-bras, tibia), posés au pli (`JOINT`). */
+  forearm: Record<-1 | 1, THREE.Object3D | null>
+  shin: Record<-1 | 1, THREE.Object3D | null>
 }
 
 const _inv = new THREE.Matrix4()
 const _m = new THREE.Matrix4()
+const _ml = new THREE.Matrix4()
 
 /**
  * Recale sur les membres **animés** les sphères posées par `armSpheres` /
@@ -119,8 +137,16 @@ export function followLimbs(
     }
     bone.updateWorldMatrix(true, false)
     _m.multiplyMatrices(_inv, bone.matrixWorld)
+    // Sous le pli, la sphère suit l'os du bas : un avant-bras replié emmène
+    // sa main, et l'écharpe ne doit pas la traverser.
+    const lower = (kind === 'arm' ? bones.forearm : bones.shin)[side]
+    if (lower) {
+      lower.updateWorldMatrix(true, false)
+      _ml.multiplyMatrices(_inv, lower.matrixWorld)
+    }
     for (const [t] of list) {
-      colliders[i++].center.set(0, -t * length, 0).applyMatrix4(_m)
+      if (lower && t > JOINT) colliders[i++].center.set(0, -(t - JOINT) * length, 0).applyMatrix4(_ml)
+      else colliders[i++].center.set(0, -t * length, 0).applyMatrix4(_m)
     }
   }
 }
