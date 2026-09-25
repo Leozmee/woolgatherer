@@ -17,7 +17,7 @@ import { Outline } from './scene/Outline'
 import { KeepPrograms } from './scene/KeepPrograms'
 import { RENDER_LOOK, setRenderLook } from './scene/toon'
 import { ARENA, Fighter, type Press } from './doll/fighter'
-import { ArenaFloor, Dust, Ghosts, WeaponTrail } from './scene/Arena'
+import { ArenaFloor, Dust, Ghosts, Sigil, WeaponTrail } from './scene/Arena'
 
 /**
  * Gestes de l'arène : touche clavier, boutons de manette (disposition
@@ -467,6 +467,7 @@ export default function App() {
           {arena && <WeaponTrail fighter={fighter} />}
           {arena && <Dust fighter={fighter} />}
           {arena && <Ghosts fighter={fighter} />}
+          {arena && <Sigil fighter={fighter} />}
           {arena && <ArenaFloor y={floorY} radius={ARENA} />}
           {/* monté avant les poupées : son useFrame doit passer en premier */}
           <Rig spin={selecting ? p.motion.spin : 0} distanceScale={selecting ? 2.6 : arena ? 1.6 : 1} follow={arena ? fighter : null} />
@@ -525,7 +526,7 @@ export default function App() {
             <div><b>Maj</b> · gâchette — courir</div>
             <div><b>espace</b> · A — sauter (tenir : plus haut · ×2 : double saut)</div>
             <div><b>J</b> · clic · X — attaquer (×3, en l'air : plongeon)</div>
-            <div><b>L</b> · B — esquive (tenir : glissade)</div>
+            <div><b>L</b> · B — esquive · en courant, tenir : glissade</div>
             <div><b>K</b> · RB — parer</div>
             <div><b>glisser</b> — caméra · <b>échap</b> — quitter</div>
           </div>

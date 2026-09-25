@@ -459,7 +459,9 @@ export class Stepper {
         if (f.swinging) {
           // Pose : au point visé en fin de vol.
           f.swinging = false
-          f.plant.copy(ideal(side)).addScaledVector(vel, (c.duty * c.period) / 2)
+          // Posé il y a `psi · période` : la hanche a déjà avancé d'autant.
+          // Sans ce décompte, le pied sautait de 1,3 cm à chaque pose.
+          f.plant.copy(ideal(side)).addScaledVector(vel, (c.duty / 2 - psi) * c.period)
           f.plant.y = ideal(side).y
           onLand?.(side, speed, c.period / 2)
         }
@@ -485,14 +487,27 @@ export class Stepper {
           f.from.copy(f.pos)
         }
         const u = (psi - c.duty) / (1 - c.duty)
-        const e = u * u * (3 - 2 * u)
+        /*
+         * Courbes à **vitesse nulle aux deux bouts**. La levée partait en
+         * `sin(π·u^0,75)`, de pente infinie au décollage : le pied sautait
+         * d'un coup vers le haut, cinq ou six fois par seconde — mesuré, le
+         * pic d'accélération du pied tombait pile au décollage (0,053
+         * u/image² à la marche, 0,106 à la course), c'était le « saccadé ».
+         * Le pied rejoint aussi son point de pose un peu avant la fin du vol,
+         * pour ne pas y sauter à la pose.
+         */
+        const x = Math.min(1, u / 0.9)
+        const e = x * x * x * (x * (x * 6 - 15) + 10)
         f.to.copy(ideal(side)).addScaledVector(vel, (1 - u) * swingT + (c.duty * c.period) / 2)
         f.pos.lerpVectors(f.from, f.to, e)
         // Levée : monte vite, redescend en douceur ; talon relevé derrière au
         // début de l'envol (course).
-        f.pos.y += c.lift * Math.sin(Math.PI * Math.pow(u, 0.75))
-        f.pos.addScaledVector(_fwd, -c.kick * Math.sin(Math.PI * u) * (1 - u))
-        f.pos.y += c.kick * 0.6 * Math.sin(Math.PI * u) * (1 - u)
+        const up = Math.sin(Math.PI * Math.pow(x, 0.8))
+        f.pos.y += c.lift * up * up
+        const heel = Math.sin(Math.PI * x)
+        const kick = heel * heel * (1 - x)
+        f.pos.addScaledVector(_fwd, -c.kick * kick)
+        f.pos.y += c.kick * 0.6 * kick
       }
       f.vel.subVectors(f.pos, _prev).divideScalar(Math.max(dt, 1e-4))
     }

@@ -348,3 +348,203 @@ export function Ghosts({ fighter }: { fighter: Fighter }) {
 }
 
 const _gm = new THREE.Matrix4()
+
+// ---------------------------------------------------------------- cercle rituel
+
+/** Durée d'un cercle, s. */
+const SIGIL_LIFE = 0.75
+
+/**
+ * Dessin du cercle, au canvas, une fois : deux anneaux, une étoile à cinq
+ * branches pointe en bas, des glyphes inventés entre les anneaux — à la
+ * manière d'un vévé vaudou, tracés d'un trait qui se reprend — et un
+ * pointillé de couture. Blanc sur transparent, avec un halo (`shadowBlur`) :
+ * c'est le shader qui le colore.
+ */
+function sigilTexture(size = 512) {
+  const cv = document.createElement('canvas')
+  cv.width = cv.height = size
+  const g = cv.getContext('2d')!
+  const c = size / 2
+  const R = size * 0.46
+  g.strokeStyle = '#fff'
+  g.fillStyle = '#fff'
+  g.lineCap = 'round'
+  g.lineJoin = 'round'
+  g.shadowColor = '#fff'
+  g.shadowBlur = size * 0.02
+  const ring = (r: number, w: number) => {
+    g.lineWidth = w
+    g.beginPath()
+    g.arc(c, c, r, 0, Math.PI * 2)
+    g.stroke()
+  }
+  ring(R, size * 0.018)
+  ring(R * 0.8, size * 0.012)
+  ring(R * 0.23, size * 0.008)
+  // Pointillé de couture, juste à l'intérieur de l'anneau extérieur.
+  g.lineWidth = size * 0.006
+  for (let k = 0; k < 72; k++) {
+    const a = (k / 72) * Math.PI * 2
+    const r0 = R * 0.9
+    const r1 = R * 0.93
+    g.beginPath()
+    g.moveTo(c + Math.cos(a) * r0, c + Math.sin(a) * r0)
+    g.lineTo(c + Math.cos(a + 0.03) * r1, c + Math.sin(a + 0.03) * r1)
+    g.stroke()
+  }
+  // Étoile, pointe en bas (vers +y du canvas), inscrite dans l'anneau intérieur.
+  g.lineWidth = size * 0.012
+  g.beginPath()
+  for (let k = 0; k <= 5; k++) {
+    const a = Math.PI / 2 + (k * 2 * (Math.PI * 2)) / 5
+    const x = c + Math.cos(a) * R * 0.8
+    const y = c + Math.sin(a) * R * 0.8
+    if (k === 0) g.moveTo(x, y)
+    else g.lineTo(x, y)
+  }
+  g.stroke()
+  // Glyphes entre les anneaux, en face des branches : chacun un petit vévé.
+  const glyph = (k: number) => {
+    const a = Math.PI / 2 + (k * Math.PI * 2) / 5 + Math.PI / 5
+    const r = R * 0.9
+    g.save()
+    g.translate(c + Math.cos(a) * r * 0.945, c + Math.sin(a) * r * 0.945)
+    g.rotate(a + Math.PI / 2)
+    const u = size * 0.028
+    g.lineWidth = size * 0.007
+    g.beginPath()
+    switch (k) {
+      case 0: // croix de carrefour
+        g.moveTo(-u, 0); g.lineTo(u, 0); g.moveTo(0, -u); g.lineTo(0, u)
+        g.moveTo(-u * 0.6, -u * 0.6); g.lineTo(-u * 0.6, -u * 0.3)
+        break
+      case 1: // cœur percé
+        g.moveTo(0, u * 0.8); g.bezierCurveTo(-u * 1.2, -u * 0.1, -u * 0.5, -u, 0, -u * 0.35)
+        g.bezierCurveTo(u * 0.5, -u, u * 1.2, -u * 0.1, 0, u * 0.8)
+        g.moveTo(-u, u); g.lineTo(u, -u)
+        break
+      case 2: // serpent
+        g.moveTo(-u, u * 0.3)
+        g.bezierCurveTo(-u * 0.5, -u, 0, u, u * 0.4, -u * 0.2)
+        g.lineTo(u, -u * 0.5)
+        break
+      case 3: // cercueil et croix
+        g.moveTo(-u * 0.4, -u); g.lineTo(u * 0.4, -u); g.lineTo(u * 0.6, -u * 0.3)
+        g.lineTo(u * 0.3, u); g.lineTo(-u * 0.3, u); g.lineTo(-u * 0.6, -u * 0.3); g.closePath()
+        g.moveTo(0, -u * 0.6); g.lineTo(0, u * 0.5); g.moveTo(-u * 0.3, -u * 0.2); g.lineTo(u * 0.3, -u * 0.2)
+        break
+      default: // étoile d'épingle
+        for (let i = 0; i < 4; i++) {
+          const b = (i * Math.PI) / 4
+          g.moveTo(Math.cos(b) * u, Math.sin(b) * u)
+          g.lineTo(-Math.cos(b) * u, -Math.sin(b) * u)
+        }
+    }
+    g.stroke()
+    g.beginPath()
+    g.arc(0, 0, u * 0.18, 0, Math.PI * 2)
+    g.fill()
+    g.restore()
+  }
+  for (let k = 0; k < 5; k++) glyph(k)
+  // Au centre : une croix, et la tête d'épingle.
+  g.lineWidth = size * 0.01
+  g.beginPath()
+  g.moveTo(c, c - R * 0.17); g.lineTo(c, c + R * 0.17)
+  g.moveTo(c - R * 0.11, c - R * 0.04); g.lineTo(c + R * 0.11, c - R * 0.04)
+  g.stroke()
+  const tex = new THREE.CanvasTexture(cv)
+  tex.anisotropy = 4
+  return tex
+}
+
+/**
+ * Cercle rituel du double saut, comme un hologramme : il s'ouvre sous les
+ * pieds là où la poupée reprend appui en l'air, tourne, scintille de lignes
+ * de balayage, et s'efface en trois quarts de seconde. Couleur braise en
+ * fondu **normal** : additif, il disparaîtrait sur l'arène blanche. Hors de
+ * la profondeur, le trait d'encre ne le cerne pas.
+ */
+export function Sigil({ fighter }: { fighter: Fighter }) {
+  const s = useMemo(() => {
+    const map = sigilTexture()
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        map: { value: map },
+        uColor: { value: new THREE.Color('#e2461e') },
+        uCore: { value: new THREE.Color('#ffb36b') },
+        uAlpha: { value: 0 },
+        uTime: { value: 0 },
+      },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D map;
+        uniform vec3 uColor;
+        uniform vec3 uCore;
+        uniform float uAlpha;
+        uniform float uTime;
+        varying vec2 vUv;
+        void main() {
+          vec4 t = texture2D(map, vUv);
+          // Balayage et scintillement d'hologramme.
+          float scan = 0.72 + 0.28 * sin(vUv.y * 180.0 - uTime * 26.0);
+          float flick = 0.86 + 0.14 * sin(uTime * 53.0) * sin(uTime * 17.0);
+          vec3 col = mix(uColor, uCore, smoothstep(0.55, 1.0, t.a));
+          gl_FragColor = vec4(col, t.a * uAlpha * scan * flick);
+        }`,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+    })
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat)
+    mesh.rotation.x = -Math.PI / 2
+    mesh.renderOrder = 8
+    mesh.visible = false
+    mesh.frustumCulled = false
+    return { mesh, mat, map, age: SIGIL_LIFE, spin: 0 }
+  }, [])
+  useEffect(
+    () => () => {
+      s.mesh.geometry.dispose()
+      s.mat.dispose()
+      s.map.dispose()
+    },
+    [s],
+  )
+
+  useFrame((state, realDt) => {
+    const dt = Math.min(realDt, 1 / 20)
+    if (fighter.sigilRequest) {
+      fighter.sigilRequest = false
+      s.age = 0
+      s.spin = Math.random() * Math.PI * 2
+      s.mesh.position.copy(fighter.sigilAt)
+      s.mesh.position.y -= 0.02
+      s.mesh.visible = true
+    }
+    if (!s.mesh.visible) return
+    s.age += dt
+    const u = s.age / SIGIL_LIFE
+    if (u >= 1) {
+      s.mesh.visible = false
+      return
+    }
+    // S'ouvre vite (ease-out), tient, puis s'éteint en grandissant un peu.
+    const open = 1 - (1 - Math.min(1, u / 0.18)) ** 3
+    const size = 1.5 * (0.45 + 0.55 * open + 0.15 * u)
+    s.mesh.scale.set(size, size, 1)
+    s.spin += dt * 1.4
+    s.mesh.rotation.z = s.spin
+    s.mat.uniforms.uAlpha.value = open * (1 - Math.max(0, (u - 0.45) / 0.55)) ** 1.5 * 0.95
+    s.mat.uniforms.uTime.value = state.clock.elapsedTime
+  })
+
+  return <primitive object={s.mesh} />
+}

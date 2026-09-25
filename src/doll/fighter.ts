@@ -832,7 +832,7 @@ const RUN_SPEED = 2.4
 /** Course (touche tenue) : plus du double de la marche. */
 const SPRINT_SPEED = 5.4
 /** Rayon de l'arène : on ne sort pas du tapis. Assez grand pour y sprinter. */
-export const ARENA = 8
+export const ARENA = 10
 /** Temps pendant lequel un appui reste en file. */
 const BUFFER = 0.28
 /**
@@ -856,7 +856,7 @@ const DODGE_HOP = 2.2
  * vitesse le rejoint lentement. On gagne en vitesse ce qu'on perd en contrôle.
  */
 const GLIDE_SPEED = 8.5
-const GLIDE_TURN = 2.2
+const GLIDE_TURN = 2.4
 /** Double saut : part de l'impulsion du premier. */
 const DOUBLE_JUMP = 0.85
 /** Intervalle des images rémanentes, s de jeu. */
@@ -893,6 +893,12 @@ export class Fighter {
    * (`silhouette`) dans l'image, et `Ghosts` la copie. Remis à zéro par `Ghosts`.
    */
   ghostRequest = false
+  /**
+   * Cercle rituel du double saut : où il s'ouvre (monde, sous les pieds),
+   * et une demande que `Sigil` consomme.
+   */
+  readonly sigilAt = new THREE.Vector3()
+  sigilRequest = false
   /** Silhouette de la poupée, 14 matrices monde (voir `Doll`). */
   readonly silhouette = new Float32Array(14 * 16)
   /** Cap de la caméra, publié par le rig : l'entrée est relative à l'écran. */
@@ -1015,7 +1021,16 @@ export class Fighter {
     if (p === 'jump') this.jumpHeld = true
     if (p === 'dodge') {
       this.dodgeHeld = true
-      this.glideArmed = true
+      /*
+       * **Glissade : seulement en pleine course.** L'esquive pressée pendant
+       * qu'on court (Maj tenue, allure de course atteinte) ne part pas en
+       * dash : elle lance la glissade, tenue tant que les deux touches le sont.
+       */
+      if (this.sprint && this.dash > 0.5 && !this.airborne && !this.action) {
+        this.glideArmed = true
+        return
+      }
+      this.glideArmed = false
     }
     if (this.action?.name === 'ko') return
     if (p === 'hit') {
@@ -1103,8 +1118,11 @@ export class Fighter {
     this.jumping = true
     this.airSpeed = Math.max(this.airSpeed, Math.hypot(this.vel.x, this.vel.z))
     this.dyn.squash.kick(0, 1.6)
-    // Bouffée d'air sous les pieds, à la hauteur où l'on prend appui.
+    // Bouffée d'air sous les pieds, à la hauteur où l'on prend appui, et le
+    // cercle rituel sur lequel elle rebondit.
     this.puff(this.pos.x, this.pos.z, 0.45, this.floorY + this.pos.y)
+    this.sigilAt.set(this.pos.x, this.floorY + this.pos.y, this.pos.z)
+    this.sigilRequest = true
   }
 
   /** Ramène un tour complet du bassin à zéro (salto), état et cible ensemble. */
@@ -1381,24 +1399,20 @@ export class Fighter {
       trail = cur.trail ?? 0
     }
     // Glissade : la touche d'esquive, tenue depuis le dash, au sol et hors geste.
-    if (!this.dodgeHeld) this.glideArmed = false
-    const wasGliding = this.gliding
+    // Lâcher l'esquive ou la course la termine ; un saut ou un geste la
+    // suspend.
+    if (!this.dodgeHeld || !this.sprint) this.glideArmed = false
+    // Dans l'autre ordre aussi : esquive déjà tenue quand la course atteint
+    // son allure.
+    else if (!this.glideArmed && this.dash > 0.5 && !this.airborne && !this.action) this.glideArmed = true
     this.gliding = this.drive && this.glideArmed && !this.airborne && !this.action
-    if (this.gliding && !wasGliding) {
-      // La glissade file dans l'axe du regard : on se tourne vers là où le
-      // dash nous emporte (il garde le cap, il peut partir de côté).
-      const sp = Math.hypot(this.vel.x, this.vel.z)
-      const ww = this.wish()
-      if (sp > 0.8) this.facing = Math.atan2(this.vel.x, this.vel.z)
-      else if (ww.lengthSq() > 0.02) this.facing = Math.atan2(ww.x, ww.z)
-    }
     // Images rémanentes : pendant le dash, serrées ; en glissade, espacées.
     const dashing = this.action?.name === 'dodge'
     if (dashing || this.gliding) {
       this.ghostT -= dt
       if (this.ghostT <= 0) {
         this.ghostRequest = true
-        this.ghostT = dashing ? GHOST_EVERY : GHOST_EVERY * 3
+        this.ghostT = dashing ? GHOST_EVERY : GHOST_EVERY * 3.5
       }
     }
     const free = !this.action || !!ph?.free
@@ -1506,16 +1520,27 @@ export class Fighter {
       this.pos.y += this.vy * dt
       if (this.pos.y <= 0) this.touchdown()
     } else if (free && this.gliding) {
-      // Glissade : le cap ne tourne que lentement vers le stick, la vitesse le
-      // rejoint avec inertie — lancée, la poupée file droit.
+      /*
+       * Glissade : c'est la **direction de la vitesse** qui tourne vers le
+       * stick, à `GLIDE_TURN` rad/s au plus, sans rien perdre de sa norme —
+       * elle carve, comme sur de la glace. La vitesse l'interpolait avant :
+       * dans un virage serré le vecteur coupait la corde et la glissade
+       * s'effondrait. Le corps suit la trajectoire avec un léger retard (il
+       * dérape), et la vitesse monte en douceur de la course à la glissade.
+       */
+      const sp = Math.hypot(this.vel.x, this.vel.z)
+      let dir = sp > 0.5 ? Math.atan2(this.vel.x, this.vel.z) : this.facing
       if (wl > 0.15) {
-        let d = Math.atan2(w.x, w.z) - this.facing
+        let d = Math.atan2(w.x, w.z) - dir
         d = Math.atan2(Math.sin(d), Math.cos(d))
         const turn = GLIDE_TURN * dt
-        this.facing += Math.max(-turn, Math.min(turn, d))
+        dir += Math.max(-turn, Math.min(turn, d))
       }
-      _tv.set(Math.sin(this.facing), 0, Math.cos(this.facing)).multiplyScalar(GLIDE_SPEED)
-      this.vel.lerp(_tv, Math.min(1, dt * 2.2))
+      const ns = sp + (GLIDE_SPEED - sp) * Math.min(1, dt * 1.6)
+      this.vel.set(Math.sin(dir) * ns, 0, Math.cos(dir) * ns)
+      let df = dir - this.facing
+      df = Math.atan2(Math.sin(df), Math.cos(df))
+      this.facing += df * Math.min(1, dt * 7)
       this.skid -= dt
       if (this.skid <= 0) {
         this.skid = 0.05
@@ -1539,10 +1564,8 @@ export class Fighter {
       else if (speed0 > RUN_SPEED + 0.5) rate = tl < speed0 - 0.5 ? 5.5 : 7
       this.vel.lerp(_tv, Math.min(1, dt * rate))
     } else {
-      // Pendant un geste l'élan s'amortit, et le stick corrige un peu. Un dash
-      // dont la touche reste tenue ne freine pas : son élan passe à la glissade.
-      const keep = this.action?.name === 'dodge' && this.glideArmed
-      this.vel.multiplyScalar(Math.exp(-dt * (keep ? 0.5 : (ph?.brake ?? 6))))
+      // Pendant un geste l'élan s'amortit, et le stick corrige un peu.
+      this.vel.multiplyScalar(Math.exp(-dt * (ph?.brake ?? 6)))
       this.vel.addScaledVector(w, RUN_SPEED * steer * dt * 4)
     }
     this.accel.subVectors(this.vel, _prev).divideScalar(Math.max(dt, 1e-4))
@@ -1600,8 +1623,15 @@ export class Fighter {
     const L = m.legLength
     const steps = 3.4 + 0.75 * Math.min(speed, RUN_SPEED) + (6.4 - 5.2) * dash
     c.period = 2 / steps
-    // Demi-appui : 60 % de la portée de la jambe, pied compris.
-    const half = 0.6 * L * 1.09
+    /*
+     * Demi-appui : 46 % de la portée de la jambe, pied compris. À 60 % la
+     * poupée « marchait » à 2,4 u/s — impossible avec des jambes de 0,38 :
+     * au-delà d'un nombre de Froude de ½ (≈ 1,4 u/s ici) une marche devient
+     * une course. Le pied devait alors rattraper sa foulée en un temps de vol
+     * très court et fouettait à 9 u/s, ce qui se lisait comme un tic. Elle
+     * trottine donc : appuis courts, un peu de vol, pied plus lent en l'air.
+     */
+    const half = 0.46 * L * 1.09
     c.duty = Math.max(0.28, Math.min(0.66, (half * steps) / Math.max(speed, 0.1)))
     c.lift = L * (0.26 + 0.26 * dash)
     c.kick = L * 0.4 * dash
@@ -1615,12 +1645,12 @@ export class Fighter {
     const ang = Math.PI * 2 * c.phase
     const cos = Math.cos(ang)
     const sin = Math.sin(ang)
-    // Rebond, deux fois par cycle. Marche : au plus bas juste après la pose du
-    // pied (le poids arrive). Course : au plus bas au milieu de l'appui, au
-    // plus haut en vol.
-    const low = 0.08 + (c.duty - 0.08) * dash
+    // Rebond, deux fois par cycle : au plus bas au milieu de l'appui (le
+    // poids passe sur la jambe pliée), au plus haut en vol. Souple au trot,
+    // franc à la course.
+    const low = c.duty
     const bob = -Math.cos(Math.PI * 2 * (2 * c.phase - low))
-    r.y = w * L * (0.045 * k + 0.13 * dash) * bob
+    r.y = w * L * (0.055 * k + 0.13 * dash) * bob
     r.sq = w * (0.03 * k + 0.05 * dash) * bob
     r.pitch = w * 0.05 * dash * bob
     // Épaules : la libre (côté 1) part devant avec la jambe −1 ; tout le buste
