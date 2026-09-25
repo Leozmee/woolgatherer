@@ -519,6 +519,24 @@ puis supprimé. Mesures de référence ci-dessous.
 
 ### Journal
 
+#### 2026-09-25 — fermeture éclair, endurance
+
+- **Fermeture éclair** au dos du crâne, sur toutes les poupées (`zip.tsx`) :
+  ruban sombre sur le méridien arrière (`onHeadPolar`, azimut π), deux
+  rangées de dents qui s'engrènent, arrêts, points de couture sur les
+  bords, curseur, languette percée sur `SpringBone` (poids, collider du
+  crâne) qui balance. Fixe fusionné (`<Batched>`), duvet retiré sous le
+  ruban (`zipFuzzShader`, lu sur la position de base du sommet). Métal à
+  0,65 : **un métal pur sort noir dans le rendu en aplats** (il ne reflète
+  que l'environnement, que les paliers écrasent). Reste : la dégager dans
+  les coiffures (raie arrière).
+- **Endurance** (une minute d'appuis au hasard, pas de 1/144 à 1/20 s) :
+  bassin sans butée → torsion jusqu'à 2,9 rad sur des attaques en rafale
+  (ressorts « fouet » qui cumulent) ; bornes ajoutées (torsion ±1,4, bascule
+  ±0,9, avant libre pour le salto). Pied d'appui laissé à 2× la portée sur
+  un demi-tour brusque en cycle ; il glisse maintenant juste assez pour
+  rester à portée (≤ 1,21×). 0 NaN.
+
 #### 2026-09-25 — physique et animations des personnages (3)
 
 - **Vrai cycle de marche et de course** (`Fighter.advanceCycle`, `Stepper`
