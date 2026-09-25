@@ -155,12 +155,18 @@ function sectorMovers(out: Parts, rnd: () => number, R: number, count: number, m
     first + (Math.floor(((((az % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2)) * count) % count)
 }
 
-/** Attributs de physique sur une géométrie qui ne bouge pas. */
-function still(geo: THREE.BufferGeometry, mover = -1, free = 0): THREE.BufferGeometry {
+/**
+ * Attributs de physique sur une géométrie d'un bloc (pelote, nœud).
+ *
+ * L'écartement a sa propre valeur : il s'applique au shader **même sans
+ * ressort**, et recopié depuis `free`, la pelote d'un chignon s'envolait seule
+ * au-dessus de cheveux tirés immobiles (mesuré : 0,11 à 0,18).
+ */
+function still(geo: THREE.BufferGeometry, mover = -1, free = 0, fling = free): THREE.BufferGeometry {
   const n = geo.attributes.position.count
   geo.setAttribute('aMover', new THREE.Float32BufferAttribute(new Float32Array(n).fill(mover), 1))
   geo.setAttribute('aFree', new THREE.Float32BufferAttribute(new Float32Array(n).fill(free), 1))
-  geo.setAttribute('aFling', new THREE.Float32BufferAttribute(new Float32Array(n).fill(free), 1))
+  geo.setAttribute('aFling', new THREE.Float32BufferAttribute(new Float32Array(n).fill(fling), 1))
   geo.setAttribute('aPhase', new THREE.Float32BufferAttribute(new Float32Array(n), 1))
   return geo
 }
@@ -181,6 +187,18 @@ type YarnOpts = {
   phase?: number
   /** Tube portant la texture de tresse plutôt que celle de fil retors. */
   braid?: boolean
+  /**
+   * Un anneau tous les `step` rayons (3 par défaut). Plus serré pour une
+   * spirale ou une boucle — à 3, un tire-bouchon n'avait que 1,4 à 4,1
+   * anneaux par tour et dessinait un bâton en zigzag —, plus lâche (6) sur
+   * les arcs lisses des cheveux tirés, qui perdent la moitié de leurs
+   * triangles sans que ça se voie.
+   */
+  step?: number
+  /** Nombre d'anneaux imposé (spirales). */
+  segs?: number
+  /** Part effilée de la pointe (0,2) ; plus longue, un trait de pinceau. */
+  taper?: number
 }
 
 /**
@@ -202,7 +220,9 @@ function yarn(points: THREE.Vector3[], radius: number, o: YarnOpts = {}): THREE.
   // Un anneau tous les trois rayons, six côtés : sous le trait d'encre et à la
   // taille d'une tête, la différence avec 2,2 rayons et sept côtés ne se voit
   // pas, et la coiffure perd un tiers de ses triangles (320 000 sur la planche).
-  const segs = clamp(Math.ceil(len / (radius * 3)), 6, 48)
+  // Un tube fermé (anneau, lien, boucle de ruban) a au moins 16 segments : à
+  // 6 ou 7, les rubans étaient des hexagones.
+  const segs = o.segs ?? clamp(Math.ceil(len / (radius * (o.step ?? 3))), closed ? 16 : 6, o.step !== undefined ? 128 : 48)
   const radial = 6
   const tube = new THREE.TubeGeometry(curve, segs, radius, radial, closed)
   const pos = tube.attributes.position as THREE.BufferAttribute
@@ -232,8 +252,8 @@ function yarn(points: THREE.Vector3[], radius: number, o: YarnOpts = {}): THREE.
     const t = i / segs
     const f = o.free ? o.free(t) : 0
     const fl = o.fling ? o.fling(t) : f
-    // Effilage : sommets ramenés vers l'axe sur le dernier cinquième.
-    const taper = closed ? 1 : Math.sqrt(clamp((1 - t) / 0.2, 0, 1))
+    // Effilage : sommets ramenés vers l'axe sur la part effilée de la pointe.
+    const taper = closed ? 1 : Math.sqrt(clamp((1 - t) / (o.taper ?? 0.2), 0, 1))
     if (taper < 1) curve.getPointAt(Math.min(1, t), c)
     for (let j = 0; j <= radial; j++) {
       const k = i * (radial + 1) + j
@@ -273,9 +293,51 @@ function dirOf(az: number, sy: number) {
   return new THREE.Vector3(Math.sin(az) * r, sy, Math.cos(az) * r)
 }
 
-/** Point du crâne dans la direction `d` (vecteur unitaire depuis le centre). */
-function onDir(p: DollParams, d: THREE.Vector3, lift: number) {
-  return onHeadPolar(p, Math.atan2(d.x, d.z), clamp(d.y, -0.98, 0.98), lift)
+/**
+ * Point du crâne dans la direction `d` (vecteur unitaire depuis le centre).
+ *
+ * `cap` borne la hauteur : à 0,98 (défaut, celui de la grande frange), tout
+ * point à moins de 11° du pôle retombait sur un anneau de 0,2 R — un disque nu
+ * de 7 diamètres de fil au sommet, le trou vu de dessus. Les cheveux tirés
+ * passent 0,9995 : `onHeadPolar` est régulier au pôle.
+ */
+function onDir(p: DollParams, d: THREE.Vector3, lift: number, cap = 0.98) {
+  return onHeadPolar(p, Math.atan2(d.x, d.z), clamp(d.y, -0.98, cap), lift)
+}
+
+/** Borne haute des cheveux tirés et de ce qui en part : le pôle est couvert. */
+const POLE = 0.9995
+
+/** Transition douce de 0 (en a) à 1 (en b). */
+export const smooth = (a: number, b: number, x: number) => {
+  const t = clamp((x - a) / (b - a), 0, 1)
+  return t * t * (3 - 2 * t)
+}
+
+/** Mobilité nulle jusqu'à `t0` — la partie tenue —, puis linéaire jusqu'à 1. */
+export const after = (t0: number) => (t: number) => clamp((t - t0) / Math.max(1e-3, 1 - t0), 0, 1)
+
+/**
+ * Cotes du visage qui bornent franges et mèches latérales, **déduites** des
+ * boutons et jamais réglées à la main. Bornes hautes des tirages de `Doll`
+ * (écart des yeux ±12 %, taille +14 %) : aucune poupée ne peut les dépasser.
+ *
+ * - `edge(f)` : hauteur normalisée du bord d'une frange, `f` tailles de
+ *   bouton au-dessus des yeux (même loi que `hairline`) ;
+ * - `maxAngle(edgeSy)` : débattement d'un ressort pivotant au centre tel que
+ *   la pointe, qui glisse de R·angle, ne descende jamais sur un bouton ;
+ * - `sideAz` : azimut au-delà du bord des boutons, pour les mèches latérales.
+ */
+export function faceSafe(p: DollParams) {
+  const R = p.shape.headRadius
+  const ry = R * p.shape.headSquash
+  const size = Math.max(p.face.leftSize, p.face.rightSize) * EYE_SCALE * 1.14
+  const buttonTop = p.face.eyeHeight + size
+  return {
+    edge: (f: number) => clamp((p.face.eyeHeight + size * f) / ry, 0.3, 0.85),
+    maxAngle: (edgeSy: number, freeMax = 1) => clamp((0.8 * (edgeSy * ry - buttonTop)) / (R * freeMax), 0.04, 0.3),
+    sideAz: clamp(Math.asin(clamp((p.face.eyeSpacing * 0.56 + size) / R, 0, 0.95)) + 0.2, 0.95, 1.3),
+  }
 }
 
 /**
@@ -372,94 +434,118 @@ function ring(center: THREE.Vector3, axis: THREE.Vector3, radius: number, thread
   return yarn(pts, thread, { ...o, closed: true })
 }
 
+/** Lisière des cheveux tirés : `low` derrière et sur les côtés, `front` devant. */
+function hairlineAt(low: number, front: number) {
+  return (az: number) => {
+    const w = clamp((Math.max(0, Math.cos(az)) - 0.25) / 0.6, 0, 1)
+    return low + (Math.max(front, low) - low) * w * w * (3 - 2 * w)
+  }
+}
+
+type PulledOpts = {
+  /** Pas entre racines voisines, couches confondues, en rayons de fil (1,8). */
+  pitch?: number
+  /** Lisière avant relevée (hauteur normalisée au centre), sous une frange. */
+  crown?: number
+  /** Arrêt avant l'attache, en angle : le brin plonge sous le lien ou la pelote. */
+  tuck?: number
+  /** Crêtes de tension sur la couche du dessus (0 : aucune). */
+  grooves?: number
+}
+
 /**
- * Cheveux tirés de la lisière vers une ou plusieurs attaches.
+ * Cheveux tirés de la lisière vers une ou plusieurs attaches : **tenus**.
  *
- * Chaque brin glisse sur le crâne jusqu'à l'attache la plus proche, par le plus
- * court chemin sur la sphère : interpoler l'azimut et la hauteur séparément les
- * ferait contourner la tête par les côtés au lieu de passer par-dessus.
+ * Chaque brin glisse sur le crâne jusqu'à son attache par le plus court chemin
+ * sur la sphère. Serrés par le lien, ils ne bougent pas : aucun ressort, ni
+ * mobilité ni écartement — seules les parties libres (queue, nattes, pelote)
+ * ont une physique. Avec des ressorts par secteur, le dessus du crâne balançait
+ * comme les queues ; et leur mobilité était la plus forte au bout noué, qui
+ * sortait de dessous le ruban.
  *
- * Serrés et partant tous de la même hauteur, ils formaient une calotte lisse à
- * lisière droite : un bonnet, pas des cheveux. On en garde assez peu pour
- * distinguer chaque fil, avec une lisière irrégulière qui descend en pointe sur
- * la nuque, comme une vraie implantation.
+ * **Densité, sans base.** Les brins sont le plus écartés là où ils partent, sur
+ * le bord de la zone (ils convergent ensuite). Les racines y sont donc posées
+ * au **pas constant en longueur réelle** — la lisière, et la raie quand deux
+ * attaches se font face —, un brin tous les 1,8 rayon, sur deux couches
+ * alternées. Posées au pas d'azimut, elles s'espaçaient aux tempes, où la
+ * lisière monte vite : 47 à 65 % du crâne couvert là, avec le trou du pôle en
+ * prime. Au-delà de 90° de l'attache, les chemins s'écartent encore avant de
+ * converger : la longueur y compte pour 1/sin θ.
+ *
+ * **Relèvement.** La couche du dessous dépasse juste la pointe du duvet ; celle
+ * du dessus garde l'enveloppe d'avant — pas d'effet casque.
+ *
+ * Rend la ligne de lisière avant, d'où une frange peut partir vers l'avant
+ * pendant que les tirés partent vers l'arrière : une seule source, aucun
+ * recouvrement.
  */
-function pulled(p: DollParams, rnd: () => number, r: number, targets: THREE.Vector3[], out: Parts, low: number) {
-  const limit = hairline(p, low)
-  const M = 14
+function pulled(
+  p: DollParams,
+  rnd: () => number,
+  r: number,
+  targets: THREE.Vector3[],
+  out: Parts,
+  low: number,
+  o: PulledOpts = {},
+) {
+  const limit = o.crown !== undefined ? hairlineAt(low, o.crown) : hairline(p, low)
+  // Lisière irrégulière qui descend en pointe sur la nuque.
+  const rim = (az: number) => dirOf(az, limit(az) + 0.02 - Math.max(0, -Math.cos(az)) ** 3 * 0.18)
   const dirs = targets.map((t) => t.clone().normalize())
-  const nearest = (from: THREE.Vector3) => {
-    let to = dirs[0]
-    for (const d of dirs) if (d.dot(from) > to.dot(from)) to = d
-    return to
-  }
+  const nearest = (f: THREE.Vector3) => dirs.reduce((a, d) => (d.dot(f) > a.dot(f) ? d : a), dirs[0])
+  const split = dirs.length === 2 && dirs[0].x * dirs[1].x < 0
+  const a0 = Math.asin(clamp(limit(0), -0.99, 0.99))
+  const a1 = Math.PI - Math.asin(Math.max(-0.9, limit(Math.PI) - 0.1))
   /*
-   * Cheveux tirés : **tenus**. Serrés par l'attache, ils ne bougent pas —
-   * seules les parties libres (queue, nattes, pelote) ont une physique. Avec
-   * des ressorts par secteur, le dessus du crâne balançait comme les queues :
-   * des cheveux censés être tirés qui flottent, ça n'a pas de sens.
+   * Zones : avec deux attaches opposées, chaque moitié a pour bord la raie
+   * (du front à la nuque) puis sa demi-lisière ; sinon la lisière entière.
    */
-  const strand = (from: THREE.Vector3, to: THREE.Vector3, lift: number) => {
-    const layer = lift + r * rnd() * 0.4
-    const pts: THREE.Vector3[] = []
-    for (let k = 0; k <= M; k++) {
-      const d = from.clone().lerp(to, k / M).normalize()
-      pts.push(onDir(p, d, k === 0 ? -r * 2 : layer).pos)
-    }
-    out.yarn.push(yarn(pts, r))
-  }
+  const zones = split
+    ? dirs.map((to) => {
+        const sx = Math.sign(to.x)
+        const part = Array.from({ length: 121 }, (_, k) => {
+          const a = a0 + ((a1 - a0) * k) / 120
+          return new THREE.Vector3(sx * 0.02, Math.sin(a), Math.cos(a)).normalize()
+        })
+        const edge = Array.from({ length: 180 }, (_, k) => rim(sx * (Math.PI - (Math.PI * (k + 1)) / 181)))
+        return { to: to as THREE.Vector3 | null, line: [...part, ...edge] }
+      })
+    : [{ to: null as THREE.Vector3 | null, line: Array.from({ length: 721 }, (_, k) => rim(-Math.PI + (k / 720) * Math.PI * 2)) }]
 
-  /*
-   * **Densité déduite de la géométrie**, sur deux couches. Les brins sont le
-   * plus écartés à la lisière (ils convergent vers l'attache) : on y pose un
-   * brin tous les trois rayons, et une seconde couche décalée d'un demi-pas
-   * bouche les interstices. À 120 brins fixes, l'écart dépassait le diamètre
-   * du fil : mesuré, 64 à 70 % du crâne couvert sur les côtés et le dessus,
-   * laine du crâne visible entre chaque brin.
-   */
-  const R = p.shape.headRadius
-  const pitch = r * 3
-  const count = Math.ceil((2 * Math.PI * R * 0.95) / pitch)
-  for (let layer = 0; layer < 2; layer++) {
-    for (let i = 0; i < count; i++) {
-      const az = ((i + layer * 0.5) / count) * Math.PI * 2 + (rnd() - 0.5) * 0.02
-      const nape = Math.max(0, -Math.cos(az)) ** 3 * 0.18
-      const sy = limit(az) + 0.02 - nape + (rnd() - 0.5) * 0.05
-      const from = dirOf(az, sy)
-      // Couche du dessous plaquée, couche du dessus un peu décollée.
-      strand(from, nearest(from), r * (layer === 0 ? 0.5 : 1.4))
+  const base = Math.max(r * 0.8, p.shell.height - r * 0.9)
+  for (const z of zones) {
+    const pos = z.line.map((d) => onDir(p, d, 0, POLE).pos)
+    const cum = [0]
+    for (let i = 1; i < pos.length; i++) {
+      const th = z.line[i].angleTo(z.to ?? nearest(z.line[i]))
+      const w = th > Math.PI / 2 ? Math.max(0.3, Math.sin(th)) : 1
+      cum.push(cum[i - 1] + pos[i].distanceTo(pos[i - 1]) / w)
     }
-  }
-
-  /**
-   * Raie au milieu, quand les attaches sont de part et d'autre.
-   *
-   * Partis de la lisière, les brins vont à l'attache la plus proche — donc sur
-   * le côté — et aucun ne passe par le sommet : couettes, nattes et macarons
-   * laissaient le dessus du crâne nu. Une coiffure à deux attaches a une raie :
-   * des brins en partent vers chaque côté, du front jusqu'à la nuque.
-   */
-  if (dirs.length === 2 && dirs[0].x * dirs[1].x < 0) {
-    const front = limit(0)
-    const back = limit(Math.PI) - 0.1
-    const a0 = Math.asin(front)
-    const span = Math.PI - a0 - Math.asin(Math.max(-0.9, back))
-    // Même pas que la lisière, le long de la raie : à 34 brins, un brin tous
-    // les trois diamètres, et le dessus du crâne se voyait en bandes.
-    const n = Math.ceil((span * R) / pitch)
-    for (let layer = 0; layer < 2; layer++) {
-      for (let k = 0; k < n; k++) {
-        // Le long du méridien x = 0 : du front, par le pôle, jusqu'à la nuque.
-        const u = (k + 0.5 + layer * 0.5) / (n + 0.5)
-        const ang = a0 + u * span
-        const from = new THREE.Vector3(0, Math.sin(ang), Math.cos(ang))
-        for (const d of dirs) {
-          const start = from.clone().add(new THREE.Vector3(Math.sign(d.x) * 0.02, 0, 0)).normalize()
-          strand(start, d, r * (layer === 0 ? 0.5 : 1.4))
-        }
+    const B = cum[cum.length - 1]
+    const n = clamp(Math.ceil(B / ((o.pitch ?? 1.8) * r)), 60, 480)
+    for (let i = 0, j = 1; i < n; i++) {
+      const at = ((i + 0.5 + (rnd() - 0.5) * 0.3) / n) * B
+      while (j < cum.length - 1 && cum[j] < at) j++
+      const u = clamp((at - cum[j - 1]) / Math.max(1e-9, cum[j] - cum[j - 1]), 0, 1)
+      const from = z.line[j - 1].clone().lerp(z.line[j], u).normalize()
+      const to = z.to ?? nearest(from)
+      const upper = i % 2 === 1
+      const ridge = upper && o.grooves ? r * 0.9 * (0.5 + 0.5 * Math.cos((2 * Math.PI * o.grooves * at) / B)) : 0
+      const layer = upper ? base + r * (0.9 + rnd() * 0.3) + ridge : base * (1 + rnd() * 0.2)
+      const ang = from.angleTo(to)
+      const reach = o.tuck ? Math.max(0.2, 1 - o.tuck / Math.max(ang, 1e-3)) : 1
+      const M = clamp(Math.ceil(ang / 0.08), 8, 24)
+      const pts: THREE.Vector3[] = []
+      for (let k = 0; k <= M; k++) {
+        const d = from.clone().lerp(to, (k / M) * reach).normalize()
+        const lift = k === 0 ? -r * 2 : k === M && o.tuck ? -r * 0.5 : layer
+        pts.push(onDir(p, d, lift, POLE).pos)
       }
+      // Aucune option de mouvement : aMover −1, mobilité et écartement nuls.
+      out.yarn.push(yarn(pts, r, { step: 6 }))
     }
   }
+  return { frontLine: (az: number) => limit(az) + 0.02 }
 }
 
 // ---------------------------------------------------------------- coiffures
@@ -773,15 +859,20 @@ function bun(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
     : [onHeadPolar(p, Math.PI - (rnd() - 0.5) * 0.6, 0.72 + rnd() * 0.2, 0)]
   const buns = spots.map((s) => s.pos.clone().addScaledVector(s.normal, rb * 0.62))
   for (const [bi, c] of buns.entries()) {
-    // La pelote oscille sur sa base, avec ses tours de fil.
+    /*
+     * La pelote est serrée : elle frémit à peine sur sa base (sommet déplacé de
+     * moins d'un centimètre) et ne s'écarte pas. À 0,18 de débattement et avec
+     * l'écartement centrifuge, elle s'envolait seule au-dessus de cheveux
+     * tirés immobiles.
+     */
     const m = out.movers.length
     const base = spots[bi]
     out.movers.push({
       pivot: base.pos.clone(),
       dir: base.normal.clone(),
       length: rb * 1.6,
-      cfg: { stiffness: 0.07, drag: 0.1, gravity: 0 },
-      maxAngle: 0.18,
+      cfg: { stiffness: 0.14, drag: 0.22, gravity: 0 },
+      maxAngle: 0.06,
     })
     const ball = new THREE.SphereGeometry(rb, 28, 18)
     const uv = ball.attributes.uv as THREE.BufferAttribute
@@ -790,10 +881,10 @@ function bun(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
     // leurs tours à l'horizontale, comme un pot.
     ball.applyQuaternion(new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd() * 3, rnd() * 3, 0)))
     ball.translate(c.x, c.y, c.z)
-    out.yarn.push(still(ball, m, 1))
+    out.yarn.push(still(ball, m, 1, 0))
     for (let w = 0; w < 4; w++) {
       const n = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize()
-      out.yarn.push(ring(c, n, rb * 1.01, r * 0.9, { mover: m, free: () => 1 }))
+      out.yarn.push(ring(c, n, rb * 1.01, r * 0.9, { mover: m, free: () => 1, fling: () => 0 }))
     }
   }
   pulled(p, rnd, r, buns, out, NAPE_LOW + rnd() * 0.12)
@@ -1296,7 +1387,12 @@ function bangs(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
  * Géométrie d'une coiffure. Rien pour les locks : ce sont des chaînes
  * simulées, rendues par `hair.tsx`.
  */
-function buildHair(p: DollParams, style: HairStyle): Built {
+/**
+ * Pièces d'une coiffure avant fusion, un tube par brin. Sert aussi aux
+ * audits : la couverture du crâne se mesure brin par brin, sur l'axe de
+ * chaque tube — fusionnés, on ne sait plus où l'un s'arrête.
+ */
+export function buildHairParts(p: DollParams, style: HairStyle) {
   const rnd = mulberry32(p.seed + 5303)
   // Grosseur de fil de référence : celle du panneau, rapportée au crâne.
   const yarnR = p.hair.thickness * 0.42 * (p.shape.headRadius / 0.43)
@@ -1312,7 +1408,16 @@ function buildHair(p: DollParams, style: HairStyle): Built {
     case 'nattes': braids(p, rnd, yarnR, out); break
     case 'frange': bangs(p, rnd, yarnR, out); break
   }
+  // Au-delà de 32 ressorts, les brins en trop deviendraient immobiles sans
+  // bruit : on le dit en atelier.
+  if (import.meta.env.DEV && out.movers.length > MAX_MOVERS)
+    console.warn(`[coiffure] ${style} : ${out.movers.length} ressorts, ${MAX_MOVERS} au plus`)
   out.movers = out.movers.slice(0, MAX_MOVERS)
+  return { out, yarnR }
+}
+
+export function buildHair(p: DollParams, style: HairStyle): Built {
+  const { out, yarnR } = buildHairParts(p, style)
   return { ...out.build(), yarnR }
 }
 
