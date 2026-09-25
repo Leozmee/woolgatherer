@@ -807,6 +807,13 @@ const LEG_LIM: [number, number][] = [[-1.6, 1.2], [-0.5, 0.5], [-0.8, 0.8]]
 const ELBOW_LIM: [number, number][] = [[-2.4, 0.05], [0, 0], [0, 0]]
 const KNEE_LIM: [number, number][] = [[-0.05, 2.4], [0, 0], [0, 0]]
 const LIMITS: Partial<Record<BoneName, [number, number][]>> = {
+  /*
+   * Bassin : libre en avant (le salto fait un tour complet), borné en torsion
+   * et en bascule. Sans butée, des attaques enchaînées en rafale cumulaient
+   * les élans de leurs ressorts « fouet » : mesuré sur une minute d'appuis au
+   * hasard, jusqu'à 2,9 rad de torsion — la poupée se retrouvait de dos.
+   */
+  hips: [[-Infinity, Infinity], [-1.4, 1.4], [-0.9, 0.9]],
   neck: [[-0.9, 0.9], [-0.9, 0.9], [-0.6, 0.6]],
   'arm-1': ARM_LIM,
   arm1: ARM_LIM,

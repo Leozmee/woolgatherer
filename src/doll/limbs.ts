@@ -273,7 +273,8 @@ export class Stepper {
     if (!cyc && this.cycling) this.leaveCycle()
     this.cycling = cyc
     if (cyc) {
-      this.followCycle(dt, o.cycle!, o.vel, ideal, speed, o.onLand)
+      // Portée de la jambe, pied compris (`legLength` × 1,09).
+      this.followCycle(dt, o.legLength * 1.09, o.cycle!, o.vel, ideal, speed, o.onLand)
       this.ready = true
       return
     }
@@ -440,6 +441,7 @@ export class Stepper {
    */
   private followCycle(
     dt: number,
+    reach: number,
     c: Cycle,
     vel: THREE.Vector3,
     ideal: (side: -1 | 1) => THREE.Vector3,
@@ -460,6 +462,21 @@ export class Stepper {
           f.plant.copy(ideal(side)).addScaledVector(vel, (c.duty * c.period) / 2)
           f.plant.y = ideal(side).y
           onLand?.(side, speed, c.period / 2)
+        }
+        /*
+         * Rattrapage : si la hanche s'éloigne trop du pied planté — demi-tour
+         * brusque, poussée —, le pied glisse juste assez pour rester à
+         * portée. Mesuré sur une minute d'appuis au hasard, sans lui : jambe
+         * d'appui jusqu'à deux fois sa portée, le pied décrochait du sol.
+         */
+        const i = ideal(side)
+        const dx = f.plant.x - i.x
+        const dz = f.plant.z - i.z
+        const d = Math.hypot(dx, dz)
+        const max = reach * 0.7
+        if (d > max) {
+          f.plant.x = i.x + (dx / d) * max
+          f.plant.z = i.z + (dz / d) * max
         }
         f.pos.copy(f.plant)
       } else {
