@@ -918,16 +918,24 @@ export class Fighter {
     const sf = Math.sin(this.facing)
     const aFwd = this.accel.x * sf + this.accel.z * cf
     const clampA = (v: number, k: number, lim: number) => Math.max(-lim, Math.min(lim, v * k))
+    /*
+     * Poids de l'arme : seulement dans l'arène. Sur la planche et en
+     * présentation la poupée se tient **droite** — le penché vers l'arme (0,07
+     * rad) et le bras tiré la faisaient toutes pencher du même côté dans le
+     * menu de sélection. Le balancement y reste, à peine.
+     */
+    const armed = this.drive ? 1 : 0
+    const swayK = this.drive ? 1 : 0.35
 
     set(
       t.hips,
       // Inertie : le corps reste en arrière quand on accélère et continue
       // vers l'avant quand on freine — la racine obéit, le corps traîne.
-      0.04 + 0.18 * run + hop * 0.05 * run - clampA(aFwd, 0.045, 0.4),
+      0.04 * armed + 0.18 * run + hop * 0.05 * run - clampA(aFwd, 0.045, 0.4),
       s * 0.16 * run,
       // Penché vers l'arme au repos (son poids), dans le virage, et sur le
       // pied d'appui en course.
-      0.07 * (1 - run) + clampA(this.turnRate, -0.07, 0.35) + sway * 0.03 * (1 - run) + this.waddle,
+      0.07 * armed * (1 - run) + clampA(this.turnRate, -0.07, 0.35) + sway * 0.03 * swayK * (1 - run) + this.waddle,
     )
     // Le rebond de course vient surtout des pas posés (`land`) ; ici un fond.
     // Corps un peu plus bas en course : les jambes plient au lieu de
@@ -938,15 +946,15 @@ export class Fighter {
     set(t.leg1, s * 0.8 * run, 0, 0)
     // Bras de l'arme tiré vers l'arrière et vers le bas par le poids ; l'autre
     // balance à contretemps et compense.
-    set(t['arm-1'], 0.35 * run - 0.1, 0, 0.3 - 0.1 * run)
-    set(t.arm1, s * 0.9 * run - 0.1 + sway * 0.06 * (1 - run), 0, -0.1 * run + 0.08)
+    set(t['arm-1'], 0.35 * run - 0.1 * armed, 0, 0.3 * armed - 0.1 * run)
+    set(t.arm1, s * 0.9 * run - 0.1 * armed + sway * 0.06 * swayK * (1 - run), 0, -0.1 * run + 0.08 * armed)
     // La tête exagère ce que fait le corps, avec retard : elle part en
     // arrière au démarrage, pique en avant à l'arrêt, contre le dandinement.
     set(
       t.neck,
       -0.12 * run + Math.sin(this.time * 2.3 + 1) * 0.04 - clampA(aFwd, 0.05, 0.45),
       clampA(this.turnRate, 0.06, 0.4),
-      -sway * 0.06 * (1 - run) - this.waddle * 0.8,
+      -sway * 0.06 * swayK * (1 - run) - this.waddle * 0.8,
     )
     // Au repos, plantée pointe au sol devant elle, du côté de l'arme : on la
     // voit, et on voit qu'elle est trop grande. En course elle traîne derrière.

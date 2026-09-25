@@ -340,6 +340,8 @@ type Built = {
   ribbon: THREE.BufferGeometry | null
   ribbonColor: string
   movers: Mover[]
+  /** Grosseur de fil de référence de la coupe — étalon des audits. */
+  yarnR: number
 }
 
 class Parts {
@@ -355,6 +357,7 @@ class Parts {
       ribbon: merged(this.ribbon),
       ribbonColor: this.ribbonColor,
       movers: this.movers,
+      yarnR: 0,
     }
   }
 }
@@ -390,31 +393,42 @@ function pulled(p: DollParams, rnd: () => number, r: number, targets: THREE.Vect
     for (const d of dirs) if (d.dot(from) > to.dot(from)) to = d
     return to
   }
-  // Cheveux tirés : attachés, donc à peine mobiles — un léger mouvement
-  // d'ensemble par secteur, plus marqué vers l'attache.
-  const sector = sectorMovers(out, rnd, p.shape.headRadius, 6, 0.14, 0.05)
-  const strand = (from: THREE.Vector3, to: THREE.Vector3) => {
-    const layer = r * (0.6 + rnd() * 1.1)
+  /*
+   * Cheveux tirés : **tenus**. Serrés par l'attache, ils ne bougent pas —
+   * seules les parties libres (queue, nattes, pelote) ont une physique. Avec
+   * des ressorts par secteur, le dessus du crâne balançait comme les queues :
+   * des cheveux censés être tirés qui flottent, ça n'a pas de sens.
+   */
+  const strand = (from: THREE.Vector3, to: THREE.Vector3, lift: number) => {
+    const layer = lift + r * rnd() * 0.4
     const pts: THREE.Vector3[] = []
     for (let k = 0; k <= M; k++) {
       const d = from.clone().lerp(to, k / M).normalize()
       pts.push(onDir(p, d, k === 0 ? -r * 2 : layer).pos)
     }
-    // Glissent d'un bloc sur le crâne, racine comprise ; ne s'écartent presque pas.
-    out.yarn.push(
-      yarn(pts, r, { mover: sector(Math.atan2(from.x, from.z)), free: (t) => 0.5 + 0.5 * t, fling: (t) => 0.25 * t, phase: rnd() * 6 }),
-    )
+    out.yarn.push(yarn(pts, r))
   }
 
-  // Assez de brins pour couvrir la lisière, là où ils sont le plus écartés :
-  // ils convergent vers l'attache et divergent vers le bas.
-  const count = 120
-  for (let i = 0; i < count; i++) {
-    const az = (i / count) * Math.PI * 2 + (rnd() - 0.5) * 0.04
-    const nape = Math.max(0, -Math.cos(az)) ** 3 * 0.18
-    const sy = limit(az) + 0.02 - nape + (rnd() - 0.5) * 0.07
-    const from = dirOf(az, sy)
-    strand(from, nearest(from))
+  /*
+   * **Densité déduite de la géométrie**, sur deux couches. Les brins sont le
+   * plus écartés à la lisière (ils convergent vers l'attache) : on y pose un
+   * brin tous les trois rayons, et une seconde couche décalée d'un demi-pas
+   * bouche les interstices. À 120 brins fixes, l'écart dépassait le diamètre
+   * du fil : mesuré, 64 à 70 % du crâne couvert sur les côtés et le dessus,
+   * laine du crâne visible entre chaque brin.
+   */
+  const R = p.shape.headRadius
+  const pitch = r * 3
+  const count = Math.ceil((2 * Math.PI * R * 0.95) / pitch)
+  for (let layer = 0; layer < 2; layer++) {
+    for (let i = 0; i < count; i++) {
+      const az = ((i + layer * 0.5) / count) * Math.PI * 2 + (rnd() - 0.5) * 0.02
+      const nape = Math.max(0, -Math.cos(az)) ** 3 * 0.18
+      const sy = limit(az) + 0.02 - nape + (rnd() - 0.5) * 0.05
+      const from = dirOf(az, sy)
+      // Couche du dessous plaquée, couche du dessus un peu décollée.
+      strand(from, nearest(from), r * (layer === 0 ? 0.5 : 1.4))
+    }
   }
 
   /**
@@ -428,15 +442,21 @@ function pulled(p: DollParams, rnd: () => number, r: number, targets: THREE.Vect
   if (dirs.length === 2 && dirs[0].x * dirs[1].x < 0) {
     const front = limit(0)
     const back = limit(Math.PI) - 0.1
-    const n = 34
-    for (let k = 0; k < n; k++) {
-      // Le long du méridien x = 0 : du front, par le pôle, jusqu'à la nuque.
-      const u = (k + 0.5) / n
-      const ang = Math.asin(front) + u * (Math.PI - Math.asin(front) - Math.asin(Math.max(-0.9, back)))
-      const from = new THREE.Vector3(0, Math.sin(ang), Math.cos(ang))
-      for (const d of dirs) {
-        const start = from.clone().add(new THREE.Vector3(Math.sign(d.x) * 0.02, 0, 0)).normalize()
-        strand(start, d)
+    const a0 = Math.asin(front)
+    const span = Math.PI - a0 - Math.asin(Math.max(-0.9, back))
+    // Même pas que la lisière, le long de la raie : à 34 brins, un brin tous
+    // les trois diamètres, et le dessus du crâne se voyait en bandes.
+    const n = Math.ceil((span * R) / pitch)
+    for (let layer = 0; layer < 2; layer++) {
+      for (let k = 0; k < n; k++) {
+        // Le long du méridien x = 0 : du front, par le pôle, jusqu'à la nuque.
+        const u = (k + 0.5 + layer * 0.5) / (n + 0.5)
+        const ang = a0 + u * span
+        const from = new THREE.Vector3(0, Math.sin(ang), Math.cos(ang))
+        for (const d of dirs) {
+          const start = from.clone().add(new THREE.Vector3(Math.sign(d.x) * 0.02, 0, 0)).normalize()
+          strand(start, d, r * (layer === 0 ? 0.5 : 1.4))
+        }
       }
     }
   }
@@ -1293,7 +1313,7 @@ function buildHair(p: DollParams, style: HairStyle): Built {
     case 'frange': bangs(p, rnd, yarnR, out); break
   }
   out.movers = out.movers.slice(0, MAX_MOVERS)
-  return out.build()
+  return { ...out.build(), yarnR }
 }
 
 // ---------------------------------------------------------------- rendu
@@ -1442,6 +1462,18 @@ export function Hairdo({
       ),
     [built, p.shape.headRadius],
   )
+  // Atelier : de quoi auditer chaque coupe (couverture, mobilité par zone).
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const w = window as unknown as { __hairs?: Record<string, unknown> }
+    w.__hairs = w.__hairs ?? {}
+    const key = `${style}#${p.seed}`
+    w.__hairs[key] = { style, built, uni, skull: skull.current, p }
+    return () => {
+      delete w.__hairs?.[key]
+    }
+  }, [built, uni, style, p])
+
   useEffect(() => {
     springs.current = built.movers.map((m, i) => new SpringBone(bones.current[i]!, m.length, m.dir))
     built.movers.forEach((m, i) => uni.uPivot.value[i].copy(m.pivot))

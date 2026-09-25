@@ -5,3 +5,6 @@ tsconfig.tsbuildinfo
 
 # Notes de travail internes, pas destinées à être publiées.
 CLAUDE.md
+
+# Résultats de runs d agents (travail interne).
+.claude/runs/
