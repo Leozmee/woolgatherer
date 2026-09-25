@@ -172,7 +172,7 @@ type Phase = {
 
 type ActionName =
   | 'attack1' | 'attack2' | 'attack3' | 'dodge' | 'parry' | 'hit' | 'ko'
-  | 'jump' | 'plunge' | 'slam'
+  | 'jump' | 'plunge' | 'slam' | 'rise'
 
 type Action = {
   phases: Phase[]
@@ -218,6 +218,66 @@ const WIND: Phase['tune'] = {
   'elbow-1': [6, 0.7, 0],
   hips: [4, 0.82, -0.1],
   weapon: [4.5, 0.82, -0.1],
+}
+
+/**
+ * Relevée après un K.O. : on s'assoit en poussant sur les bras, on se ramasse
+ * accroupie, les mains sur les genoux, puis debout d'une détente — et la tête
+ * qui secoue, sonnée.
+ */
+const RISE: Action = {
+  cancelFrom: 2,
+  phases: [
+    {
+      dur: 0.34,
+      tune: { hips: [3.5, 0.8, 0], hipsPos: [3.5, 0.85, 0] },
+      firm: 0.3,
+      pose: (t, _u, m) => {
+        set(t.hips, -0.4, 0, 0)
+        set(t.hipsPos, 0, m.torsoRadius * 1.1 - m.centerHeight, -m.centerHeight * 0.6)
+        set(t['arm-1'], 0.8, 0, -0.35)
+        set(t.arm1, 0.8, 0, 0.35)
+        bend(t['elbow-1'], -0.15)
+        bend(t.elbow1, -0.15)
+        set(t['leg-1'], -1.4, 0, -0.1)
+        set(t.leg1, -1.3, 0, 0.1)
+        bend(t['knee-1'], 0.9)
+        bend(t.knee1, 1.2)
+        set(t.neck, 0.35, 0, 0)
+        t.squash = 0.95
+        set(t.weapon, -0.8, -0.4, 0.2)
+      },
+    },
+    {
+      dur: 0.3,
+      tune: { hips: [4.5, 0.75, 0], hipsPos: [4.5, 0.8, 0] },
+      firm: 0.4,
+      pose: (t, _u, m) => {
+        set(t.hips, 0.55, 0, 0)
+        set(t.hipsPos, 0, -m.legLength * 0.42, -m.centerHeight * 0.15)
+        set(t['arm-1'], -0.7, 0, 0.2)
+        set(t.arm1, -0.7, 0, -0.2)
+        bend(t['elbow-1'], -0.8)
+        bend(t.elbow1, -0.8)
+        set(t.neck, -0.15, 0, 0)
+        t.squash = 0.9
+        set(t.weapon, -0.6, -0.7, 0.3)
+      },
+    },
+    {
+      dur: 0.4,
+      firm: 0.2,
+      enter: (f) => f.bump(3),
+      pose: (t, u) => {
+        const k = 1 - u
+        set(t.hips, -0.12 * k, 0, 0)
+        bend(t['elbow-1'], -0.4)
+        bend(t.elbow1, -0.3)
+        // Sonnée : la tête secoue, de moins en moins.
+        set(t.neck, 0.05, Math.sin(u * Math.PI * 5) * 0.35 * k, Math.sin(u * Math.PI * 5 + 1) * 0.12 * k)
+      },
+    },
+  ],
 }
 
 /**
@@ -498,7 +558,11 @@ const ACTIONS: Record<ActionName, Action> = {
     ],
   },
 
-  /** K.O. : bascule sur le dos, et y reste. L'arme tombe à côté. */
+  /**
+   * K.O. : bascule sur le dos, et y reste. L'arme tombe à côté. Le buste et le
+   * bassin ne suivent pas une pose : ils **tombent** (`topple`) — les bras et
+   * la tête, eux, visent cette pose, mollement.
+   */
   ko: {
     cancelFrom: 99,
     hold: true,
@@ -506,7 +570,10 @@ const ACTIONS: Record<ActionName, Action> = {
       {
         dur: 0.9,
         tune: { hips: [2.4, 0.75, 0], hipsPos: [3, 0.8, 0] },
-        enter: (f) => f.knock(),
+        enter: (f) => {
+          f.knock(0.5)
+          f.fall()
+        },
         pose: (t, _u, m) => {
           set(t.hips, -1.5, 0.3, 0)
           set(t.hipsPos, 0, m.torsoRadius * 0.95 - m.centerHeight, -m.centerHeight * 0.5)
@@ -628,6 +695,8 @@ const ACTIONS: Record<ActionName, Action> = {
       },
     ],
   },
+
+  rise: RISE,
 }
 
 /** Frappe au sol, penchée sur l'arme : `k` de 1 (impact) à 0 (relevée). */
@@ -728,6 +797,8 @@ const BUFFER = 0.28
  */
 const G_UP = 20
 const G_DOWN = 34
+/** Angle du corps couché sur le dos, K.O. */
+const KO_REST = 1.5
 /** Sommet du grand saut, en fraction de la hauteur de la poupée. */
 const JUMP_APEX = 0.38
 /** Pas de côté : vitesse et petit bond (≈ 0,16 s de vol). */
@@ -815,6 +886,8 @@ export class Fighter {
   /** Regard d'attente : cible, temps restant, part (0 en mouvement). */
   private glance = { yaw: 0, pitch: 0, shift: 0, t: 1, w: 0, idle: 0 }
   private rnd: () => number
+  /** Bascule du K.O. : angle, vitesse, au sol, recul du bassin. */
+  private topple = { th: 0, w: 0, landed: false, zc: 0 }
 
   constructor(opts: { drive?: boolean; phase?: number } = {}) {
     this.drive = !!opts.drive
@@ -851,9 +924,9 @@ export class Fighter {
   /** Un appui. Mis en file s'il ne peut pas partir tout de suite. */
   press(p: Press) {
     if (p === 'ko' && this.action?.name === 'ko') {
-      // Relevée : la vie revient.
-      this.action = null
+      // Relevée : la vie revient, et on se remet debout.
       this.hp = 1
+      this.getUp()
       return
     }
     if (p === 'jump') this.jumpHeld = true
@@ -980,7 +1053,9 @@ export class Fighter {
   /** Au sol et libre d'y marcher : ni en l'air, ni K.O., ni soulevée par un geste. */
   get grounded() {
     if (this.airborne) return false
-    if (this.action?.name === 'ko') return false
+    const a = this.action
+    // Couchée, ou assise en train de se relever : les jambes suivent la pose.
+    if (a?.name === 'ko' || (a?.name === 'rise' && a.phase === 0)) return false
     return this.pose.hipsPos[1] < 0.06
   }
 
@@ -999,17 +1074,71 @@ export class Fighter {
   }
 
   /** Repoussée en arrière, d'un côté ou de l'autre. */
-  knock() {
+  knock(k = 1) {
     this.hitSide = Math.random() < 0.5 ? -1 : 1
     const c = Math.cos(this.facing)
     const s = Math.sin(this.facing)
     // En arrière, et un peu de côté : le coup vient de `hitSide`.
-    this.vel.x += -s * 3 - c * this.hitSide * 0.8
-    this.vel.z += -c * 3 + s * this.hitSide * 0.8
+    this.vel.x += (-s * 3 - c * this.hitSide * 0.8) * k
+    this.vel.z += (-c * 3 + s * this.hitSide * 0.8) * k
     this.dyn.squash.kick(0, -1.2)
     this.dyn.hips.kick(1, 2.5 * this.hitSide)
     this.shake = Math.max(this.shake, 0.5)
     this.freeze = 0.05
+  }
+
+  /**
+   * Chute du K.O. : le corps bascule en arrière **autour des pieds**, comme un
+   * bâton qu'on lâche — lentement d'abord, puis de plus en plus vite
+   * (`θ'' = g/h · sin θ`). Au contact du dos, rebond amorti, bouffée, secousse ;
+   * puis il se balance sur son dos rond jusqu'à s'y poser.
+   */
+  fall() {
+    const T = this.topple
+    T.th = Math.max(0, -this.pose.hips[0])
+    T.w = 1.1
+    T.landed = false
+    T.zc = 0
+  }
+
+  private toppleStep(dt: number, m: RigMetrics) {
+    const T = this.topple
+    const c = m.centerHeight
+    const lie = m.torsoRadius * 0.95
+    if (!T.landed) {
+      // Une peluche tombe moins vite qu'un bâton : gravité ressentie réduite.
+      T.w += (6 / c) * Math.sin(T.th + 0.05) * dt
+      T.th += T.w * dt
+      T.zc = -c * Math.sin(T.th)
+      if (c * Math.cos(T.th) <= lie) {
+        T.landed = true
+        const k = Math.min(1, T.w / 5)
+        T.w *= -0.3
+        this.dyn.squash.kick(0, -1.8 * k)
+        this.dyn.neck.kick(0, -3 * k)
+        this.shake = Math.max(this.shake, 0.45 * k)
+        this.freeze = 0.04
+        const cf = Math.cos(this.facing)
+        const sf = Math.sin(this.facing)
+        this.puff(this.pos.x + sf * T.zc, this.pos.z + cf * T.zc, 0.8)
+      }
+    } else {
+      // Posée : elle se balance sur son dos et s'arrête.
+      T.w += (-55 * (T.th - KO_REST) - 7 * T.w) * dt
+      T.th += T.w * dt
+    }
+    this.pose.hips[0] = -T.th
+    this.pose.hipsPos[1] = Math.max(c * Math.cos(T.th), lie) - c
+    this.pose.hipsPos[2] = T.zc
+  }
+
+  /** Relevée : les ressorts repartent de la pose au sol, pas d'une pose rêvée. */
+  private getUp() {
+    const T = this.topple
+    this.dyn.hips.snap(0, -T.th)
+    this.dyn.hipsPos.snap(1, this.pose.hipsPos[1])
+    this.dyn.hipsPos.snap(2, this.pose.hipsPos[2])
+    this.start('rise')
   }
 
   // --- boucle
@@ -1168,6 +1297,7 @@ export class Fighter {
     this.pose.hipsPos[0] = hp[0]
     this.pose.hipsPos[1] = hp[1]
     this.pose.hipsPos[2] = hp[2]
+    if (this.action?.name === 'ko') this.toppleStep(dt, m)
     _sq[0] = t.squash
     this.squash = Math.min(1.45, Math.max(0.6, this.dyn.squash.update(dt, _sq)[0]))
     _wd.set(...t.weapon).normalize()

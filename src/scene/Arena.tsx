@@ -112,7 +112,7 @@ export function WeaponTrail({ fighter }: { fighter: Fighter }) {
 // ---------------------------------------------------------------- poussière
 
 /** Boules par bouffée, et bouffées vivantes au plus. */
-const PER_PUFF = 4
+const PER_PUFF = 5
 const MAX_BALLS = 120
 const LIFE = 0.5
 
@@ -157,7 +157,8 @@ export function Dust({ fighter }: { fighter: Fighter }) {
           vx: Math.cos(a) * p.size * 1.6,
           vy: p.size * (0.6 + Math.random() * 0.8),
           vz: Math.sin(a) * p.size * 1.6,
-          size: p.size * (0.11 + Math.random() * 0.1),
+          // Petites : grosses, elles lisaient comme des boules de neige.
+          size: p.size * (0.055 + Math.random() * 0.06),
           age: 0,
         })
       }

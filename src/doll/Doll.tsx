@@ -642,8 +642,12 @@ export function Doll({
     // Avant-bras et tibias : plus mous que le haut du membre. C'est eux qui
     // arrivent en dernier — le fouet d'un coup, le ballant d'un bras.
     const lowCfg = { ...limbCfg, stiffness: limbCfg.stiffness * 0.7 }
-    springs.current.foreL.update(dt, lowCfg)
-    springs.current.foreR.update(dt, lowCfg)
+    // Les mains ne rentrent ni dans le ventre ni dans la tête : en parade ou
+    // au revers, le bras s'enroule autour du corps au lieu de le traverser.
+    updateBodyColliders()
+    const hands = bodyColliders.hands
+    springs.current.foreL.update(dt, lowCfg, hands)
+    springs.current.foreR.update(dt, lowCfg, hands)
     springs.current.shinL.update(dt, lowCfg)
     springs.current.shinR.update(dt, lowCfg)
     // Pied planté : les ressorts de la jambe s'effacent, sinon ils
@@ -731,6 +735,34 @@ export function Doll({
   }
 
   /**
+   * Volumes du corps en repère monde, relus chaque image : tête, haut et bas
+   * du torse. `list` pour la lame (rayons nus), `hands` pour les mains (rayon
+   * de la main ajouté : c'est le centre de la main qui est contraint).
+   */
+  const bodyColliders = useMemo(() => {
+    const mk = () => ({ center: new THREE.Vector3(), radius: 0 })
+    return { list: [mk(), mk(), mk()], hands: [mk(), mk(), mk()] }
+  }, [])
+  const updateBodyColliders = () => {
+    const [head, chest, belly] = bodyColliders.list
+    headBone.current.updateWorldMatrix(true, false)
+    head.center.set(0, L.headY, 0).applyMatrix4(headBone.current.matrixWorld)
+    head.radius = s.headRadius * 1.02
+    body.current.updateWorldMatrix(true, false)
+    // Le torse est un ellipsoïde effilé vers le haut et aplati d'avant en
+    // arrière (0,86) : rayon pris à la hauteur de chaque sphère, un peu rentré.
+    const at = (y: number) => s.torsoRadius * (1 + (s.torsoTaper - 1) * (y + 0.5)) * 0.88
+    chest.center.set(0, s.torsoHeight * 0.12, 0).applyMatrix4(body.current.matrixWorld)
+    chest.radius = at(0.12)
+    belly.center.set(0, -s.torsoHeight * 0.18, 0).applyMatrix4(body.current.matrixWorld)
+    belly.radius = at(-0.18)
+    bodyColliders.list.forEach((c, i) => {
+      bodyColliders.hands[i].center.copy(c.center)
+      bodyColliders.hands[i].radius = c.radius + lb.armRadius * 1.1
+    })
+  }
+
+  /**
    * L'arme est **lourde** : sa pointe suit sa position visée avec inertie, en
    * repère monde — elle traîne quand la poupée court, fouette quand elle
    * frappe, et ne descend jamais sous le sol, où elle frotte. La poignée, elle,
@@ -764,6 +796,8 @@ export function Doll({
      * dépassait sous le sol (mesuré : 200 images sur 600 d'appuis au hasard).
      * On relève alors la lame juste assez, sans changer son cap.
      */
+    // Le corps d'abord, le sol ensuite : c'est le sol qui a le dernier mot.
+    for (const c of bodyColliders.list.slice(0, 3)) avoidSphere(_hand, _dir, weaponLength, c.center, c.radius + s.headRadius * 0.04)
     const minY = (floor - _hand.y) / weaponLength
     if (_dir.y < minY) {
       const dy = Math.max(-1, Math.min(1, minY))
@@ -976,6 +1010,28 @@ export function Doll({
 function isInside(o: THREE.Object3D, parent: THREE.Object3D) {
   for (let p = o.parent; p; p = p.parent) if (p === parent) return true
   return false
+}
+
+const _v = new THREE.Vector3()
+const _n = new THREE.Vector3()
+
+/**
+ * Écarte une lame (de `from`, direction unitaire `dir`, longueur `len`) d'une
+ * sphère, en la faisant pivoter autour de la main : le point le plus proche
+ * du centre est ramené sur la surface. Rien si la main est déjà dedans (une
+ * parade devant le visage) — on ne sait pas de quel côté sortir.
+ */
+function avoidSphere(from: THREE.Vector3, dir: THREE.Vector3, len: number, center: THREE.Vector3, radius: number) {
+  _v.subVectors(center, from)
+  if (_v.lengthSq() <= radius * radius) return
+  const t = Math.max(0, Math.min(len, _v.dot(dir)))
+  _n.copy(from).addScaledVector(dir, t).sub(center)
+  const d = _n.length()
+  if (d >= radius || t < 1e-4) return
+  if (d < 1e-5) _n.set(0, 1, 0).addScaledVector(dir, -dir.y)
+  _n.normalize()
+  // Nouveau point à la surface, la lame repasse par lui.
+  dir.copy(center).addScaledVector(_n, radius).sub(from).normalize()
 }
 
 const _hand = new THREE.Vector3()

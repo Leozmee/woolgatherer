@@ -38,6 +38,23 @@ puis supprimé. Mesures de référence ci-dessous.
 
 ## Journal
 
+### 2026-09-25 — physique et animations des personnages (2)
+
+- **K.O. physique** (`fighter.ts`, `fall` / `toppleStep`) : le corps bascule en
+  arrière autour des pieds (`θ'' = g/h · sin θ`, gravité réduite de peluche),
+  touche le sol du dos à ~0,75 s, rebondit (vitesse × −0,3), bouffée,
+  secousse, puis se balance sur son dos rond jusqu'à 1,5 rad. Bras et tête
+  restent sur ressorts, mous.
+- **Relevée** (X à nouveau, geste `rise`, ~1,1 s) : assise en poussant sur les
+  bras, accroupie mains sur les genoux (IK des genoux active), debout d'une
+  détente, tête qui secoue, sonnée. Les ressorts repartent de la pose au sol.
+- **Collisions avec son propre corps** (`Doll.tsx`) : tête, poitrine et ventre
+  en sphères monde relues chaque image (rayons pris sur l'ellipsoïde du
+  torse). Les mains (ressorts d'avant-bras) ne rentrent plus dans le corps ;
+  la lame de l'épingle pivote autour de la main pour contourner tête et torse
+  (`avoidSphere`), le sol gardant le dernier mot.
+- Bouffées de laine plus fines (elles lisaient comme des boules de neige).
+
 ### 2026-09-25 — physique et animations des personnages (1)
 
 Demandes : marche qui tangue moins, sprint rapide, saut, genoux/coudes (membres
@@ -97,6 +114,3 @@ moins raides, plus de vie), esquive en pas de côté au lieu de la roulade.
   ombres de contact qui suivent la poupée ; caméra avec un peu d'avance dans
   le sens de la course, qui recule au sprint et suit le saut à moitié.
 
-Pistes suivantes : K.O. physique (bascule sous gravité, rebond, membres
-mous) puis relevée animée ; bras qui ne traversent pas le torse (colliders
-sur les ressorts de bras) ; épingle qui évite la tête.
