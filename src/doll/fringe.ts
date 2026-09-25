@@ -83,6 +83,8 @@ export function writeFringe(
   colliders: readonly Collider[],
   texelUnit: number,
   withUv: boolean,
+  /** Sol (`n·p ≥ d`) : la traîne de l'écharpe est couchée, ses mèches aussi. */
+  floor?: { n: THREE.Vector3; d: number } | null,
 ) {
   const pos = geo.attributes.position as THREE.BufferAttribute
   const uv = geo.attributes.uv as THREE.BufferAttribute
@@ -108,6 +110,12 @@ export function writeFringe(
           _out.subVectors(_p, c.center)
           const d = _out.length()
           if (d > 1e-6 && d < c.radius) _p.copy(c.center).addScaledVector(_out, c.radius / d)
+        }
+        // Au sol, la mèche se couche au lieu de s'y enfoncer : tirée par le
+        // poids, elle le traversait jusqu'à sa pointe.
+        if (floor) {
+          const under = floor.d + width - floor.n.dot(_p)
+          if (under > 0) _p.addScaledVector(floor.n, under)
         }
         // Le brin s'amincit vers le bout : une mèche d'épaisseur constante lit
         // comme un tube.

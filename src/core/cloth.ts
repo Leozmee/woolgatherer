@@ -47,11 +47,54 @@ export type ClothExtras = {
   carryK?: number
   /** Sol, dans le repère de la nappe : normale unitaire et `n·p ≥ d`. */
   floor?: { n: THREE.Vector3; d: number } | null
+  /**
+   * **Portance** : vitesse (unités/s) à laquelle le poids d'une particule est
+   * divisé par deux. Un tissu léger lancé vite est porté par l'air : il redescend
+   * en planant au lieu de tomber comme un fil à plomb. Sans elle, un pan fouetté
+   * par une attaque retombait aussitôt et le coup ne se lisait pas dans l'étoffe.
+   * Au repos (vitesse nulle), le poids est entier : rien ne flotte tout seul.
+   */
+  lift?: number
 }
+
+/**
+ * Pas de la simulation : celui auquel tous les réglages ont été faits.
+ *
+ * Amortissement et retenue s'appliquaient **une fois par appel** : à 144 Hz
+ * l'air freinait l'écharpe 2,4 fois plus qu'à 60, à 30 Hz le pas était borné
+ * à 1/45 s et la simulation ralentissait d'un tiers. Même remède que pour les
+ * ressorts (`SpringBone`) : des sous-pas d'au plus 1/60 s, et des taux
+ * convertis au pas réel — à 60 i/s c'est exactement l'ancien calcul.
+ */
+const STEP = 1 / 60
+/** Sous-pas au plus par image : en deçà de 20 i/s on ralentit plutôt que d'exploser. */
+const MAX_SUB = 3
+/**
+ * Transport découpé : déplacement au plus par sous-pas d'un point à une unité
+ * de l'axe, et nombre de parts au plus.
+ *
+ * Au salto le repère tourne de 15 rad/s : un quart de radian par image. Les
+ * particules gardées sur place dans le monde sautaient alors de 0,1 à 0,15 dans
+ * le repère du corps, plus que la moitié d'une sphère d'obstacle : elles la
+ * traversaient et ressortaient **du mauvais côté** — mesuré, un lien du pan
+ * arrière étiré quatre fois. Découpé, chaque part reste sous 0,05, et les
+ * collisions ont le temps de s'en apercevoir.
+ */
+const CARRY_MOVE = 0.05
+const MAX_CARRY = 5
 
 const _d = new THREE.Vector3()
 const _push = new THREE.Vector3()
 const _c = new THREE.Vector3()
+const _tv = new THREE.Vector3()
+const _ts = new THREE.Vector3()
+const _tq = new THREE.Quaternion()
+const _qi = new THREE.Quaternion()
+const _one = new THREE.Vector3(1, 1, 1)
+const _mPrev = new THREE.Matrix4()
+const _mCur = new THREE.Matrix4()
+const _mPart = new THREE.Matrix4()
+const _mInv = new THREE.Matrix4()
 
 /**
  * Nappe de tissu simulée en Verlet — une **grille** de particules, pas une ligne.
@@ -76,6 +119,30 @@ export class ClothSheet {
   private rest: THREE.Vector3[]
   private pin: number[]
   private links: Link[] = []
+  /**
+   * **Attaches longues** (tethers) : pour chaque particule libre, la particule
+   * retenue la plus proche le long de sa colonne, et la longueur de tissu qui
+   * les sépare au repos. Aucune particule ne peut s'en éloigner davantage.
+   *
+   * Les contraintes de distance se résolvent de proche en proche : chaque passe
+   * ne rattrape qu'une fraction de l'écart, et elle s'amortit d'un rang à
+   * l'autre. Quand le corps file à 5 à 8 unités/s, le bout d'un long pan reste
+   * sur place dans le monde (`carry`) et neuf passes ne suffisent plus à le
+   * ramener : mesuré à la glissade, le pan arrière s'allongeait de moitié,
+   * tremblait d'une image à l'autre et traversait le corps en revenant. Une
+   * borne par particule, résolue en une passe, ne laisse pas s'étirer ce qui
+   * pend, quelle que soit la vitesse — et ne gêne en rien ce qui se plie.
+   */
+  private tether: Int32Array
+  private tetherLen: Float32Array
+  /**
+   * Épaisseur propre de chaque particule, ajoutée au rayon des obstacles et au
+   * sol : un cadenas, un pompon, une aiguille au bout d'une chaîne ont un
+   * volume que la particule seule ne porte pas.
+   */
+  pad: number[] | null = null
+  /** Pas du dernier sous-pas : la vitesse implicite de Verlet s'y rapporte. */
+  private lastH = STEP
 
   constructor(
     rest: THREE.Vector3[],
@@ -89,6 +156,8 @@ export class ClothSheet {
     /** Referme la nappe sur elle-même en long : le dernier rang est lié au
      *  premier. Sans ça une boucle — un collier — se fend à sa couture. */
     loop = false,
+    /** Retenue à partir de laquelle une particule sert d'attache (`tether`). */
+    holdFrom = 0.25,
   ) {
     this.rest = rest.map((v) => v.clone())
     this.points = rest.map((v) => v.clone())
@@ -135,6 +204,46 @@ export class ClothSheet {
         link(at(rows - 1, j), at(1, j), stiff.bend)
       }
     }
+
+    // Attaches : on remonte chaque colonne des deux côtés jusqu'à la première
+    // particule retenue, en cumulant les longueurs au repos — la longueur de
+    // tissu, pas la corde, sinon un pan courbé au repos ne pourrait plus se
+    // déplier.
+    const n = rows * cols
+    this.tether = new Int32Array(n).fill(-1)
+    this.tetherLen = new Float32Array(n)
+    for (let j = 0; j < cols; j++) {
+      for (let i = 0; i < rows; i++) {
+        const k = at(i, j)
+        if (pin[k] >= holdFrom) continue
+        let best = -1
+        let bestLen = Infinity
+        for (const dir of [-1, 1]) {
+          let len = 0
+          let r = i
+          for (let s = 1; s < rows; s++) {
+            let nr = r + dir
+            if (nr < 0 || nr >= rows) {
+              if (!loop) break
+              nr = (nr + rows) % rows
+            }
+            len += this.rest[at(r, j)].distanceTo(this.rest[at(nr, j)])
+            r = nr
+            if (pin[at(r, j)] >= holdFrom) {
+              if (len < bestLen) {
+                bestLen = len
+                best = at(r, j)
+              }
+              break
+            }
+          }
+        }
+        if (best >= 0) {
+          this.tether[k] = best
+          this.tetherLen[k] = bestLen
+        }
+      }
+    }
   }
 
   step(
@@ -152,38 +261,101 @@ export class ClothSheet {
     accel?: THREE.Vector3,
     extra?: ClothExtras,
   ) {
-    // Pas borné : une frame longue (onglet en arrière-plan) ferait exploser
-    // l'intégration.
-    const h = Math.min(dt, 1 / 45)
-    const g = cfg.gravity * h * h * 60
-    const n = this.points.length
-
-    const carry = extra?.carry
-    if (carry) {
-      const k = extra?.carryK ?? 1
-      for (let i = 0; i < n; i++) {
-        const w = k * (1 - this.pin[i])
-        if (w <= 0) continue
-        this.points[i].lerp(_c.copy(this.points[i]).applyMatrix4(carry), w)
-        this.prev[i].lerp(_c.copy(this.prev[i]).applyMatrix4(carry), w)
-      }
+    // Sous-pas d'au plus 1/60 s ; au-delà de trois par image (onglet en
+    // arrière-plan, rendu lent) la simulation ralentit au lieu d'exploser.
+    // Un sous-pas peut dépasser 1/60 s de 20 % : une image de 17 ms ne doit
+    // pas coûter deux passes complètes.
+    const span = Math.max(0, dt)
+    const carry = extra?.carry ?? null
+    if (span <= 0) {
+      if (carry) this.transport(carry, extra?.carryK ?? 1, 1)
+      return
     }
+    let sub = Math.min(MAX_SUB, Math.max(1, Math.ceil(span / (STEP * 1.2))))
+    // Repère qui bouge vite (salto, K.O., glissade) : le transport de l'image
+    // est réparti sur plus de sous-pas (voir `CARRY_MOVE`).
+    let parts = 1
+    if (carry) {
+      carry.decompose(_tv, _tq, _ts)
+      const angle = 2 * Math.acos(Math.min(1, Math.abs(_tq.w)))
+      parts = Math.min(MAX_CARRY, Math.max(1, Math.ceil((_tv.length() + angle) / CARRY_MOVE)))
+      sub = Math.max(sub, parts)
+    }
+    const h = Math.min(span / sub, STEP * 1.2)
+    _mPrev.identity()
+    for (let s = 0; s < sub; s++) {
+      if (carry) {
+        if (parts === 1) {
+          if (s === 0) this.transport(carry, extra?.carryK ?? 1, 1)
+        } else {
+          // Part du transport : de la fraction s/n à (s+1)/n, la dernière
+          // exactement égale au transport de l'image (écrasement compris).
+          const u = (s + 1) / sub
+          if (s === sub - 1) _mCur.copy(carry)
+          else _mCur.compose(_c.copy(_tv).multiplyScalar(u), _qi.identity().slerp(_tq, u), _push.copy(_one).lerp(_ts, u))
+          _mPart.multiplyMatrices(_mCur, _mInv.copy(_mPrev).invert())
+          this.transport(_mPart, extra?.carryK ?? 1, sub)
+          _mPrev.copy(_mCur)
+        }
+      }
+      this.substep(h, cfg, colliders, gravityDir, accel, extra)
+    }
+  }
+
+  /**
+   * Transport du repère sur les particules libres (voir `ClothExtras.carry`),
+   * en `parts` morceaux : la part de chacun est ajustée pour que leur produit
+   * redonne celle d'un transport d'un bloc.
+   */
+  private transport(m: THREE.Matrix4, k: number, parts: number) {
+    const n = this.points.length
+    for (let i = 0; i < n; i++) {
+      let w = k * (1 - this.pin[i])
+      if (w <= 0) continue
+      if (parts > 1 && w < 1) w = 1 - Math.pow(1 - w, 1 / parts)
+      this.points[i].lerp(_c.copy(this.points[i]).applyMatrix4(m), w)
+      this.prev[i].lerp(_c.copy(this.prev[i]).applyMatrix4(m), w)
+    }
+  }
+
+  private substep(
+    h: number,
+    cfg: ClothConfig,
+    colliders: readonly Collider[],
+    gravityDir: THREE.Vector3,
+    accel?: THREE.Vector3,
+    extra?: ClothExtras,
+  ) {
+    const n = this.points.length
+    const r = h / STEP
+    const g = cfg.gravity * h * h * 60
+    // Taux ramenés au pas réel : réglés par image à 60 i/s.
+    const keep = Math.pow(1 - cfg.damping, r)
+    // Verlet à pas variable : l'écart à l'image précédente couvrait `lastH`.
+    const scale = keep * (h / this.lastH)
+    this.lastH = h
+    const lift = extra?.lift ?? 0
+    const lift2 = lift > 0 ? 1 / (lift * lift * h * h) : 0
     const floor = extra?.floor
 
     for (let i = 0; i < n; i++) {
       const p = this.points[i]
       const q = this.prev[i]
-      _d.subVectors(p, q).multiplyScalar(1 - cfg.damping)
+      _d.subVectors(p, q).multiplyScalar(scale)
       q.copy(p)
       p.add(_d)
-      p.addScaledVector(gravityDir, g)
+      // Portance : le poids fond avec le carré de la vitesse (voir `lift`).
+      const w = lift2 > 0 ? 1 / (1 + _d.lengthSq() * lift2) : 1
+      p.addScaledVector(gravityDir, g * w)
       // Force d'inertie : le repère accélère, le tissu libre reste en arrière.
       if (accel) p.addScaledVector(accel, -h * h * (1 - this.pin[i]))
 
       // Rappel vers la pose de repos, seulement là où le tissu doit tenir.
-      if (this.pin[i] > 0) p.lerp(this.rest[i], this.pin[i] * 0.4)
+      const pin = this.pin[i]
+      if (pin > 0) p.lerp(this.rest[i], r === 1 ? pin * 0.4 : 1 - Math.pow(1 - pin * 0.4, r))
     }
 
+    const pad = this.pad
     for (let k = 0; k < cfg.iterations; k++) {
       for (let l = 0; l < this.links.length; l++) {
         const c = this.links[l]
@@ -203,18 +375,32 @@ export class ClothSheet {
         b.addScaledVector(_d, (-diff * wb) / total)
       }
 
+      // Attaches longues : rien ne s'éloigne de son attache au-delà de la
+      // longueur de tissu qui les sépare (voir `tether`).
+      for (let i = 0; i < n; i++) {
+        const a = this.tether[i]
+        if (a < 0) continue
+        const p = this.points[i]
+        _d.subVectors(p, this.points[a])
+        const len = _d.length()
+        const max = this.tetherLen[i]
+        if (len > max) p.copy(this.points[a]).addScaledVector(_d, max / len)
+      }
+
       // Collisions : on repousse à la surface de chaque sphère.
       for (let i = 0; i < n; i++) {
         const p = this.points[i]
+        const extraR = pad ? pad[i] : 0
         for (let c = 0; c < colliders.length; c++) {
           const s = colliders[c]
+          const rad = s.radius + extraR
           _push.subVectors(p, s.center)
           const d = _push.length()
-          if (d > 1e-6 && d < s.radius) p.copy(s.center).addScaledVector(_push, s.radius / d)
+          if (d > 1e-6 && d < rad) p.copy(s.center).addScaledVector(_push, rad / d)
         }
         // Sol : on remonte, et le frottement mange la glissade.
         if (floor) {
-          const under = floor.d - floor.n.dot(p)
+          const under = floor.d + extraR - floor.n.dot(p)
           if (under > 0) {
             p.addScaledVector(floor.n, under)
             this.prev[i].lerp(p, 0.35)

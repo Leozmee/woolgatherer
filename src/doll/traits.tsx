@@ -4,7 +4,7 @@ import { useFrame } from '@react-three/fiber'
 import { FrameCarry, followLimbs, localFloor, useRigBones } from './rig'
 import { CrossStitch, Thread, Pin, jitterColor, pinColor } from './parts'
 import { armClearance, armSpheres, bodyRadius, bodySpheres, onTorso, onHeadPolar } from './surface'
-import { ClothSheet } from '../core/cloth'
+import { ClothSheet, type ClothExtras } from '../core/cloth'
 import { Scarf, scarfMetrics } from './scarf'
 import {
   buildPatches,
@@ -69,10 +69,26 @@ export const TRAITS: TraitDef[] = [
  * suivent le coup avec retard, balancent, reviennent cogner le ventre.
  */
 const HEFT = 1.75
-/** Longueur de la chaîne pendante, en fraction de la hauteur du torse. */
-const HANG = 0.42
+/**
+ * Hauteur visée pour le centre du cadenas, en demi-hauteurs de torse depuis
+ * son milieu (+1 en haut, −1 en bas) : le haut du ventre, au-dessus du
+ * nombril (−0,4).
+ *
+ * Une longueur de chaîne en fraction du torse ignorait le cadenas lui-même,
+ * gros comme une main, et la plongée du collier devant : mesuré sur cinq
+ * planches, son centre pendait entre −0,92 et −1,55 — au bas du ventre, voire
+ * sous le torse. Le nombre de maillons se déduit donc de là où il doit finir.
+ */
+const LOCK_AT = -0.3
 
-function Necklace({ p, seed }: { p: DollParams; seed: number }) {
+/**
+ * Montage du collier : cotes des maillons, tour, chaîne pendante et cadenas.
+ *
+ * Fonction pure de la poupée, hors du composant : les mesures (pénétration du
+ * cadenas dans le ventre, balancement pendant une attaque) la rejouent telle
+ * quelle, sans rendu.
+ */
+export function necklaceRig(p: DollParams, seed: number) {
   const rnd = mulberry32(seed + 4903)
   // Rayon en travers de la chaîne, allongement du maillon le long d'elle, et
   // grosseur du fil.
@@ -86,7 +102,7 @@ function Necklace({ p, seed }: { p: DollParams; seed: number }) {
   const [metalBase, roughness] = CHAIN_METALS[Math.floor(rnd() * CHAIN_METALS.length)]
   const metal = jitterColor(metalBase, rnd, 0.07)
 
-  const setup = useMemo(() => {
+  const setup = (() => {
     // La chaîne passe **par-dessus la boule d'épaule**, pas au-dessus d'elle.
     //
     // La peluche n'a pratiquement pas de cou : entre le bas du crâne et le
@@ -152,55 +168,87 @@ function Necklace({ p, seed }: { p: DollParams; seed: number }) {
     }
 
     return { rest, pin, roll, tilt, count }
-  }, [p, seed, across, tube, half])
+  })()
+
+  /** Cadenas : taille (gros comme la main d'une poupée), chute sous le dernier
+   *  maillon jusqu'au centre de son corps, et demi-épaisseur face au ventre. */
+  const L = across * 3.2
+  const lockDrop = L * 0.72
+  const lockPad = L * 0.45 * 0.45 + tube
 
   /**
    * Chaîne pendante : accrochée au point le plus bas du tour, devant, elle
    * descend contre la poitrine. Au repos, chaque maillon est posé au rayon du
    * corps à sa hauteur, un peu en avant.
+   *
+   * Le **cadenas est une particule** de plus au bout, avec sa propre épaisseur
+   * (`pad`). Accroché au dernier maillon sans en être une, il pendait à
+   * l'aplomb de la chaîne quelle que soit la forme du corps : là où le ventre
+   * bombe sous la poitrine, son corps entrait dedans.
    */
-  const hang = useMemo(() => {
+  const hang = (() => {
     const top = Math.round(setup.count / 4)
     const from = setup.rest[top]
     const pitch = half * 1.2
-    // Compte déduit de la longueur voulue : fixé, sept gros maillons
-    // faisaient descendre le cadenas sous les pieds.
-    const links = Math.max(2, Math.min(6, Math.round((p.shape.torsoHeight * HANG) / pitch)))
+    // Compte déduit de la hauteur visée (voir `LOCK_AT`), au moins un maillon
+    // entre le tour et l'anse : sans lui le cadenas pend au collier même et
+    // ne balance plus.
+    const target = -p.shape.torsoHeight * 0.44 + LOCK_AT * p.shape.torsoHeight * 0.5
+    const links = Math.max(1, Math.min(6, Math.round((from.y - lockDrop - target) / pitch)))
     const rest: THREE.Vector3[] = []
     for (let j = 0; j <= links; j++) {
       const y = from.y - j * pitch
       const z = Math.max(from.z, bodyRadius(p, y) + tube * 2 + across)
       rest.push(new THREE.Vector3(from.x, y, j === 0 ? from.z : z))
     }
+    const last = rest[links]
+    const ly = last.y - lockDrop
+    rest.push(new THREE.Vector3(last.x, ly, Math.max(last.z, bodyRadius(p, ly) + lockPad)))
     const pin = rest.map((_, j) => (j === 0 ? 1 : 0))
-    return { top, rest, pin, links }
-  }, [setup, half, tube, across, p])
+    const pad = rest.map((_, j) => (j === links + 1 ? lockPad : 0))
+    return { top, rest, pin, pad, links }
+  })()
 
-  const chain = useMemo(
-    () =>
-      new ClothSheet(
-        setup.rest,
-        setup.pin,
-        setup.count,
-        1,
-        { shear: 0, bend: 0.05, slack: 0 },
-        seed,
-        true,
-      ),
-    [setup, seed],
-  )
-  const drop = useMemo(
-    () => new ClothSheet(hang.rest, hang.pin, hang.rest.length, 1, { shear: 0, bend: 0.02, slack: 0 }, seed + 1),
-    [hang, seed],
-  )
+  const colliders = [
+    ...bodySpheres(p, p.shape.headRadius * 0.2, -p.shape.torsoHeight * 0.6, tube * 0.6),
+    ...armSpheres(p, tube * 0.6),
+  ]
 
-  const colliders = useMemo(
-    () => [
-      ...bodySpheres(p, p.shape.headRadius * 0.2, -p.shape.torsoHeight * 0.6, tube * 0.6),
-      ...armSpheres(p, tube * 0.6),
-    ],
-    [p, tube],
+  const chain = new ClothSheet(setup.rest, setup.pin, setup.count, 1, { shear: 0, bend: 0.05, slack: 0 }, seed, true)
+  const drop = new ClothSheet(hang.rest, hang.pin, hang.rest.length, 1, { shear: 0, bend: 0.02, slack: 0 }, seed + 1)
+  drop.pad = hang.pad
+
+  return { across, elong, tube, half, metal, roughness, setup, hang, colliders, chain, drop, L }
+}
+
+/**
+ * Un pas du collier : le tour, puis la chaîne pendante accrochée à lui.
+ *
+ * Lourd : le tour pèse et balance, la chaîne pendante plus encore, peu amortie
+ * — un pendule, pas une ficelle.
+ */
+export function stepNecklace(
+  n: ReturnType<typeof necklaceRig>,
+  p: DollParams,
+  dt: number,
+  gravity: THREE.Vector3,
+  extra: ClothExtras,
+) {
+  n.chain.step(
+    dt,
+    { gravity: Math.max(p.chain.weight, 0.4), damping: Math.min(p.chain.drape, 0.2), iterations: 10 },
+    n.colliders,
+    gravity,
+    undefined,
+    extra,
   )
+  n.drop.anchor(0, n.chain.points[n.hang.top])
+  n.drop.step(dt, { gravity: 0.9, damping: 0.05, iterations: 8 }, n.colliders, gravity, undefined, extra)
+}
+
+function Necklace({ p, seed }: { p: DollParams; seed: number }) {
+  const rig0 = useMemo(() => necklaceRig(p, seed), [p, seed])
+  const { across, elong, tube, metal, roughness, setup, hang, colliders, chain, drop, L } = rig0
 
   /**
    * Tous les maillons en **un seul dessin** : un maillage par maillon coûtait
@@ -239,32 +287,18 @@ function Necklace({ p, seed }: { p: DollParams; seed: number }) {
   const rig = useRigBones()
   const carry = useMemo(() => new FrameCarry(), [])
   const floor = useMemo(() => ({ n: new THREE.Vector3(0, 1, 0), d: -1e9 }), [])
-  useFrame((_, dt) => {
-    const { quat, gravity, tan, radial, x, y, z, m, o } = scratch
-    // Obstacles des bras sur la pose animée (en fin de liste).
-    if (rig) followLimbs(rig, group.current, colliders, colliders.length - 8, 'arm', p.limbs.armLength)
-    group.current.getWorldQuaternion(quat)
-    gravity.set(0, -1, 0).applyQuaternion(quat.invert())
-    const delta = carry.update(group.current)
-    if (rig) localFloor(group.current, rig.floorY + tube, floor)
-    const extra = { carry: delta, carryK: 1, floor: rig ? floor : null }
-    // Lourd : le tour pèse et balance, la chaîne pendante plus encore, peu
-    // amortie — un pendule, pas une ficelle.
-    chain.step(
-      dt,
-      { gravity: Math.max(p.chain.weight, 0.4), damping: Math.min(p.chain.drape, 0.2), iterations: 10 },
-      colliders,
-      gravity,
-      undefined,
-      extra,
-    )
-    drop.anchor(0, chain.points[hang.top])
-    drop.step(dt, { gravity: 0.9, damping: 0.05, iterations: 8 }, colliders, gravity, undefined, extra)
+  // Options du pas, réécrites sur place à chaque image : pas d'allocation.
+  const extra = useMemo<ClothExtras>(() => ({ carry: null, carryK: 1, floor: null }), [])
 
-    // Orientation d'un maillon : tangente des voisins simulés, plans
-    // alternés à ±45° de la radiale.
-    const place = (k: number, pts: readonly THREE.Vector3[], i: number, loop: boolean, roll: number, tilt: number) => {
-      const n = pts.length
+  /**
+   * Orientation d'un maillon : tangente des voisins simulés, plans alternés à
+   * ±45° de la radiale. `count` : maillons simulés de la chaîne (le cadenas
+   * de la chaîne pendante n'en est pas un).
+   */
+  const place = useMemo(() => {
+    const { tan, radial, x, y, z, m, o } = scratch
+    return (k: number, pts: readonly THREE.Vector3[], count: number, i: number, loop: boolean, roll: number, tilt: number) => {
+      const n = count
       const a = loop ? (i + n - 1) % n : Math.max(0, i - 1)
       const b = loop ? (i + 1) % n : Math.min(n - 1, i + 1)
       tan.subVectors(pts[b], pts[a])
@@ -283,18 +317,32 @@ function Necklace({ p, seed }: { p: DollParams; seed: number }) {
       o.updateMatrix()
       links.setMatrixAt(k, o.matrix)
     }
+  }, [scratch, links, elong])
+
+  useFrame((_, dt) => {
+    const { quat, gravity, tan, radial, x, y, z, m } = scratch
+    // Obstacles des bras sur la pose animée (en fin de liste).
+    if (rig) followLimbs(rig, group.current, colliders, colliders.length - 8, 'arm', p.limbs.armLength)
+    group.current.getWorldQuaternion(quat)
+    gravity.set(0, -1, 0).applyQuaternion(quat.invert())
+    extra.carry = carry.update(group.current)
+    if (rig) localFloor(group.current, rig.floorY + tube, floor)
+    extra.floor = rig ? floor : null
+    stepNecklace(rig0, p, dt, gravity, extra)
+
     const n = setup.count
-    for (let i = 0; i < n; i++) place(i, chain.points, i, true, setup.roll[i], setup.tilt[i])
+    for (let i = 0; i < n; i++) place(i, chain.points, n, i, true, setup.roll[i], setup.tilt[i])
     // La chaîne pendante : le maillon 0 est l'accroche, déjà dessinée.
     const hl = hang.links
     for (let j = 1; j <= hl; j++) {
-      place(n + j - 1, drop.points, j, false, (j % 2 ? 1 : -1) * Math.PI * 0.25, 0)
+      place(n + j - 1, drop.points, hl + 1, j, false, (j % 2 ? 1 : -1) * Math.PI * 0.25, 0)
     }
     links.instanceMatrix.needsUpdate = true
 
-    // Cadenas au bout : pendu dans l'axe du dernier maillon, face dehors.
+    // Cadenas au bout : son anse au dernier maillon, son corps sur sa propre
+    // particule — il pend dans leur axe, face dehors.
     const last = drop.points[hl]
-    tan.subVectors(last, drop.points[hl - 1]).normalize()
+    tan.subVectors(drop.points[hl + 1], last).normalize()
     radial.set(last.x, 0, last.z).normalize()
     y.copy(tan).negate()
     z.copy(radial).addScaledVector(y, -radial.dot(y)).normalize()
@@ -306,7 +354,6 @@ function Necklace({ p, seed }: { p: DollParams; seed: number }) {
 
   // Cadenas : anse en demi-tore, corps bombé, trou de serrure. Proportionné au
   // maillon — un cadenas de poupée, gros comme sa main.
-  const L = across * 3.2
   return (
     <group ref={group}>
       <primitive object={links} />

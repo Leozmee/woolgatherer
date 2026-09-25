@@ -1,24 +1,23 @@
 import * as THREE from 'three'
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { FrameCarry, followLimbs, localFloor, useRigBones } from './rig'
-import { dollLayout } from './layout'
+import { FrameCarry, followLimbs, localFloor, useRigBones } from '../doll/rig'
 import { mulberry32 } from '../core/rand'
-import { ClothSheet, type ClothExtras } from '../core/cloth'
+import { ClothSheet } from './cloth_old'
 import { makeKnitMaps } from '../core/knit'
 import { useDisposable } from '../core/useDisposable'
 import type { Collider } from '../core/springBone'
-import { fringeGeometry, writeFringe, type FringeEnd } from './fringe'
-import { sheetGeometry, writeSheet, writeSheetUv } from './sheet'
-import { makeFiberTexture, makeShellUniforms, shellInstances, shellShader } from './fuzz'
-import type { DollParams } from './params'
+import { fringeGeometry, writeFringe, type FringeEnd } from '../doll/fringe'
+import { sheetGeometry, writeSheet, writeSheetUv } from '../doll/sheet'
+import { makeFiberTexture, makeShellUniforms, shellInstances, shellShader } from '../doll/fuzz'
+import type { DollParams } from '../doll/params'
 import {
   armClearance,
   armSpheres,
   bodyRadius as bodyProfile,
   bodySpheres,
   legSpheres,
-} from './surface'
+} from '../doll/surface'
 
 /**
  * Rangs de la nappe, **du bout avant au bout arrière**.
@@ -30,9 +29,9 @@ import {
  */
 export const FRONT_PTS = 18
 export const WRAP_PTS = 26
-// Pan arrière très long (voir `TRAIL`) : un rang tous les cinq centimètres
-// environ, sinon il se plie en segments raides quand il flotte.
-export const BACK_PTS = 36
+// Pan arrière très long (voir `TAIL`) : plus de rangs, sinon il se plie en
+// segments raides quand il flotte.
+export const BACK_PTS = 30
 export const ROWS = FRONT_PTS + WRAP_PTS + BACK_PTS
 
 /**
@@ -82,38 +81,15 @@ const SCARF_FUZZ = 0.45
  * suit donc les réglages d'épaisseur et de relief, sinon les deux dérivent.
  */
 /**
- * **Signature de silhouette.** Le pan arrière descend le dos **jusqu'au sol**,
- * puis traîne derrière la poupée sur une longueur tirée de la graine : il se
- * soulève dans la course, flotte dans les coups — il fait partie de
- * l'animation. Le pan avant, lui, s'allonge à peine : c'est le dos qui porte la
- * ligne.
- *
- * La longueur se **déduit de la hauteur réelle** du tour de cou au-dessus du
- * sol, plus la traîne. Exprimée en multiple d'une écharpe ordinaire (×2,7
- * d'abord), elle dépendait de la morphologie : le pan d'un costaud s'arrêtait
- * à 0,24 du sol, celui d'un échalas y posait à peine deux rangs.
+ * **Signature de silhouette.** Le pan arrière est trois fois plus long que
+ * celui d'une écharpe ordinaire : il traîne derrière la poupée, se soulève
+ * dans la course, fouette dans les coups — il fait partie de l'animation. Le
+ * pan avant, lui, s'allonge à peine : c'est le dos qui porte la ligne.
  */
-const TRAIL = { floor: 0.4, spread: 0.16, front: 1.15 }
+const TAIL = { back: 2.7, front: 1.15 }
 
-/**
- * Réglages d'un pas de l'écharpe.
- *
- * `carryK` : part d'inertie « monde » des pans libres (voir
- * `ClothExtras.carry`) ; le reste suit le corps, ce qui absorbe les demi-tours
- * instantanés du combattant. `lift` : vitesse à laquelle le poids est divisé
- * par deux — à la marche le pan pèse encore aux trois quarts et traîne ; en
- * course, en dash, dans le fouet d'une attaque, il ne pèse presque plus et
- * flotte derrière.
- */
-export function scarfPhysics(p: DollParams) {
-  return {
-    gravity: p.scarf.weight,
-    damping: p.scarf.drape,
-    iterations: 9,
-    carryK: 0.92,
-    lift: 4,
-  }
-}
+/** Part d'inertie « monde » des pans libres (voir `ClothExtras.carry`). */
+const CARRY = 0.92
 
 const clearOf = (p: DollParams) => (p.scarf.thickness * (1 + p.scarf.ribDepth)) / 2
 
@@ -185,20 +161,14 @@ export function scarfMetrics(p: DollParams) {
   // haut des épaules — qui la portent.
   const chin = -p.shape.headRadius * p.shape.headSquash * 0.22
   const localY = chin - band * p.scarf.drop
-  // Sol dans le repère de l'écharpe : bas de la poupée, moins le cou et la
-  // hauteur de l'écharpe sous lui (voir `dollLayout`).
-  const L = dollLayout(p)
-  const floor = L.floorY + L.centerY - L.neckY - localY
 
   return {
     r,
     band,
     localY,
-    floor,
     torsoY: p.shape.torsoHeight * 0.44 + localY,
-    front: p.shape.torsoHeight * (0.55 + rnd() * 0.3) * p.scarf.front * TRAIL.front,
-    /** Longueur couchée au sol derrière la poupée, au repos. */
-    trail: L.height * (TRAIL.floor + (rnd() - 0.5) * TRAIL.spread) * (p.scarf.back / 0.76),
+    front: p.shape.torsoHeight * (0.55 + rnd() * 0.3) * p.scarf.front * TAIL.front,
+    back: p.shape.torsoHeight * (0.56 + rnd() * 0.3) * p.scarf.back * TAIL.back,
     /**
      * Sens d'enroulement, et côté du pan avant — les deux vont ensemble.
      *
@@ -223,7 +193,6 @@ type Metrics = ReturnType<typeof scarfMetrics>
 const bodyRadius = (p: DollParams, m: Metrics, y: number) => bodyProfile(p, y + m.localY)
 
 const _h = new THREE.Vector3()
-const UP = new THREE.Vector3(0, 1, 0)
 
 /** Hermite cubique : passe par les deux points **avec** les deux tangentes. */
 function hermite(
@@ -447,62 +416,17 @@ function centerline(p: DollParams, m: Metrics) {
 
   // Pan arrière, du cou vers le bout — il part lui aussi de la couche
   // intérieure, et ressort donc de dessous le tour.
-  //
-  // Deux tronçons : il **descend le dos** jusqu'au talon, puis se **couche au
-  // sol** derrière la poupée en s'incurvant vers son côté. Au repos on le voit
-  // donc de dos et de profil sur toute la hauteur, et de face sa traîne dépasse
-  // derrière un pied. Le sol retient la partie couchée (frottement) : sans
-  // traîne posée d'avance, le pan pendait droit au milieu du dos, caché par le
-  // corps, et finissait en tas entre les talons.
   const backJoin = wrapAt(1)
-  const lie = m.floor + p.shape.headRadius * 0.02 + m.band * p.scarf.thickness
-  const heel = tailEnd(-dir * 0.35, -1, lie)
-  // Le talon est derrière les jambes, pas au ras du plancher de rayon.
-  heel.multiplyScalar(1.25).setY(lie)
-  const backChord = backJoin.distanceTo(heel)
+  // Long, il descendrait au sol le long du dos : son bout s'écarte en arrière.
+  const backEnd = tailEnd(-dir * 0.55, -0.85, -m.back * 0.8).add(new THREE.Vector3(0, 0, -m.back * 0.45))
+  const backChord = backJoin.distanceTo(backEnd)
   const backM0 = wrapTangent(1).multiplyScalar(backChord * 0.6)
-  const backM1 = new THREE.Vector3(heel.x, 0, heel.z).normalize().multiplyScalar(0.35).setY(-1)
-    .normalize().multiplyScalar(backChord * 0.9)
-  // Descente échantillonnée finement puis rééchantillonnée à pas constant :
-  // un paramètre d'Hermite uniforme serre les rangs dans les courbes.
-  const drop: THREE.Vector3[] = []
-  const dropArc: number[] = [0]
-  for (let k = 0; k <= 120; k++) {
-    drop.push(hermite(backJoin, backM0, heel, backM1, k / 120))
-    if (k > 0) dropArc.push(dropArc[k - 1] + drop[k].distanceTo(drop[k - 1]))
-  }
-  const dropLen = dropArc[120]
-  // Traîne : du talon, vers l'arrière, en arc qui s'ouvre vers le côté du pan.
-  const trailLen = Math.max(m.band, m.trail)
-  const total = dropLen + trailLen
-  const back0 = new THREE.Vector3(heel.x, 0, heel.z).normalize()
-  const sweep = -dir * 0.9
-  /** Rangs couchés au sol (pour l'orientation de la largeur, voir `restGrid`). */
-  const lying: number[] = []
-  let seg = 0
+  const backM1 = fall(-dir, -1).multiplyScalar(backChord * 0.75)
   for (let i = 1; i <= BACK_PTS; i++) {
-    const s = (i / BACK_PTS) * total
-    let q: THREE.Vector3
-    if (s <= dropLen) {
-      while (seg < 119 && dropArc[seg + 1] < s) seg++
-      const u = (s - dropArc[seg]) / Math.max(1e-9, dropArc[seg + 1] - dropArc[seg])
-      q = drop[seg].clone().lerp(drop[seg + 1], u)
-      lying.push(0)
-    } else {
-      // Arc de cercle : l'angle croît avec la longueur parcourue au sol.
-      const a = s - dropLen
-      const th = (sweep * a) / trailLen
-      const R = Math.abs(sweep) > 1e-6 ? trailLen / sweep : 0
-      const side = new THREE.Vector3(-back0.z, 0, back0.x)
-      q = heel.clone()
-        .addScaledVector(back0, R ? R * Math.sin(th) : a)
-        .addScaledVector(side, R ? R * (1 - Math.cos(th)) : 0)
-      lying.push(1)
-    }
+    const q = hermite(backJoin, backM0, backEnd, backM1, i / BACK_PTS)
     pts.push(tuckUnder(q, i))
     pin.push(0)
-    // Placage sur le dos seulement : la traîne n'a plus de corps à épouser.
-    hugAmt.push(Math.min(1, i / p.scarf.hug) * (1 - lying[i - 1]))
+    hugAmt.push(Math.min(1, i / p.scarf.hug))
   }
 
   // Transition longue de part et d'autre du tour de cou. Une frontière nette
@@ -516,16 +440,7 @@ function centerline(p: DollParams, m: Metrics) {
     if (j < pin.length) pin[j] = Math.max(pin[j], f)
   }
 
-  // Part « couchée » de chaque rang, adoucie sur quelques rangs autour du
-  // talon : la largeur y passe de la radiale à l'horizontale sans vriller.
-  const lieAmt = new Array<number>(FRONT_PTS + WRAP_PTS).fill(0).concat(lying)
-  const soft = lieAmt.map((_, i) => {
-    let s = 0
-    for (let k = -2; k <= 2; k++) s += lieAmt[Math.min(lieAmt.length - 1, Math.max(0, i + k))]
-    return s / 5
-  })
-
-  return { pts, pin, hugAmt, clear, lie: soft }
+  return { pts, pin, hugAmt, clear }
 }
 
 /**
@@ -537,7 +452,7 @@ function centerline(p: DollParams, m: Metrics) {
  * à écrire. Ensuite c'est la simulation qui l'oriente.
  */
 export function restGrid(p: DollParams, m: Metrics) {
-  const { pts, pin: rowPin, hugAmt, clear, lie } = centerline(p, m)
+  const { pts, pin: rowPin, hugAmt, clear } = centerline(p, m)
   const unit = knitUnit(p, m)
   const rest: THREE.Vector3[] = []
   const pin: number[] = []
@@ -566,9 +481,6 @@ export function restGrid(p: DollParams, m: Metrics) {
     radial.set(c.x, 0, c.z)
     if (radial.lengthSq() < 1e-8) radial.set(0, 0, 1)
     radial.normalize()
-    // Couchée, la bande se pose **à plat** : sa référence n'est plus la
-    // radiale (qui la mettrait sur la tranche) mais la verticale.
-    radial.multiplyScalar(1 - lie[i]).addScaledVector(UP, lie[i]).normalize()
 
     across.crossVectors(tan, radial)
     if (across.lengthSq() < 1e-8) across.set(1, 0, 0)
@@ -594,9 +506,7 @@ export function restGrid(p: DollParams, m: Metrics) {
     // vers le bras d'un côté et vers le vide de l'autre. Même piège pour le
     // roulé : `across × tan` suit la main du produit vectoriel, qui bascule avec
     // le sens d'enroulement. On le ramène donc toujours **vers l'extérieur**.
-    // Moins de vrille sur la traîne : au sol, elle mettrait la bande sur la
-    // tranche et le sol la rabattrait d'un coup.
-    across.applyAxisAngle(tan, m.side * free * p.scarf.twist * (1 - 0.7 * lie[i]) * Math.sin(arc * 1.5 + phase))
+    across.applyAxisAngle(tan, m.side * free * p.scarf.twist * Math.sin(arc * 1.5 + phase))
     nrm.crossVectors(across, tan).normalize()
     if (nrm.dot(radial) < 0) nrm.negate()
 
@@ -704,7 +614,7 @@ export function Scarf({ p, tint }: { p: DollParams; tint: string }) {
   }, [tint, p.wool.relief, p.wool.fuzz, p.seed, p.wool.mapSize])
 
   const colliders = useMemo(() => bodyColliders(p, m), [p, m.localY, m.band])
-  const grid = useMemo(() => restGrid(p, m), [p, m.band, m.front, m.trail, m.floor, m.side, m.localY])
+  const grid = useMemo(() => restGrid(p, m), [p, m.band, m.front, m.back, m.side, m.localY])
   const cloth = useMemo(
     () =>
       new ClothSheet(grid.rest, grid.pin, ROWS, COLS, {
@@ -869,9 +779,6 @@ export function Scarf({ p, tint }: { p: DollParams; tint: string }) {
   const rig = useRigBones()
   const carry = useMemo(() => new FrameCarry(), [])
   const floor = useMemo(() => ({ n: new THREE.Vector3(0, 1, 0), d: -1e9 }), [])
-  const phys = scarfPhysics(p)
-  // Options du pas, réécrites sur place à chaque image : pas d'allocation.
-  const extra = useMemo<ClothExtras>(() => ({ carry: null, carryK: 1, floor: null, lift: 0 }), [])
   useFrame((_, dt) => {
     // Obstacles des membres sur la pose **animée** : bras levé, le tissu doit
     // passer par-dessus, pas au travers. Bras puis jambes, en fin de liste.
@@ -885,12 +792,16 @@ export function Scarf({ p, tint }: { p: DollParams; tint: string }) {
     // Écharpe de peluche : presque rien ne pèse, et le tissu continue de bouger.
     // Les pans libres gardent leur élan dans le monde (rotations comprises) :
     // la torsion d'une attaque les fait voler. Le long pan se pose au sol.
-    extra.carry = carry.update(group.current)
-    extra.carryK = phys.carryK
-    extra.lift = phys.lift
+    const delta = carry.update(group.current)
     if (rig) localFloor(group.current, rig.floorY + p.shape.headRadius * 0.02, floor)
-    extra.floor = rig ? floor : null
-    cloth.step(dt, phys, colliders, gravityDir, undefined, extra)
+    cloth.step(
+      dt,
+      { gravity: p.scarf.weight, damping: p.scarf.drape, iterations: 9 },
+      colliders,
+      gravityDir,
+      undefined,
+      { carry: delta, carryK: CARRY, floor: rig ? floor : null },
+    )
     writeSheet(geo, cloth.points, ROWS, COLS, RCOLS, render.mid, m.band * p.scarf.thickness, render.rib, p.scarf.ribDepth)
 
     readEnd(fringe.ends[0], cloth.points, 0, 1)
@@ -910,7 +821,6 @@ export function Scarf({ p, tint }: { p: DollParams; tint: string }) {
       colliders,
       grid.unit,
       !uvDone.current,
-      extra.floor,
     )
     uvDone.current = true
   })
