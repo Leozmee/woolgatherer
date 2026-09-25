@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { useCallback, useEffect, useMemo, useRef, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type MutableRefObject, type ReactNode } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { makeKnitMaps, tiled, type KnitMaps } from '../core/knit'
 import { SpringBone } from '../core/springBone'
@@ -29,10 +29,12 @@ import { headWidth, onHeadPolar, onTorso } from './surface'
 import type { DollParams } from './params'
 import { RigContext, rigMetrics, type RigBones } from './rig'
 import { Dyn, Fighter } from './fighter'
-import { Stepper, bowShader, makeBow, type Bow } from './limbs'
+import { JOINT, Stepper, jointShader, makeJoint, solveLeg, updateJoint, type Joint } from './limbs'
 
 const UP = new THREE.Vector3(0, 1, 0)
 const DOWN = new THREE.Vector3(0, -1, 0)
+/** Avant du corps, et axe de l'écartement des membres. */
+const FWD = new THREE.Vector3(0, 0, 1)
 
 // ---------------------------------------------------------------- matière
 
@@ -75,13 +77,13 @@ function Fuzz({
   maps,
   p,
   holes,
-  bow,
+  joint,
 }: {
   geometry: THREE.BufferGeometry
   maps: WoolMaps
   p: DollParams
-  /** Courbure du membre porteur : le duvet la suit. */
-  bow?: Bow
+  /** Pli du membre porteur (genou, coude) : le duvet le suit. */
+  joint?: Joint
   /** Pièces cousues sous lesquelles retirer la laine — le torse seul en a. */
   holes?: PatchHoles
 }) {
@@ -102,13 +104,13 @@ function Fuzz({
   const compile = useMemo(() => {
     const hole = holes ? holeShader(uni) : null
     const shell = shellShader(shellUni)
-    const bend = bow ? bowShader(bow) : null
+    const bend = joint ? jointShader(joint) : null
     return (sh: THREE.WebGLProgramParametersWithUniforms) => {
       hole?.(sh)
       shell(sh)
       bend?.(sh)
     }
-  }, [uni, shellUni, holes, bow])
+  }, [uni, shellUni, holes, joint])
   useMemo(() => {
     uni.uHoleMask.value = holes?.mask ?? null
     uni.uHoleCount.value = holes?.count ?? 0
@@ -120,7 +122,7 @@ function Fuzz({
     <mesh geometry={shells} renderOrder={1}>
       <meshPhysicalMaterial
         onBeforeCompile={compile}
-        customProgramCacheKey={() => `fuzz${holes ? '-holes' : ''}${bow ? '-bow' : ''}`}
+        customProgramCacheKey={() => `fuzz${holes ? '-holes' : ''}${joint ? '-joint' : ''}`}
         map={maps[0]}
         alphaMap={maps[3]}
         // Hors de la profondeur : le contour d'encre la lit, et chaque
@@ -136,18 +138,18 @@ function Fuzz({
   )
 }
 
-function Wool({ maps, p, color, bow }: { maps: WoolMaps; p: DollParams; color?: string; bow?: Bow }) {
+function Wool({ maps, p, color, joint }: { maps: WoolMaps; p: DollParams; color?: string; joint?: Joint }) {
   // Réglable : c'est le premier levier contre le scintillement, avant même de
   // toucher à la texture.
   const normalScale = useMemo(
     () => new THREE.Vector2(p.wool.normalStrength, p.wool.normalStrength),
     [p.wool.normalStrength],
   )
-  // Membre qui se courbe (voir `limbs.ts`).
-  const compile = useMemo(() => (bow ? bowShader(bow) : undefined), [bow])
+  // Membre qui plie (voir `limbs.ts`).
+  const compile = useMemo(() => (joint ? jointShader(joint) : undefined), [joint])
   return (
     <meshPhysicalMaterial
-      {...(compile ? { onBeforeCompile: compile, customProgramCacheKey: () => 'wool-bow' } : {})}
+      {...(compile ? { onBeforeCompile: compile, customProgramCacheKey: () => 'wool-joint' } : {})}
       map={maps[0]}
       normalMap={maps[1]}
       // La carte de rugosité est ce qui casse le vernis uniforme : sans elle,
@@ -208,8 +210,13 @@ export function Doll({
   const body = useRef<THREE.Group>(null!)
   /** Étirement / écrasement du corps entier, pivot aux pieds. */
   const squash = useRef<THREE.Group>(null!)
-  /** Jambes : fût étirable et pied, repositionnés par l'ancrage au sol. */
-  const legStretch = useRef<Record<number, THREE.Group | null>>({})
+  /**
+   * Moitié basse des membres (voir `limbs.ts`) : `lowerPose` porte l'angle du
+   * coude ou du genou, `lowerSpring` son ressort — l'avant-bras arrive après
+   * le bras. Le pied se replace quand la jambe s'étire.
+   */
+  const lowerPose = useRef<Record<string, THREE.Group | null>>({})
+  const lowerSpring = useRef<Record<string, THREE.Group | null>>({})
   const legFoot = useRef<Record<number, THREE.Group | null>>({})
   /** Arme, orientée chaque image depuis la main. */
   const weaponRef = useRef<THREE.Group>(null)
@@ -508,11 +515,11 @@ export function Doll({
   const weaponLength = metrics.height * 0.92
   /** Pointe de l'arme en repère monde, avec son inertie : elle est lourde. */
   const weaponTip = useMemo(() => ({ dyn: new Dyn(3, 4.2, 0.55, 0.2), ready: false }), [])
-  /** Courbure de chaque membre (voir `limbs.ts`). */
-  const bows = useMemo(
+  /** Pli de chaque membre (voir `limbs.ts`). */
+  const joints = useMemo(
     () => ({
-      arm: { [-1]: makeBow(lb.armLength), 1: makeBow(lb.armLength) } as Record<number, Bow>,
-      leg: { [-1]: makeBow(lb.legLength), 1: makeBow(lb.legLength) } as Record<number, Bow>,
+      arm: { [-1]: makeJoint(lb.armLength), 1: makeJoint(lb.armLength) } as Record<number, Joint>,
+      leg: { [-1]: makeJoint(lb.legLength), 1: makeJoint(lb.legLength) } as Record<number, Joint>,
     }),
     [lb.armLength, lb.legLength],
   )
@@ -530,7 +537,15 @@ export function Doll({
       )
     return out
   }, [L, lb.legLength, lb.legRadius, lb.legSpread])
-  const bones = useMemo<RigBones>(() => ({ arm: { [-1]: null, 1: null }, leg: { [-1]: null, 1: null } }), [])
+  const bones = useMemo<RigBones>(
+    () => ({
+      arm: { [-1]: null, 1: null },
+      leg: { [-1]: null, 1: null },
+      forearm: { [-1]: null, 1: null },
+      shin: { [-1]: null, 1: null },
+    }),
+    [],
+  )
 
   /**
    * Priorité −1 : avant l'écharpe et le collier, qui relisent la position des
@@ -546,7 +561,7 @@ export function Doll({
     if (fighter.drive) {
       // Arène : la poupée se déplace et fait face à sa course ; la platine
       // tourne la caméra (voir `Rig`).
-      root.current.position.set(fighter.pos.x, 0, fighter.pos.z)
+      root.current.position.set(fighter.pos.x, fighter.pos.y, fighter.pos.z)
       root.current.rotation.set(0, fighter.facing, 0)
     } else {
       root.current.rotation.set(turntable.pitch, turntable.yaw, 0)
@@ -567,6 +582,14 @@ export function Doll({
     poseArmR.current.rotation.fromArray(pose.arm1)
     poseLegL.current.rotation.fromArray(pose['leg-1'])
     poseLegR.current.rotation.fromArray(pose.leg1)
+    // Plis : coude et genou du geste. Au sol, l'IK reprend les genoux.
+    for (const side of [-1, 1] as const) {
+      lowerPose.current[`arm${side}`]?.rotation.set(pose[side === -1 ? 'elbow-1' : 'elbow1'][0], 0, 0)
+      lowerPose.current[`leg${side}`]?.rotation.set(pose[side === -1 ? 'knee-1' : 'knee1'][0], 0, 0)
+      joints.leg[side].uStretch.value = 1
+      bones.forearm[side] = lowerSpring.current[`arm${side}`]
+      bones.shin[side] = lowerSpring.current[`leg${side}`]
+    }
     bones.arm[-1] = armL.current
     bones.arm[1] = armR.current
     bones.leg[-1] = legL.current
@@ -577,12 +600,17 @@ export function Doll({
     const ik = fighter.drive ? plantFeet(fighter.dt) : 0
 
     if (!springs.current || lastKey.current !== springKey) {
+      const low = (k: string, len: number) => new SpringBone(lowerSpring.current[k]!, len, DOWN)
       springs.current = {
         head: new SpringBone(headBone.current, s.headRadius * 0.9, UP),
         armL: new SpringBone(armL.current, lb.armLength, DOWN),
         armR: new SpringBone(armR.current, lb.armLength, DOWN),
         legL: new SpringBone(legL.current, lb.legLength, DOWN),
         legR: new SpringBone(legR.current, lb.legLength, DOWN),
+        foreL: low('arm-1', lb.armLength * (1 - JOINT)),
+        foreR: low('arm1', lb.armLength * (1 - JOINT)),
+        shinL: low('leg-1', lb.legLength * (1 - JOINT)),
+        shinR: low('leg1', lb.legLength * (1 - JOINT)),
       }
       lastKey.current = springKey
     }
@@ -611,25 +639,50 @@ export function Doll({
     springs.current.armR.update(dt, limbCfg)
     springs.current.legL.update(dt, limbCfg)
     springs.current.legR.update(dt, limbCfg)
-    // Pied planté : le ressort de la jambe s'efface, sinon il décollerait le
-    // pied que l'ancrage vient de poser.
+    // Avant-bras et tibias : plus mous que le haut du membre. C'est eux qui
+    // arrivent en dernier — le fouet d'un coup, le ballant d'un bras.
+    const lowCfg = { ...limbCfg, stiffness: limbCfg.stiffness * 0.7 }
+    springs.current.foreL.update(dt, lowCfg)
+    springs.current.foreR.update(dt, lowCfg)
+    springs.current.shinL.update(dt, lowCfg)
+    springs.current.shinR.update(dt, lowCfg)
+    // Pied planté : les ressorts de la jambe s'effacent, sinon ils
+    // décolleraient le pied que l'ancrage vient de poser.
     if (ik > 0) {
       legL.current.quaternion.slerp(_qId, ik)
       legR.current.quaternion.slerp(_qId, ik)
+      lowerSpring.current['leg-1']!.quaternion.slerp(_qId, ik)
+      lowerSpring.current.leg1!.quaternion.slerp(_qId, ik)
     }
-    bendArm(armL.current, -1)
-    bendArm(armR.current, 1)
+    for (const side of [-1, 1] as const) {
+      for (const kind of ['arm', 'leg'] as const) {
+        const j = joints[kind][side]
+        const lp = lowerPose.current[`${kind}${side}`]
+        const ls = lowerSpring.current[`${kind}${side}`]
+        if (!lp || !ls) continue
+        if (kind === 'leg') {
+          // Jambe étirée (au-delà de sa portée) : genou et pied descendent.
+          const st = j.uStretch.value
+          lp.position.y = -lb.legLength * JOINT * st
+          const foot = legFoot.current[side]
+          if (foot) foot.position.y = -lb.legLength * (1 - JOINT) * st - lb.legRadius * 0.3
+        }
+        updateJoint(j, lp, ls)
+      }
+    }
 
     if (weaponRef.current) aimWeapon(weaponRef.current)
     // Atelier : de quoi mesurer le ressenti (voir les audits de CLAUDE.md).
     if (import.meta.env.DEV && fighter.drive)
-      Object.assign(window, { __doll: { head: headBone.current, hips: hips.current, bows, squash: squash.current } })
+      Object.assign(window, { __doll: { head: headBone.current, hips: hips.current, joints, squash: squash.current } })
   }, -1)
 
   /**
-   * Ancrage au sol : pas procéduraux (`Stepper`), puis chaque jambe se
-   * réoriente vers son pied, s'étire ou se tasse pour l'atteindre, et plie
-   * comme un genou de tissu quand elle est tassée. Renvoie la part d'ancrage.
+   * Ancrage au sol : pas procéduraux (`Stepper`), puis chaque jambe rejoint
+   * son pied par IK à deux segments (`solveLeg`), **dans le repère de la
+   * hanche** — écrasement compris : le pied tombe pile sur sa place même quand
+   * le corps se tasse. Le genou part devant ; au-delà de la portée, le tissu
+   * s'étire un peu. Renvoie la part d'ancrage.
    */
   const plantFeet = (dt: number) => {
     root.current.getWorldPosition(_rootW)
@@ -647,52 +700,34 @@ export function Doll({
       splay: Math.sin(lb.legSpread) * (lb.legLength + lb.legRadius * 0.3),
       grounded: fighter.grounded,
       legLength: lb.legLength,
-      onLand: (side, speed, dur) => fighter.land(speed, side, dur),
+      onLand: (side, speed, dur) => fighter.land(speed, side, dur, stepper.feet[side].pos),
     })
     const w = stepper.weight
     if (import.meta.env.DEV) Object.assign(window, { __stepper: stepper, __legK: _legK })
-    const reachRest = lb.legLength + lb.legRadius * 0.3
+    if (w < 1e-3) return 0
+    const foot = lb.legRadius * 0.3
     for (const side of [-1, 1] as const) {
       const pose = side === -1 ? poseLegL.current : poseLegR.current
-      const stretch = legStretch.current[side]
-      const foot = legFoot.current[side]
-      const bow = bows.leg[side].uBow.value
-      if (!stretch || !foot) continue
+      const knee = lowerPose.current[`leg${side}`]
+      if (!knee) continue
       const parent = pose.parent!
-      parent.updateWorldMatrix(true, false)
-      pose.getWorldPosition(_hip)
-      _dir.subVectors(stepper.feet[side].pos, _hip)
+      _dir.copy(stepper.feet[side].pos)
+      parent.worldToLocal(_dir)
       const D = _dir.length()
-      parent.getWorldQuaternion(_qa).invert()
-      _dir.applyQuaternion(_qa).normalize()
-      _axis.set(side * Math.sin(lb.legSpread), -Math.cos(lb.legSpread), 0)
-      _qb.setFromUnitVectors(_axis, _dir)
+      // Étirement : seulement au-delà de la portée tendue, et borné.
+      const st = THREE.MathUtils.clamp((D - foot) / lb.legLength, 1, 1.15)
+      const a = lb.legLength * JOINT * st
+      const b = lb.legLength * (1 - JOINT) * st + foot
+      const bendK = solveLeg(_dir, a, b, FWD, _qb)
+      if (import.meta.env.DEV) _legK[side] = +(D / (lb.legLength + foot)).toFixed(2)
+      // Fémur voulu, moins l'écartement porté par le groupe du dessous.
+      _qa.setFromAxisAngle(FWD, side * lb.legSpread).invert()
+      _qb.multiply(_qa)
       pose.quaternion.slerp(_qb, w)
-      // Longueur du fût pour que le pied tombe pile sur sa place.
-      // Jusqu'à 1,35 : le tissu s'étire, et au-delà le pied décrochait.
-      const k = THREE.MathUtils.clamp((D - lb.legRadius * 0.3) / lb.legLength, 0.62, 1.35)
-      const kk = 1 + (k - 1) * w
-      if (import.meta.env.DEV) _legK[side] = +((D - lb.legRadius * 0.3) / lb.legLength).toFixed(2)
-      stretch.scale.y = Math.max(kk, 0.8)
-      foot.position.y = -(lb.legLength * kk) - lb.legRadius * 0.3
-      // Tassée, elle plie vers l'avant plutôt que de raccourcir en télescope.
-      const bend = Math.min(lb.legLength * 0.32, Math.max(0, reachRest - D) * 0.9) * w
-      bow.set(0, 0, bend)
+      knee.rotation.x += (bendK - knee.rotation.x) * w
+      joints.leg[side].uStretch.value = 1 + (st - 1) * w
     }
     return w
-  }
-
-  /**
-   * Un bras qui traîne derrière son mouvement se cambre : le ressort du bras
-   * dit de combien son bout est en retard ; le milieu part à l'opposé, comme
-   * une corde molle qu'on tire.
-   */
-  const bendArm = (bone: THREE.Object3D, side: -1 | 1) => {
-    _dir.copy(DOWN).applyQuaternion(bone.quaternion).sub(DOWN)
-    _qa.copy(bone.quaternion).invert()
-    _dir.applyQuaternion(_qa).multiplyScalar(-lb.armLength * 0.75)
-    if (_dir.length() > lb.armLength * 0.3) _dir.setLength(lb.armLength * 0.3)
-    bows.arm[side].uBow.value.lerp(_dir, 0.5)
   }
 
   /**
@@ -746,6 +781,17 @@ export function Doll({
     fighter.midWorld.copy(_hand).addScaledVector(_dir, weaponLength * 0.68)
   }
 
+  /**
+   * Moitié basse d'un membre, accrochée au pli : l'os du geste (coude,
+   * genou), puis son ressort. Les ornements du bas (bracelet, bandage au
+   * bout) y sont posés dans le repère du membre entier, d'où le décalage.
+   */
+  const lower = (kind: 'arm' | 'leg', side: -1 | 1, length: number, children: ReactNode) => (
+    <group ref={(el) => void (lowerPose.current[`${kind}${side}`] = el)} position={[0, -length * JOINT, 0]}>
+      <group ref={(el) => void (lowerSpring.current[`${kind}${side}`] = el)}>{children}</group>
+    </group>
+  )
+
   const arm = (side: -1 | 1, ref: MutableRefObject<THREE.Group>) => {
     const key: LimbSlot = side === -1 ? 'leftArm' : 'rightArm'
     return (
@@ -757,23 +803,28 @@ export function Doll({
       <group rotation={[0, 0, side * lb.armSpread]}>
       <group ref={ref}>
         <mesh geometry={armGeo} castShadow receiveShadow>
-          <Wool maps={armMaps} p={p} color={slots.tints?.[key]} bow={bows.arm[side]} />
+          <Wool maps={armMaps} p={p} color={slots.tints?.[key]} joint={joints.arm[side]} />
         </mesh>
-        <Fuzz geometry={armGeo} maps={armMaps} p={p} bow={bows.arm[side]} />
-        <group position={[0, -lb.armLength - lb.armRadius * 0.35, 0]}>
-          <mesh geometry={handGeo} castShadow>
-            <Wool maps={armMaps} p={p} color={slots.tints?.[key]} />
-          </mesh>
-          <Fuzz geometry={handGeo} maps={armMaps} p={p} />
-        </group>
+        <Fuzz geometry={armGeo} maps={armMaps} p={p} joint={joints.arm[side]} />
         <Batched deps={batchDeps}>{slots.limbs?.[key]}</Batched>
-        {weapon && side === -1 && (
-          <group position={[0, -lb.armLength - lb.armRadius * 0.35, 0]}>
-            <group ref={weaponRef}>
-              <Weapon length={weaponLength} size={s.headRadius} />
+        {lower('arm', side, lb.armLength, (
+          <>
+            <group position={[0, -lb.armLength * (1 - JOINT) - lb.armRadius * 0.35, 0]}>
+              <mesh geometry={handGeo} castShadow>
+                <Wool maps={armMaps} p={p} color={slots.tints?.[key]} />
+              </mesh>
+              <Fuzz geometry={handGeo} maps={armMaps} p={p} />
+              {weapon && side === -1 && (
+                <group ref={weaponRef}>
+                  <Weapon length={weaponLength} size={s.headRadius} />
+                </group>
+              )}
             </group>
-          </group>
-        )}
+            <group position={[0, lb.armLength * JOINT, 0]}>
+              <Batched deps={batchDeps}>{slots.limbEnds?.[key]}</Batched>
+            </group>
+          </>
+        ))}
       </group>
       </group>
       </group>
@@ -788,19 +839,27 @@ export function Doll({
       <group ref={side === -1 ? poseLegL : poseLegR}>
       <group rotation={[0, 0, side * lb.legSpread]}>
       <group ref={ref}>
-        <group ref={(el) => void (legStretch.current[side] = el)}>
-          <mesh geometry={legGeo} castShadow receiveShadow>
-            <Wool maps={legMaps} p={p} color={slots.tints?.[key]} bow={bows.leg[side]} />
-          </mesh>
-          <Fuzz geometry={legGeo} maps={legMaps} p={p} bow={bows.leg[side]} />
-          <Batched deps={batchDeps}>{slots.limbs?.[key]}</Batched>
-        </group>
-        <group ref={(el) => void (legFoot.current[side] = el)} position={[0, -lb.legLength - lb.legRadius * 0.3, 0]}>
-          <mesh geometry={footGeo} castShadow>
-            <Wool maps={legMaps} p={p} color={slots.tints?.[key]} />
-          </mesh>
-          <Fuzz geometry={footGeo} maps={legMaps} p={p} />
-        </group>
+        <mesh geometry={legGeo} castShadow receiveShadow>
+          <Wool maps={legMaps} p={p} color={slots.tints?.[key]} joint={joints.leg[side]} />
+        </mesh>
+        <Fuzz geometry={legGeo} maps={legMaps} p={p} joint={joints.leg[side]} />
+        <Batched deps={batchDeps}>{slots.limbs?.[key]}</Batched>
+        {lower('leg', side, lb.legLength, (
+          <>
+            <group
+              ref={(el) => void (legFoot.current[side] = el)}
+              position={[0, -lb.legLength * (1 - JOINT) - lb.legRadius * 0.3, 0]}
+            >
+              <mesh geometry={footGeo} castShadow>
+                <Wool maps={legMaps} p={p} color={slots.tints?.[key]} />
+              </mesh>
+              <Fuzz geometry={footGeo} maps={legMaps} p={p} />
+            </group>
+            <group position={[0, lb.legLength * JOINT, 0]}>
+              <Batched deps={batchDeps}>{slots.limbEnds?.[key]}</Batched>
+            </group>
+          </>
+        ))}
       </group>
       </group>
       </group>
@@ -923,8 +982,6 @@ const _hand = new THREE.Vector3()
 const _dir = new THREE.Vector3()
 const _tip = new THREE.Vector3()
 const _rootW = new THREE.Vector3()
-const _hip = new THREE.Vector3()
-const _axis = new THREE.Vector3()
 const _qId = new THREE.Quaternion()
 const _legK: Record<number, number> = {}
 const _qa = new THREE.Quaternion()

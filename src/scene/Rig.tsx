@@ -27,6 +27,7 @@ export function Rig({
   follow?: Fighter | null
 }) {
   const aim = useMemo(() => new THREE.Vector3(), [])
+  const zoom = useMemo(() => ({ v: 1 }), [])
   useFrame((state, dt) => {
     if (import.meta.env.DEV) {
       const w = window as unknown as Record<string, number>
@@ -35,14 +36,22 @@ export function Rig({
     stepTurntable(dt, spin)
 
     const cam = state.camera as THREE.PerspectiveCamera
-    const dist = turntable.distance * distanceScale
+    // Au sprint la caméra recule un peu : la vitesse se lit mieux de loin.
+    zoom.v += ((follow ? 1 + 0.12 * follow.dash : 1) - zoom.v) * Math.min(1, dt * 2)
+    const dist = turntable.distance * distanceScale * zoom.v
 
     // Barème du geste, republié à chaque frame pour le gestionnaire de molette :
     // c'est ici qu'on connaît l'ouverture de la caméra et la hauteur du viewport.
     turntable.worldPerPixel = (2 * dist * Math.tan((cam.fov * Math.PI) / 360)) / state.size.height
 
     if (follow) {
-      aim.lerp(_t.set(follow.pos.x, 0.05, follow.pos.z), 1 - Math.exp(-dt * 5))
+      // Un peu d'avance dans le sens de la course : au sprint, suivie avec
+      // retard, la poupée sortait par le bord arrière du cadre. Le saut n'est
+      // suivi qu'à moitié : on voit qu'elle monte.
+      aim.lerp(
+        _t.set(follow.pos.x + follow.vel.x * 0.18, 0.05 + follow.pos.y * 0.4, follow.pos.z + follow.vel.z * 0.18),
+        1 - Math.exp(-dt * 5),
+      )
       const yaw = turntable.yaw
       // Vue plongeante de jeu : on voit le sol autour de la poupée.
       const pitch = 0.42 + turntable.pitch * 0.8
