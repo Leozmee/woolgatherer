@@ -174,6 +174,17 @@ const newFoot = (): Foot => ({
 
 const _ideal = new THREE.Vector3()
 const _prev = new THREE.Vector3()
+const _fwd = new THREE.Vector3()
+
+/** Cycle de locomotion publié par le combattant (voir `Fighter.cycle`). */
+export type Cycle = {
+  phase: number
+  period: number
+  duty: number
+  lift: number
+  kick: number
+  active: boolean
+}
 
 /**
  * Pas procéduraux : un pied à la fois, posé là où la poupée va être.
@@ -215,6 +226,11 @@ export class Stepper {
       grounded: boolean
       legLength: number
       onLand?: (side: -1 | 1, speed: number, dur: number) => void
+      /**
+       * Cycle de marche : quand il est actif, les pieds le suivent au lieu de
+       * partir quand ils sont trop loin. Sa phase peut être recalée à l'entrée.
+       */
+      cycle?: Cycle
     },
   ) {
     this.weight += ((o.grounded ? 1 : 0) - this.weight) * Math.min(1, dt * 14)
@@ -230,6 +246,16 @@ export class Stepper {
         return _ideal.set(h.x + lx * cf, o.root.y + r.y, h.z - lx * sf)
       }
       return _ideal.set(o.root.x + r.x * cf + r.z * sf, o.root.y + r.y, o.root.z - r.x * sf + r.z * cf)
+    }
+
+    const cyc = !!o.cycle?.active && o.grounded && this.ready
+    if (cyc && !this.cycling) this.enterCycle(o.cycle!, ideal)
+    if (!cyc && this.cycling) this.leaveCycle()
+    this.cycling = cyc
+    if (cyc) {
+      this.followCycle(dt, o.cycle!, o.vel, ideal, speed, o.onLand)
+      this.ready = true
+      return
     }
 
     for (const side of [-1, 1] as const) {
@@ -343,5 +369,95 @@ export class Stepper {
     }
     f.t = 0
     f.swinging = true
+  }
+
+  /** Dans le cycle de marche. */
+  private cycling = false
+
+  /**
+   * Entrée dans le cycle : la phase est recalée pour que le pied **le plus en
+   * arrière** parte le premier — celui qui en a le plus besoin. L'autre garde
+   * son appui s'il en a un.
+   */
+  private enterCycle(c: Cycle, ideal: (side: -1 | 1) => THREE.Vector3) {
+    let back: -1 | 1 = -1
+    let worst = -Infinity
+    for (const side of [-1, 1] as const) {
+      const f = this.feet[side]
+      const i = ideal(side)
+      const e = Math.hypot(f.plant.x - i.x, f.plant.z - i.z)
+      if (e > worst) {
+        worst = e
+        back = side
+      }
+    }
+    c.phase = (((c.duty - (back === -1 ? 0 : 0.5)) % 1) + 1) % 1
+    for (const side of [-1, 1] as const) {
+      const f = this.feet[side]
+      f.swinging = false
+      f.plant.copy(f.pos)
+    }
+  }
+
+  /** Sortie : un pied en l'air finit son pas par un pas réactif. */
+  private leaveCycle() {
+    for (const side of [-1, 1] as const) {
+      const f = this.feet[side]
+      if (!f.swinging) continue
+      f.from.copy(f.pos)
+      f.t = 0
+      f.dur = 0.1
+      f.lift = 0
+    }
+  }
+
+  /**
+   * Pieds sur le cycle. Chaque pied est au sol pendant `duty` de son cycle —
+   * **fixe**, en repère monde : c'est ce qui l'empêche de glisser — puis vole
+   * vers son prochain appui, recalculé à chaque image (là où sera la hanche
+   * au milieu de cet appui), en arc : haut et bref à la course, talon relevé
+   * en arrière au départ. Le genou, lui, sort de l'IK.
+   */
+  private followCycle(
+    dt: number,
+    c: Cycle,
+    vel: THREE.Vector3,
+    ideal: (side: -1 | 1) => THREE.Vector3,
+    speed: number,
+    onLand?: (side: -1 | 1, speed: number, dur: number) => void,
+  ) {
+    const swingT = (1 - c.duty) * c.period
+    _fwd.set(vel.x, 0, vel.z)
+    if (_fwd.lengthSq() > 1e-8) _fwd.normalize()
+    for (const side of [-1, 1] as const) {
+      const f = this.feet[side]
+      _prev.copy(f.pos)
+      const psi = (c.phase + (side === -1 ? 0 : 0.5)) % 1
+      if (psi < c.duty) {
+        if (f.swinging) {
+          // Pose : au point visé en fin de vol.
+          f.swinging = false
+          f.plant.copy(ideal(side)).addScaledVector(vel, (c.duty * c.period) / 2)
+          f.plant.y = ideal(side).y
+          onLand?.(side, speed, c.period / 2)
+        }
+        f.pos.copy(f.plant)
+      } else {
+        if (!f.swinging) {
+          f.swinging = true
+          f.from.copy(f.pos)
+        }
+        const u = (psi - c.duty) / (1 - c.duty)
+        const e = u * u * (3 - 2 * u)
+        f.to.copy(ideal(side)).addScaledVector(vel, (1 - u) * swingT + (c.duty * c.period) / 2)
+        f.pos.lerpVectors(f.from, f.to, e)
+        // Levée : monte vite, redescend en douceur ; talon relevé derrière au
+        // début de l'envol (course).
+        f.pos.y += c.lift * Math.sin(Math.PI * Math.pow(u, 0.75))
+        f.pos.addScaledVector(_fwd, -c.kick * Math.sin(Math.PI * u) * (1 - u))
+        f.pos.y += c.kick * 0.6 * Math.sin(Math.PI * u) * (1 - u)
+      }
+      f.vel.subVectors(f.pos, _prev).divideScalar(Math.max(dt, 1e-4))
+    }
   }
 }

@@ -781,10 +781,10 @@ const LIMITS: Partial<Record<BoneName, [number, number][]>> = {
 
 // ---------------------------------------------------------------- combattant
 
-/** Course normale, unités par seconde. */
-const RUN_SPEED = 2
-/** Sprint (touche tenue) : deux fois et demie la course. */
-const SPRINT_SPEED = 5
+/** Marche (allure par défaut), unités par seconde. */
+const RUN_SPEED = 2.4
+/** Course (touche tenue) : plus du double de la marche. */
+const SPRINT_SPEED = 5.4
 /** Rayon de l'arène : on ne sort pas du tapis. Assez grand pour y sprinter. */
 export const ARENA = 6
 /** Temps pendant lequel un appui reste en file. */
@@ -865,11 +865,21 @@ export class Fighter {
   private action: { name: ActionName; phase: number; t: number } | null = null
   private queued: { press: Press; t: number } | null = null
   private time: number
-  private gait = 0
-  /** Pas en cours : pied posé en dernier, temps écoulé, durée d'un pas. */
-  private step = { side: 1 as -1 | 1, t: 0, dur: 0.15 }
-  /** Report du poids sur le pied d'appui (dandinement), amorti. */
-  private waddle = 0
+  /**
+   * Cycle de locomotion, lu par les pieds (`Stepper`) : phase en tours (la
+   * jambe −1 se pose à 0, la jambe 1 à ½), durée d'un cycle de deux pas, part
+   * d'appui d'un pied, hauteur de levée, talon relevé.
+   */
+  readonly cycle = { phase: 0, period: 0.4, duty: 0.6, lift: 0, kick: 0, active: false }
+  /** Part du cycle dans la pose (fondu à l'entrée et à la sortie). */
+  private cycW = 0
+  /**
+   * Rythme des pas, ajouté **après** les ressorts : rebond du bassin, bascule,
+   * balancier des bras. À cinq ou six pas par seconde, passé par les ressorts
+   * de pose (≈ 3 Hz), il était écrasé et décalé — le corps restait raide
+   * pendant que les jambes moulinaient.
+   */
+  private rhythm = { y: 0, pitch: 0, yaw: 0, roll: 0, sq: 0, arm1: 0, armW: 0, el1: 0, elW: 0 }
   /**
    * Cisaillement du corps (x : côté, z : avant), pieds fixes. Voir `update`.
    */
@@ -1032,16 +1042,12 @@ export class Fighter {
    * rythme des pas qui rythme le corps — pas une horloge. Au sprint, les pas
    * sont deux fois plus nombreux : chacun tasse moins, et soulève sa bouffée.
    */
-  land(speed: number, side: -1 | 1 = 1, dur = 0.15, at?: THREE.Vector3) {
-    const run = Math.min(1, speed / RUN_SPEED)
+  land(_speed: number, _side: -1 | 1 = 1, _dur = 0.15, at?: THREE.Vector3) {
+    // Plus d'à-coup par pas : chaque appui donnait un coup au bassin et à
+    // l'écrasement, et à huit pas par seconde la poupée grésillait. Le rebond
+    // vient maintenant du cycle, continu (`rhythm`). Reste la poussière.
     const dash = this.dash
-    this.step.side = side
-    this.step.t = 0
-    this.step.dur = dur
-    const k = 1 - 0.55 * dash
-    this.dyn.squash.kick(0, (-0.5 * run - 0.1) * k)
-    this.dyn.hipsPos.kick(1, -0.35 * run * k)
-    if (at && dash > 0.5) this.puff(at.x, at.z, 0.18 + 0.12 * dash)
+    if (at && dash > 0.4) this.puff(at.x, at.z, 0.14 + 0.14 * dash)
   }
 
   puff(x: number, z: number, size: number) {
@@ -1298,8 +1304,20 @@ export class Fighter {
     this.pose.hipsPos[1] = hp[1]
     this.pose.hipsPos[2] = hp[2]
     if (this.action?.name === 'ko') this.toppleStep(dt, m)
+    if (this.drive) this.advanceCycle(dt, m)
+    const r = this.rhythm
+    this.pose.hipsPos[1] += r.y
+    this.pose.hips[0] += r.pitch
+    this.pose.hips[1] += r.yaw
+    this.pose.hips[2] += r.roll
+    // La tête garde le cap pendant que les épaules tournent.
+    this.pose.neck[1] -= r.yaw * 0.8
+    this.pose.arm1[0] += r.arm1
+    this.pose['arm-1'][0] += r.armW
+    this.pose.elbow1[0] = Math.min(0.05, this.pose.elbow1[0] + r.el1)
+    this.pose['elbow-1'][0] = Math.min(0.05, this.pose['elbow-1'][0] + r.elW)
     _sq[0] = t.squash
-    this.squash = Math.min(1.45, Math.max(0.6, this.dyn.squash.update(dt, _sq)[0]))
+    this.squash = Math.min(1.45, Math.max(0.6, this.dyn.squash.update(dt, _sq)[0] * (1 + this.rhythm.sq)))
     _wd.set(...t.weapon).normalize()
     const wd = this.dyn.weapon.update(dt, _wd.toArray(_arr))
     this.weaponDir.set(wd[0], wd[1], wd[2])
@@ -1323,7 +1341,7 @@ export class Fighter {
       const aFwd = this.accel.x * sf + this.accel.z * cf
       const aSide = this.accel.x * cf - this.accel.z * sf
       const lim = (v: number) => Math.max(-0.13, Math.min(0.13, v))
-      _sh[0] = lim(-aSide * 0.007 - this.waddle * 0.35)
+      _sh[0] = lim(-aSide * 0.007 - this.rhythm.roll * 0.35)
       _sh[1] = lim(-aFwd * 0.009)
     } else {
       _sh[0] = 0
@@ -1413,13 +1431,64 @@ export class Fighter {
   }
 
   /**
-   * Attente, course et sprint.
+   * **Cycle de marche et de course.** Une phase continue, dont la cadence
+   * monte avec la vitesse — 5,2 pas par seconde à la marche, 6,4 à la course
+   * (avant : huit et treize, des micro-pas qui grésillaient). La longueur
+   * d'appui se prend sur la jambe : un pied reste au sol tant qu'il est à
+   * portée, soit une part du cycle `duty = portée · cadence / vitesse`. À la
+   * marche les appuis se chevauchent ; à la course il y a une **phase de vol**.
+   * Les pieds suivent ce cycle (`Stepper`), le corps aussi (`rhythm`).
+   */
+  private advanceCycle(dt: number, m: RigMetrics) {
+    const c = this.cycle
+    const speed = Math.hypot(this.vel.x, this.vel.z)
+    const walk = Math.min(1, speed / RUN_SPEED)
+    const dash = this.dash
+    const L = m.legLength
+    const steps = 3.4 + 0.75 * Math.min(speed, RUN_SPEED) + (6.4 - 5.2) * dash
+    c.period = 2 / steps
+    // Demi-appui : 60 % de la portée de la jambe, pied compris.
+    const half = 0.6 * L * 1.09
+    c.duty = Math.max(0.28, Math.min(0.66, (half * steps) / Math.max(speed, 0.1)))
+    c.lift = L * (0.26 + 0.26 * dash)
+    c.kick = L * 0.4 * dash
+    c.active = !this.airborne && !this.action && speed > 0.35
+    if (c.active) c.phase = (c.phase + dt / c.period) % 1
+    this.cycW += ((c.active ? 1 : 0) - this.cycW) * Math.min(1, dt * (c.active ? 10 : 6))
+
+    const w = this.cycW
+    const r = this.rhythm
+    const k = walk * (1 - dash)
+    const ang = Math.PI * 2 * c.phase
+    const cos = Math.cos(ang)
+    const sin = Math.sin(ang)
+    // Rebond, deux fois par cycle. Marche : au plus bas juste après la pose du
+    // pied (le poids arrive). Course : au plus bas au milieu de l'appui, au
+    // plus haut en vol.
+    const low = 0.08 + (c.duty - 0.08) * dash
+    const bob = -Math.cos(Math.PI * 2 * (2 * c.phase - low))
+    r.y = w * L * (0.045 * k + 0.13 * dash) * bob
+    r.sq = w * (0.03 * k + 0.05 * dash) * bob
+    r.pitch = w * 0.05 * dash * bob
+    // Épaules : la libre (côté 1) part devant avec la jambe −1 ; tout le buste
+    // tourne un peu avec elles, la tête compense. Bascule sur l'appui, à peine.
+    r.yaw = -w * (0.05 * k + 0.07 * dash) * cos
+    r.roll = w * 0.015 * k * sin
+    // Balancier : le bras libre en opposition de la jambe, l'avant-bras qui
+    // remonte quand il passe devant ; le bras de l'arme, lesté, bat moins.
+    r.arm1 = -w * (0.5 * k + 0.9 * dash) * cos
+    r.armW = w * (0.2 * k + 0.4 * dash) * cos
+    r.el1 = -w * (0.3 * k + 0.45 * dash) * Math.max(0, cos)
+    r.elW = -w * (0.15 * k + 0.3 * dash) * Math.max(0, -cos)
+  }
+
+  /**
+   * Attente, marche et course : la pose de fond, sous le rythme des pas.
    *
-   * Course en petits bonds — une peluche sautille — avec l'écrasement à chaque
-   * appui. Le corps penche dans l'accélération et dans les virages, l'arme
-   * traîne derrière, pointe au sol. Au sprint : buste penché loin devant,
-   * tête relevée pour compenser, bras pliés qui pompent, arme couchée
-   * derrière — et presque plus de roulis.
+   * Le corps se penche et se tasse avec la vitesse, penche dans
+   * l'accélération et dans les virages, l'arme traîne derrière, pointe au
+   * sol. À la course : buste penché loin devant, tête relevée pour compenser,
+   * coudes en équerre, arme couchée derrière.
    *
    * À l'arrêt, la poupée n'est pas une statue : elle respire, et au bout d'un
    * moment regarde ailleurs (`glance`) — la tête d'abord, le buste suit un
@@ -1429,23 +1498,6 @@ export class Fighter {
     const speed = Math.hypot(this.vel.x, this.vel.z)
     const run = Math.min(1, speed / RUN_SPEED)
     const dash = this.dash
-    /*
-     * Phase de la foulée, **calée sur les vrais pas** (`land`) : chaque pied
-     * posé fait un demi-tour de phase. Réglée sur une horloge ou la distance,
-     * elle se décalait des pas et les bras balançaient à contretemps des pieds.
-     */
-    this.step.t += dt
-    const stepU = Math.min(1, this.step.t / this.step.dur)
-    this.gait = (this.step.side === -1 ? 0 : Math.PI) + Math.PI * stepU
-    const s = Math.sin(this.gait)
-    const hop = Math.abs(s)
-    /*
-     * Dandinement : le poids passe sur le pied d'appui. **Discret** : à 0,1 rad
-     * de roulis par pas, relayé par le cisaillement et la tête, la poupée
-     * tanguait comme un culbuto. Presque rien au sprint : on court droit.
-     */
-    const wTarget = run > 0.1 ? -this.step.side * 0.035 * run * (1 - 0.6 * dash) : 0
-    this.waddle += (wTarget - this.waddle) * Math.min(1, dt * 10)
     const breathe = Math.sin(this.time * 2.3)
     const sway = Math.sin(this.time * 1.15)
 
@@ -1481,68 +1533,57 @@ export class Fighter {
       t.hips,
       // Inertie : le corps reste en arrière quand on accélère et continue
       // vers l'avant quand on freine — la racine obéit, le corps traîne.
-      0.04 * armed + 0.16 * run + 0.3 * dash + hop * 0.04 * run * (1 - dash) - clampA(aFwd, 0.045, 0.4),
-      // Torsion de foulée : à 0,16 rad elle se lisait comme un roulis de plus.
-      s * 0.06 * run * (1 - 0.5 * dash) + g.yaw * 0.25 * gw,
+      0.04 * armed + 0.12 * run + 0.3 * dash - clampA(aFwd, 0.045, 0.4),
+      g.yaw * 0.25 * gw,
       // Penché vers l'arme au repos (son poids, arène seulement), dans le
-      // virage — plus fort au sprint, comme un coureur qui prend un virage —,
-      // sur le pied d'appui. Le report de poids du regard d'attente, lui
-      // aussi, ne vaut que dans l'arène : sur la planche la poupée reste droite.
+      // virage — plus fort à la course, comme un coureur qui prend un virage.
+      // Le report de poids du regard d'attente ne vaut que dans l'arène.
       0.07 * armed * (1 - run) +
         clampA(this.turnRate, -0.07 - 0.06 * dash, 0.35 + 0.15 * dash) +
         sway * 0.02 * swayK * (1 - run) +
-        this.waddle +
         g.shift * gw * armed,
     )
-    // Le rebond de course vient surtout des pas posés (`land`) ; ici un fond.
-    // Corps plus bas en course, plus encore au sprint : les genoux plient.
-    // Genoux souples à l'arrêt aussi (arène seulement : sur la planche, pas
-    // d'IK, les pieds s'enfonceraient).
+    // Corps plus bas en marche, plus encore à la course : les genoux plient
+    // (IK), c'est ce qui donne la portée aux foulées. Genoux souples à l'arrêt
+    // aussi (arène seulement : sur la planche, pas d'IK, les pieds
+    // s'enfonceraient).
     const soft = this.drive ? -0.04 * m.legLength * (1 - run) : 0
     set(
       t.hipsPos,
       0,
-      (hop * 0.05 * (1 - 0.5 * dash) - 0.12 - 0.06 * dash) * m.legLength * run + breathe * m.torsoRadius * 0.015 + soft,
+      -(0.07 * run + 0.12 * dash) * m.legLength + breathe * m.torsoRadius * 0.015 + soft,
       0,
     )
-    t.squash = 1 + breathe * 0.015 * (1 - run) + (hop - 0.55) * 0.05 * run * (1 - 0.6 * dash)
-    set(t['leg-1'], -s * 0.8 * run, 0, 0)
-    set(t.leg1, s * 0.8 * run, 0, 0)
+    t.squash = 1 + breathe * 0.015 * (1 - run)
     bend(t['knee-1'], 0.15 + 0.3 * run)
     bend(t.knee1, 0.15 + 0.3 * run)
     // Bras de l'arme tiré vers l'arrière et vers le bas par le poids ; l'autre
-    // balance à contretemps et compense. Coudes pliés d'autant plus qu'on
-    // court : bras ballants à l'arrêt, repliés en course, en équerre au sprint.
-    // Le poids de l'arme ne tire le bras que dans l'arène.
-    set(t['arm-1'], 0.35 * run - 0.1 * armed + 0.5 * dash, 0, 0.3 * armed - 0.1 * run)
-    bend(t['elbow-1'], -0.4 - 0.3 * run - 0.4 * dash + breathe * 0.03 * (1 - run))
-    const swing = s * (0.9 + 0.3 * dash) * run
-    set(t.arm1, swing - 0.1 * armed + sway * 0.05 * swayK * (1 - run) + 0.1 * dash, 0, -0.1 * run + 0.08 * armed)
-    // L'avant-bras remonte quand le bras part devant : un vrai balancier.
-    bend(t.elbow1, -0.25 - 0.45 * run - 0.6 * dash - 0.35 * Math.max(0, -s) * run + breathe * 0.04 * (1 - run))
+    // plus libre. Coudes pliés d'autant plus qu'on va vite : bras ballants à
+    // l'arrêt, repliés en marche, en équerre à la course. Le balancier des pas
+    // s'ajoute par-dessus (`rhythm`).
+    set(t['arm-1'], 0.3 * run - 0.1 * armed + 0.35 * dash, 0, 0.3 * armed - 0.1 * run)
+    bend(t['elbow-1'], -0.4 - 0.3 * run - 0.5 * dash + breathe * 0.03 * (1 - run))
+    set(t.arm1, -0.1 * armed + sway * 0.05 * swayK * (1 - run) + 0.1 * dash, 0, -0.1 * run + 0.08 * armed)
+    bend(t.elbow1, -0.25 - 0.35 * run - 0.75 * dash + breathe * 0.04 * (1 - run))
     // La tête exagère ce que fait le corps, avec retard : elle part en
-    // arrière au démarrage, pique en avant à l'arrêt, contre le dandinement.
-    // Au sprint elle se relève contre le buste penché.
+    // arrière au démarrage, pique en avant à l'arrêt. À la course elle se
+    // relève contre le buste penché.
     set(
       t.neck,
-      -0.12 * run - 0.24 * dash + Math.sin(this.time * 2.3 + 1) * 0.04 - clampA(aFwd, 0.05, 0.45) + g.pitch * gw,
+      -0.1 * run - 0.24 * dash + Math.sin(this.time * 2.3 + 1) * 0.04 - clampA(aFwd, 0.05, 0.45) + g.pitch * gw,
       clampA(this.turnRate, 0.06, 0.4) + g.yaw * 0.75 * gw,
-      -sway * 0.05 * swayK * (1 - run) - this.waddle * 0.8,
+      -sway * 0.05 * swayK * (1 - run),
     )
     // Au repos, plantée pointe au sol devant elle, du côté de l'arme : on la
-    // voit, et on voit qu'elle est trop grande. En course elle traîne derrière,
-    // au sprint elle se couche presque à l'horizontale.
+    // voit, et on voit qu'elle est trop grande. En marche elle traîne derrière,
+    // à la course elle se couche presque à l'horizontale.
     set(
       t.weapon,
       -0.5 + 0.28 * run + 0.2 * dash,
       -0.72 + 0.34 * run + 0.35 * dash,
       0.42 - 1.3 * run - 0.1 * dash,
     )
-    if (dash <= 0) return undefined
-    // Au sprint le balancier bat deux fois plus vite : le bras libre doit suivre.
-    _locoTune.arm1![0] = 2.6 + 4 * dash
-    _locoTune.elbow1![0] = 3.2 + 3 * dash
-    return _locoTune
+    return undefined
   }
 
   /**
@@ -1578,4 +1619,3 @@ const _wd = new THREE.Vector3()
 const _sq = [1]
 const _sh = [0, 0]
 const _arr: number[] = [0, 0, 0]
-const _locoTune: NonNullable<Phase['tune']> = { arm1: [2.6, 0.55, 0.25], elbow1: [3.2, 0.45, 0.1] }

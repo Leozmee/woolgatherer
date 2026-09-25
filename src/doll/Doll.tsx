@@ -709,6 +709,7 @@ export function Doll({
       grounded: fighter.grounded,
       legLength: lb.legLength,
       onLand: (side, speed, dur) => fighter.land(speed, side, dur, stepper.feet[side].pos),
+      cycle: fighter.cycle,
     })
     const w = stepper.weight
     if (import.meta.env.DEV) Object.assign(window, { __stepper: stepper, __legK: _legK })
