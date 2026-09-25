@@ -102,6 +102,8 @@ export type RigBones = {
   /** Os du bas (avant-bras, tibia), posés au pli (`JOINT`). */
   forearm: Record<-1 | 1, THREE.Object3D | null>
   shin: Record<-1 | 1, THREE.Object3D | null>
+  /** Hauteur du sol sous la poupée, repère monde : ce qui traîne s'y pose. */
+  floorY: number
 }
 
 const _inv = new THREE.Matrix4()
@@ -189,4 +191,48 @@ export class Inertia {
     this.local.lerp(a, Math.min(1, dt * 20))
     return this.local
   }
+}
+
+const _inv2 = new THREE.Matrix4()
+const _t = new THREE.Vector3()
+
+/**
+ * Transport du repère d'un objet d'une image à la suivante : la matrice qui
+ * envoie un point exprimé dans son repère **précédent** dans son repère
+ * actuel — c'est-à-dire où se trouve, vu d'ici, ce qui n'a pas bougé dans le
+ * monde. Rotations comprises, contrairement à `Inertia`. Rien au premier
+ * appel, ni après un saut de plus d'une unité (changement de poupée).
+ */
+export class FrameCarry {
+  private last = new THREE.Matrix4()
+  private ready = false
+  readonly delta = new THREE.Matrix4()
+
+  update(obj: THREE.Object3D): THREE.Matrix4 | null {
+    obj.updateWorldMatrix(true, false)
+    if (!this.ready) {
+      this.last.copy(obj.matrixWorld)
+      this.ready = true
+      return null
+    }
+    _inv2.copy(obj.matrixWorld).invert()
+    this.delta.multiplyMatrices(_inv2, this.last)
+    this.last.copy(obj.matrixWorld)
+    _t.setFromMatrixPosition(this.delta)
+    return _t.lengthSq() > 1 ? null : this.delta
+  }
+}
+
+/**
+ * Sol dans le repère d'un objet : normale (le haut du monde vu d'ici) et
+ * seuil, au format de `ClothExtras.floor`.
+ */
+export function localFloor(obj: THREE.Object3D, floorY: number, out: { n: THREE.Vector3; d: number }) {
+  _inv2.copy(obj.matrixWorld).invert()
+  obj.getWorldPosition(_t)
+  _t.y = floorY
+  _t.applyMatrix4(_inv2)
+  out.n.set(0, 1, 0).transformDirection(_inv2)
+  out.d = out.n.dot(_t)
+  return out
 }

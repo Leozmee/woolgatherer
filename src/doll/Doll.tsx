@@ -543,6 +543,7 @@ export function Doll({
       leg: { [-1]: null, 1: null },
       forearm: { [-1]: null, 1: null },
       shin: { [-1]: null, 1: null },
+      floorY: 0,
     }),
     [],
   )
@@ -590,6 +591,9 @@ export function Doll({
       bones.forearm[side] = lowerSpring.current[`arm${side}`]
       bones.shin[side] = lowerSpring.current[`leg${side}`]
     }
+    root.current.getWorldPosition(_rootW)
+    // Sol sous la poupée : sous la racine, pas sous le bassin (qui saute).
+    bones.floorY = (fighter.drive ? _rootW.y - fighter.pos.y : _rootW.y) + L.floorY
     bones.arm[-1] = armL.current
     bones.arm[1] = armR.current
     bones.leg[-1] = legL.current
