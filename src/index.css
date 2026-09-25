@@ -8,12 +8,15 @@ body {
 #stage { position: fixed; inset: 0; touch-action: none; cursor: grab; }
 #stage.dragging { cursor: grabbing; }
 #hint {
-  position: fixed; left: 24px; bottom: 20px; z-index: 5;
+  position: fixed; right: 24px; bottom: 20px; z-index: 5;
   font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
   color: #8c8477; pointer-events: none; user-select: none;
 }
 
 .label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
   white-space: nowrap;
   user-select: none;
@@ -22,12 +25,120 @@ body {
 .label .name {
   font-size: 11px;
   letter-spacing: .2em;
+  text-transform: uppercase;
   color: #6b6357;
 }
-.label .note {
-  margin-top: 3px;
+.label .sub {
+  margin-top: 4px;
   font-size: 9px;
-  letter-spacing: .06em;
+  font-style: italic;
+  letter-spacing: .12em;
+  color: #a09786;
+}
+
+/*
+ * Boutons en pièce de feutre cousue.
+ *
+ * Même matière que les poupées : un tissu tramé, bordé de points avant en
+ * pointillés — la couture d'une pièce rapportée —, aux coins un peu inégaux et
+ * posé légèrement de travers, comme cousu à la main. Au survol la pièce se
+ * redresse, le feutre fonce et le fil passe au rouge des épingles vaudou.
+ * Tout en CSS : aucun asset externe, comme le reste du projet.
+ */
+.pill,
+#generate {
+  --felt: #ece3d3;
+  --thread: #8a7a64;
+  position: relative;
+  padding: 11px 24px;
+  border: 0;
+  border-radius: 7px 11px 8px 12px;
+  background-color: var(--felt);
+  background-image:
+    repeating-linear-gradient(0deg, rgba(90, 70, 50, .07) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(90, 70, 50, .05) 0 1px, transparent 1px 4px);
+  color: #4f463b;
+  font: 11px/1 ui-monospace, Menlo, monospace;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .6) inset,
+    0 2px 0 rgba(90, 70, 50, .12),
+    0 3px 8px rgba(90, 70, 50, .14);
+  transform: rotate(-1.2deg);
+  transition: background-color .18s, color .18s, transform .18s;
+}
+/* Points avant : un pointillé rentré de quelques pixels, comme une couture. */
+.pill::before,
+#generate::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1.5px dashed var(--thread);
+  border-radius: inherit;
+  pointer-events: none;
+  transition: border-color .18s;
+}
+.pill:hover,
+#generate:hover {
+  --felt: #5b4c3d;
+  --thread: #c9544d;
+  color: #f4ecdf;
+  transform: rotate(0deg);
+}
+.pill:active { transform: translateY(1px); }
+
+#generate {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  z-index: 6;
+  padding: 13px 30px;
+  transform: translateX(-50%) rotate(-1deg);
+}
+#generate:hover { transform: translateX(-50%) rotate(0deg); }
+#generate:active { transform: translateX(-50%) translateY(1px); }
+
+/* « Choisir » : une petite pièce, plus claire, sous chaque poupée. */
+.label .choose {
+  margin-top: 10px;
+  padding: 8px 20px;
+  font-size: 10px;
+  pointer-events: auto;
+  --felt: #f3ecdf;
+}
+.label .choose:hover { --felt: #5b4c3d; }
+
+#arena-bar {
+  position: fixed;
+  top: 18px;
+  left: 24px;
+  right: 24px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+#arena-bar .pill { pointer-events: auto; }
+#arena-bar .arena-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  user-select: none;
+}
+#arena-bar .name {
+  font-size: 12px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: #5b5347;
+}
+#arena-bar .sub {
+  margin-top: 5px;
+  font-size: 10px;
+  font-style: italic;
+  letter-spacing: .12em;
   color: #a09786;
 }
 
@@ -44,22 +155,66 @@ body {
   z-index: 10;
 }
 
-#generate {
+/* Présentation : le bouton Jouer, pièce de feutre plus grande que les autres. */
+#play {
   position: fixed;
-  top: 18px;
   left: 50%;
-  transform: translateX(-50%);
+  bottom: 56px;
+  transform: translateX(-50%) rotate(-1.2deg);
   z-index: 6;
-  padding: 9px 20px;
-  border: 1px solid #cfc6b6;
-  border-radius: 999px;
-  background: #faf7f1;
-  color: #5b5347;
-  font: 11px/1 ui-monospace, Menlo, monospace;
-  letter-spacing: .16em;
-  text-transform: uppercase;
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(90, 80, 66, .12);
+  padding: 14px 44px;
+  font-size: 15px;
+  letter-spacing: .3em;
 }
-#generate:hover { background: #fff; border-color: #b9ae9b; }
-#generate:active { transform: translateX(-50%) translateY(1px); }
+#play:hover { transform: translateX(-50%) rotate(0.6deg) scale(1.04); }
+
+/* Combat : nom et barre de vie en haut à gauche, légende en bas à gauche. */
+#hud {
+  position: fixed;
+  top: 20px;
+  left: 24px;
+  z-index: 6;
+  width: min(340px, calc(100vw - 48px));
+  pointer-events: none;
+  user-select: none;
+}
+#hud .who { display: flex; align-items: baseline; gap: 10px; margin-bottom: 7px; }
+#hud .name { font-size: 12px; letter-spacing: .22em; text-transform: uppercase; color: #4a4238; }
+#hud .sub { font-size: 10px; font-style: italic; letter-spacing: .1em; color: #a09786; }
+/* Bande de feutre cousue : fond clair, bord en points avant, remplissage rouge vaudou. */
+#hud .life {
+  position: relative;
+  height: 14px;
+  border-radius: 4px 6px 5px 3px;
+  background: #ece5d8;
+  box-shadow: inset 0 0 0 1px #cbbfa9;
+  overflow: hidden;
+  transform: rotate(-0.6deg);
+}
+#hud .life::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1.5px dashed rgba(60, 40, 30, .45);
+  border-radius: 3px;
+  pointer-events: none;
+}
+#hud .ghost, #hud .fill { position: absolute; top: 0; bottom: 0; left: 0; width: 100%; }
+#hud .ghost { background: #e8b7a6; }
+#hud .fill {
+  background: repeating-linear-gradient(90deg, #a8322b 0 5px, #9b2c26 5px 7px);
+  transition: width .08s linear;
+}
+#legend {
+  position: fixed;
+  left: 24px;
+  bottom: 20px;
+  z-index: 6;
+  font-size: 10px;
+  line-height: 1.8;
+  letter-spacing: .08em;
+  color: #9a917f;
+  pointer-events: none;
+  user-select: none;
+}
+#legend b { color: #6b6152; font-weight: 600; }

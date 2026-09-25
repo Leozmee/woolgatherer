@@ -126,6 +126,12 @@ export class ClothSheet {
     /** Direction du poids, **dans le repère de la nappe**. La simulation vit en
      *  local ; si la poupée tourne, c'est cette direction qui tourne. */
     gravityDir: THREE.Vector3,
+    /**
+     * Accélération du repère de la nappe, **dans ce repère** (unités/s²). La
+     * simulation vit en local : sans elle, une poupée qui court ou roule
+     * emporte son écharpe comme un décor collé, qui ne traîne jamais derrière.
+     */
+    accel?: THREE.Vector3,
   ) {
     // Pas borné : une frame longue (onglet en arrière-plan) ferait exploser
     // l'intégration.
@@ -140,6 +146,8 @@ export class ClothSheet {
       q.copy(p)
       p.add(_d)
       p.addScaledVector(gravityDir, g)
+      // Force d'inertie : le repère accélère, le tissu libre reste en arrière.
+      if (accel) p.addScaledVector(accel, -h * h * (1 - this.pin[i]))
 
       // Rappel vers la pose de repos, seulement là où le tissu doit tenir.
       if (this.pin[i] > 0) p.lerp(this.rest[i], this.pin[i] * 0.4)

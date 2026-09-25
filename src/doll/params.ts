@@ -17,6 +17,11 @@ export type DollParams = {
     sheenColor: string
     sheenRoughness: number
     knitScale: number
+    /**
+     * Côté des cartes de tricot, en pixels ; 1024 par défaut. La planche passe
+     * à 512 (voir `App.lightened`).
+     */
+    mapSize?: number
     fuzz: number
     relief: number
     normalStrength: number
@@ -119,7 +124,7 @@ export type DollParams = {
   shell: { count: number; height: number; density: number }
   spring: { stiffness: number; drag: number; gravity: number; headStiffness: number }
   motion: { spin: number; breathe: number }
-  board: { gallery: boolean; light: boolean; single: string }
+  board: { gallery: boolean; light: boolean; single: string; morph: number; hairStyle: string }
 }
 
 export function useDollParams(): { params: DollParams; regenerate: () => void } {
@@ -309,12 +314,22 @@ export function useDollParams(): { params: DollParams; regenerate: () => void } 
   const board = useControls('Planche', {
     gallery: { value: true, label: '6 variantes' },
     light: { value: true, label: 'allégé' },
+    // Amplitude de la morphologie tirée de la graine autour du patron du
+    // panneau (`morph.ts`). À 0, toutes les poupées ont exactement la
+    // silhouette réglée ici.
+    morph: { value: 1, min: 0, max: 1.5, step: 0.05, label: 'variation morpho' },
     // Liste littérale plutôt qu'importée de `traits` : `traits` dépend déjà de
     // ce module, un import en valeur créerait un cycle.
     single: {
       value: 'couture',
       options: ['couture', 'echarpe', 'couronne', 'collier', 'ceinture', 'noeudPap'],
       label: 'variante (seule)',
+    },
+    // Liste littérale pour la même raison : `hairstyles` dépend de ce module.
+    hairStyle: {
+      value: 'auto',
+      options: ['auto', 'locks', 'boucles', 'meches', 'chignon', 'houppette', 'epars', 'couettes', 'queue', 'nattes', 'frange'],
+      label: 'coiffure (seule)',
     },
   })
 
@@ -336,7 +351,9 @@ export function useDollParams(): { params: DollParams; regenerate: () => void } 
   const params = useMemo(
     () => ({
       seed, wool, shape, limbs, face, thread, hair, scarf, chain,
-      pins, shell, spring, motion, board,
+      pins, shell, spring, motion,
+      // leva type les listes d'options en `string`.
+      board: board as DollParams['board'],
     }),
     [seed, wool, shape, limbs, face, thread, hair, scarf, chain, pins, shell, spring, motion, board],
   )

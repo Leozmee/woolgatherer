@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { Inertia, followLimbs, useRigBones } from './rig'
 import { CrossStitch, Thread, Pin, jitterColor, pinColor } from './parts'
 import { armClearance, armSpheres, bodyRadius, bodySpheres, onTorso, onHeadPolar } from './surface'
 import { ClothSheet } from '../core/cloth'
@@ -186,8 +187,12 @@ function Necklace({ p, seed }: { p: DollParams; seed: number }) {
     m: new THREE.Matrix4(),
   }).current
 
+  const rig = useRigBones()
+  const inertia = useMemo(() => new Inertia(), [])
   useFrame((_, dt) => {
     const { quat, gravity, tan, radial, x, y, z, m } = scratch
+    // Obstacles des bras sur la pose animée (en fin de liste).
+    if (rig) followLimbs(rig, group.current, colliders, colliders.length - 8, 'arm', p.limbs.armLength)
     group.current.getWorldQuaternion(quat)
     gravity.set(0, -1, 0).applyQuaternion(quat.invert())
     // Chaîne légère : elle doit pendre, pas rebondir.
@@ -196,6 +201,7 @@ function Necklace({ p, seed }: { p: DollParams; seed: number }) {
       { gravity: p.chain.weight, damping: p.chain.drape, iterations: 10 },
       colliders,
       gravity,
+      inertia.update(group.current, dt),
     )
 
     const pts = chain.points
@@ -302,9 +308,25 @@ export function bowMetrics(p: DollParams) {
    * et les fibres ressortent au travers du tissu. On dégage donc toute la
    * hauteur de fibre plus l'amplitude des bosses, depuis la surface elle-même.
    */
-  const z = onTorso(p, 0, torsoY, p.shell.height + p.shape.lumps * p.shape.torsoRadius * 0.65).pos.z
+  const lift = p.shell.height + p.shape.lumps * p.shape.torsoRadius * 0.65
+  const z = onTorso(p, 0, torsoY, lift).pos.z
 
-  return { r, wing, half, localY, torsoY, z }
+  /**
+   * Repli des ailes vers l'arrière, pour qu'elles épousent le buste.
+   *
+   * Une aile plane posée au ras du torse ne le touche qu'en son milieu : le
+   * buste fuit vers l'arrière sur les côtés, et les pointes restaient en l'air
+   * devant lui — d'autant plus que la poupée est dodue ou le nœud large. Vu de
+   * trois quarts, le nœud paraissait décollé. On mesure donc sur le profil réel
+   * de combien la surface recule sous la pointe, et on replie chaque aile
+   * d'autant.
+   */
+  const rxLift = onTorso(p, Math.PI / 2, torsoY, lift).pos.x
+  const tipX = wing * 0.85
+  const tipZ = onTorso(p, Math.asin(Math.min(0.98, tipX / rxLift)), torsoY, lift).pos.z
+  const fold = Math.atan2(Math.max(0, z - tipZ), tipX)
+
+  return { r, wing, half, localY, torsoY, z, fold }
 }
 
 /**
@@ -1150,7 +1172,7 @@ function useExtra(
 
       // ---------------------------------------------------- nœud papillon
       case 'noeudPap': {
-        const { wing, half, localY, z } = bowMetrics(p)
+        const { wing, half, localY, z, fold } = bowMetrics(p)
         // Générateur distinct de celui des métriques : couleur et asymétrie ne
         // doivent pas dépendre de l'ordre de tirage de la taille.
         const bow = mulberry32(p.seed + 516)
@@ -1205,7 +1227,9 @@ function useExtra(
         const side = bow() < 0.5 ? -1 : 1
         const lean = upright ? 0 : side * (0.015 + bow() * 0.03)
 
-        const wings = [0, Math.PI].map((yaw, i) => ({
+        // Repli vers l'arrière : autour de Y, un angle positif envoie +X vers
+        // −Z, donc l'aile de droite prend `fold` et celle de gauche `π − fold`.
+        const wings = [fold, Math.PI - fold].map((yaw, i) => ({
           yaw,
           /**
            * Bascule des ailes, **opposée** de l'une à l'autre : c'est elle qui
@@ -1226,14 +1250,17 @@ function useExtra(
         }))
 
         // `z` dégage la surface ; on y ajoute la demi-épaisseur du nœud, car
-        // c'est sa face arrière et non son centre qui doit l'affleurer.
+        // c'est sa face arrière et non son centre qui doit l'affleurer. La
+        // marge était de 0,15 aile pour une bandelette de 0,3 — mais les ailes,
+        // elles, ne font que 0,18 d'épaisseur : leur dos flottait devant le
+        // duvet. Bandelette et marge ramenées à l'épaisseur réelle.
         // La bandelette suit l'inclinaison, en plus discret : à angle fixe, un
         // nœud droit gardait un centre de travers.
         const knotTilt = lean * 0.6 + (bow() - 0.5) * 0.05
 
         return {
           neck: (
-            <group position={[0, localY, z + wing * 0.15]} rotation={[0, 0, lean]}>
+            <group position={[0, localY, z + wing * 0.1]} rotation={[0, 0, lean]}>
               {wings.map((w, i) => (
                 // Miroir par rotation, pas par échelle négative : une échelle
                 // -1 inverse les normales et l'aile se retrouve éclairée à
@@ -1248,7 +1275,7 @@ function useExtra(
               {/* bandelette centrale qui serre les deux ailes, légèrement de
                   travers comme un vrai nœud */}
               <mesh rotation={[0, 0, knotTilt]} castShadow>
-                <boxGeometry args={[wing * 0.17, half * 0.95, wing * 0.3]} />
+                <boxGeometry args={[wing * 0.17, half * 0.95, wing * 0.2]} />
                 {fabric(knot)}
               </mesh>
             </group>

@@ -73,6 +73,13 @@ export function CrossStitch({
   )
 }
 
+export type ButtonHoles = 2 | 4
+/**
+ * Passage du fil dans le bouton : en croix, deux brins parallèles, une barre
+ * unique (bouton à deux trous) ou aucun — un bouton cousu par l'arrière.
+ */
+export type ButtonThread = 'x' | 'parallel' | 'bar' | 'none'
+
 /**
  * Œil-bouton. Le groupe regarde vers +Z ; c'est au parent de l'orienter.
  * Les trous sont des disques sombres posés juste devant la face : à cette
@@ -84,6 +91,8 @@ export function ButtonEye({
   threadColor,
   threadRadius,
   wood,
+  holes: holeCount = 4,
+  pattern = 'x',
 }: {
   radius: number
   color: string
@@ -91,17 +100,37 @@ export function ButtonEye({
   threadRadius: number
   /** Veinage en niveaux de gris ; la teinte vient de `color`. */
   wood: WoodMaps
+  holes?: ButtonHoles
+  pattern?: ButtonThread
 }) {
   const thickness = radius * 0.24
   const holeOffset = radius * 0.32
   const holeR = radius * 0.13
   const front = thickness * 0.5
-  const holes: [number, number][] = [
-    [-holeOffset, holeOffset],
-    [holeOffset, holeOffset],
-    [-holeOffset, -holeOffset],
-    [holeOffset, -holeOffset],
-  ]
+  const holes: [number, number][] =
+    holeCount === 2
+      ? [
+          [-holeOffset, 0],
+          [holeOffset, 0],
+        ]
+      : [
+          [-holeOffset, holeOffset],
+          [holeOffset, holeOffset],
+          [-holeOffset, -holeOffset],
+          [holeOffset, -holeOffset],
+        ]
+  // Un motif qui ne correspond pas au nombre de trous n'existe pas sur un vrai
+  // bouton : deux trous ne portent qu'une barre, quatre jamais une barre seule.
+  const threads: { length: number; x: number; angle: number }[] =
+    holeCount === 2
+      ? pattern === 'none'
+        ? []
+        : [{ length: holeOffset * 2 + holeR * 2, x: 0, angle: Math.PI / 2 }]
+      : pattern === 'none'
+        ? []
+        : pattern === 'parallel'
+          ? [-1, 1].map((sx) => ({ length: holeOffset * 2 + holeR * 2, x: sx * holeOffset, angle: 0 }))
+          : [1, -1].map((sa) => ({ length: holeOffset * 2.55, x: 0, angle: sa * Math.PI * 0.25 }))
 
   return (
     <group>
@@ -143,20 +172,18 @@ export function ButtonEye({
         </mesh>
       ))}
 
-      {/* fil croisé entre les trous opposés */}
+      {/* fil entre les trous */}
       <group position={[0, 0, front + threadRadius * 0.9]}>
-        <Thread
-          length={holeOffset * 2.55}
-          radius={threadRadius}
-          color={threadColor}
-          rotation={[0, 0, Math.PI * 0.25]}
-        />
-        <Thread
-          length={holeOffset * 2.55}
-          radius={threadRadius}
-          color={threadColor}
-          rotation={[0, 0, -Math.PI * 0.25]}
-        />
+        {threads.map((t, i) => (
+          <Thread
+            key={i}
+            length={t.length}
+            radius={threadRadius}
+            color={threadColor}
+            position={[t.x, 0, 0]}
+            rotation={[0, 0, t.angle]}
+          />
+        ))}
       </group>
     </group>
   )

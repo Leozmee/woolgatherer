@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { Inertia, followLimbs, useRigBones } from './rig'
 import { mulberry32 } from '../core/rand'
 import { ClothSheet } from '../core/cloth'
 import { makeKnitMaps } from '../core/knit'
@@ -8,6 +9,7 @@ import { useDisposable } from '../core/useDisposable'
 import type { Collider } from '../core/springBone'
 import { fringeGeometry, writeFringe, type FringeEnd } from './fringe'
 import { sheetGeometry, writeSheet, writeSheetUv } from './sheet'
+import { makeFiberTexture, makeShellUniforms, shellInstances, shellShader } from './fuzz'
 import type { DollParams } from './params'
 import {
   armClearance,
@@ -61,6 +63,11 @@ const KNIT = { size: 768, cols: 10, rows: 12, rib: 2 }
  * quand on bouge le curseur, on le taille pour le pire cas.
  */
 const RCOLS = 14 * 4 + 1
+
+/** Coques de duvet de l'écharpe — plafond, la planche allégée en a déjà moins. */
+const SCARF_SHELLS = 4
+/** Longueur de fibre de l'écharpe, relative à celle du corps : un vêtement, pas la peau. */
+const SCARF_FUZZ = 0.45
 
 /**
  * Jeu entre la ligne médiane du tissu et la peau, en fraction de la largeur.
@@ -582,13 +589,15 @@ export function Scarf({ p, tint }: { p: DollParams; tint: string }) {
     const stitch = base.clone().offsetHSL(0, -0.03, 0.06)
     return makeKnitMaps({
       ...KNIT,
+      // Planche allégée : même rapport que le tricot du corps (512 / 1024).
+      size: p.wool.mapSize ? Math.round((KNIT.size * p.wool.mapSize) / 1024) : KNIT.size,
       base: `#${base.getHexString()}`,
       stitch: `#${stitch.getHexString()}`,
       relief: p.wool.relief,
       fuzz: p.wool.fuzz,
       seed: p.seed + 4711,
     })
-  }, [tint, p.wool.relief, p.wool.fuzz, p.seed])
+  }, [tint, p.wool.relief, p.wool.fuzz, p.seed, p.wool.mapSize])
 
   const colliders = useMemo(() => bodyColliders(p, m), [p, m.localY, m.band])
   const grid = useMemo(() => restGrid(p, m), [p, m.band, m.front, m.back, m.side, m.localY])
@@ -671,6 +680,77 @@ export function Scarf({ p, tint }: { p: DollParams; tint: string }) {
   )
   useEffect(() => () => material.dispose(), [material])
 
+  /**
+   * Duvet de l'écharpe : des coques, comme le corps.
+   *
+   * Nue, la nappe avait des côtes nettes et un bord franc, à côté d'une peluche
+   * dont tout le contour est pelucheux : c'est ce contraste qui la faisait lire
+   * comme du plastique côtelé plutôt que comme un tricot. Le halo est plus court
+   * que celui du corps — c'est un vêtement, pas la peau — et moins de coques :
+   * l'essentiel de l'effet est dans le contour.
+   *
+   * Contrairement au corps, la nappe est réécrite à chaque frame : des copies
+   * précalculées ne suivraient pas. Les coques partagent donc **la même**
+   * géométrie et chacune se repousse le long de la normale dans le shader.
+   * Même programme pour toutes (`customProgramCacheKey`), seule la valeur de
+   * l'uniforme change d'une coque à l'autre.
+   */
+  const fiber = useDisposable(
+    () => makeFiberTexture(512, p.shell.density, p.seed + 4343),
+    [p.shell.density, p.seed],
+  )
+  const shells = useMemo(() => {
+    const count = Math.min(SCARF_SHELLS, p.shell.count)
+    const height = p.shell.height * SCARF_FUZZ
+    // Même densité de fibres au centimètre que le corps : une tuile de tricot
+    // de l'écharpe couvre `grid.unit`, une tuile du corps le tour du crâne
+    // divisé par la taille de maille.
+    const bodyTile = (2 * Math.PI * p.shape.headRadius * 1.08) / p.wool.knitScale
+    const alpha = fiber.clone()
+    alpha.repeat.setScalar(1.2 * (grid.unit / bodyTile))
+    alpha.needsUpdate = true
+    // Une seule matière pour toutes les coques, dessinées en une fois (voir
+    // `shellInstances`).
+    const uni = makeShellUniforms()
+    uni.uShellCount.value = count
+    uni.uShellHeight.value = height
+    // Seuil relevé et teinte rabattue : au seuil du corps, le halo couvrait
+    // la face de paillettes claires et noyait les côtes — or ce sont elles
+    // qui disent « écharpe ». Le duvet doit rester au contour.
+    uni.uShellBias.value = 0.08
+    uni.uShellShade.value = 0.88
+    const mats = count <= 0 ? [] : [0].map(() => {
+      const mat = new THREE.MeshPhysicalMaterial({
+        map: wool.map,
+        alphaMap: alpha,
+        roughness: 1,
+        metalness: 0,
+        sheen: p.scarf.sheen,
+        sheenColor: new THREE.Color(p.wool.sheenColor),
+        sheenRoughness: 0.92,
+        side: THREE.DoubleSide,
+        // Comme le duvet du corps : hors de la profondeur, sinon chaque fibre
+        // aurait son contour d'encre.
+        depthWrite: false,
+      })
+      mat.onBeforeCompile = shellShader(uni)
+      mat.customProgramCacheKey = () => 'scarf-shell'
+      return mat
+    })
+    return { alpha, mats, count, height }
+  }, [fiber, wool, grid.unit, p.shell.count, p.shell.height, p.shape.headRadius, p.wool.knitScale, p.wool.sheenColor, p.scarf.sheen])
+  useEffect(
+    () => () => {
+      shells.alpha.dispose()
+      shells.mats.forEach((m) => m.dispose())
+    },
+    [shells],
+  )
+  // Instanciée sur la nappe elle-même : ses attributs, réécrits à chaque image,
+  // sont partagés. Pas de libération : elle rendrait aussi les tampons de la
+  // nappe, encore affichée.
+  const shellGeo = useMemo(() => shellInstances(geo, Math.max(1, shells.count), shells.height), [geo, shells])
+
   const group = useRef<THREE.Group>(null!)
   const gravityDir = useRef(new THREE.Vector3()).current
   const quat = useRef(new THREE.Quaternion()).current
@@ -682,11 +762,21 @@ export function Scarf({ p, tint }: { p: DollParams; tint: string }) {
     uvDone.current = false
   }, [fringe, grid.unit, m.band])
 
+  const rig = useRigBones()
+  const inertia = useMemo(() => new Inertia(), [])
   useFrame((_, dt) => {
+    // Obstacles des membres sur la pose **animée** : bras levé, le tissu doit
+    // passer par-dessus, pas au travers. Bras puis jambes, en fin de liste.
+    if (rig) {
+      const n = colliders.length
+      followLimbs(rig, group.current, colliders, n - 16, 'arm', p.limbs.armLength)
+      followLimbs(rig, group.current, colliders, n - 8, 'leg', p.limbs.legLength)
+    }
     group.current.getWorldQuaternion(quat)
     gravityDir.set(0, -1, 0).applyQuaternion(quat.invert())
     // Écharpe de peluche : presque rien ne pèse, et le tissu continue de bouger.
-    cloth.step(dt, { gravity: p.scarf.weight, damping: p.scarf.drape, iterations: 9 }, colliders, gravityDir)
+    const accel = inertia.update(group.current, dt)
+    cloth.step(dt, { gravity: p.scarf.weight, damping: p.scarf.drape, iterations: 9 }, colliders, gravityDir, accel)
     writeSheet(geo, cloth.points, ROWS, COLS, RCOLS, render.mid, m.band * p.scarf.thickness, render.rib, p.scarf.ribDepth)
 
     readEnd(fringe.ends[0], cloth.points, 0, 1)
@@ -713,6 +803,9 @@ export function Scarf({ p, tint }: { p: DollParams; tint: string }) {
   return (
     <group ref={group} position={[0, m.localY, 0]}>
       <mesh geometry={geo} material={material} castShadow receiveShadow />
+      {shells.mats.map((mat, i) => (
+        <mesh key={i} geometry={shellGeo} material={mat} renderOrder={1} frustumCulled={false} />
+      ))}
       <mesh geometry={fringeGeo} material={material} castShadow />
     </group>
   )

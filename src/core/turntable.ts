@@ -118,7 +118,10 @@ export function bindTurntable(el: HTMLElement) {
 export function stepTurntable(dt: number, spin: number) {
   const step = Math.min(dt, 1 / 30) * 60
 
-  if (turntable.idle && spin !== 0) turntable.vYaw = spin * 0.01
+  // Tant qu'on n'a rien touché, la dérive **est** la vitesse, nulle comprise :
+  // sinon la dérive de la planche, prise juste avant d'entrer dans l'arène, y
+  // continuait indéfiniment (rien ne l'amortit tant que `idle`).
+  if (turntable.idle) turntable.vYaw = spin * 0.01
 
   turntable.yaw += turntable.vYaw * step
   turntable.pitch = clamp(turntable.pitch + turntable.vPitch * step, PITCH_MIN, PITCH_MAX)

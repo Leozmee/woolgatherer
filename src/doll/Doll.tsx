@@ -5,25 +5,31 @@ import { makeKnitMaps, tiled, type KnitMaps } from '../core/knit'
 import { SpringBone } from '../core/springBone'
 import { turntable } from '../core/turntable'
 import { mulberry32 } from '../core/rand'
-import { useDisposable, useDisposableList } from '../core/useDisposable'
+import { useDisposable } from '../core/useDisposable'
+import { Batched } from '../core/batch'
 import { headGeometry, torsoGeometry, limbGeometry, tipGeometry } from './geometry'
-import { ButtonEye, CrossStitch, Pin, jitterColor, pinColor } from './parts'
+import { Pin, jitterColor, pinColor } from './parts'
+import { EYE_SCALE, Face, faceLook, type FaceLook } from './face'
 import { makeWoodTexture } from './wood'
 import { hairLook, useTraitSlots, woolTone, type LimbSlot, type TraitId } from './traits'
-import { makeCordTexture } from '../core/cord'
+import { makeCordTexture, makeYarnTexture } from '../core/cord'
+import { Hairdo, hairStyleFor, type HairStyle } from './hairstyles'
 import { Locks, useLockAnchors } from './hair'
 import {
   holeShader,
   makeFiberTexture,
   makeHoleUniforms,
-  shellAlphaTest,
-  shellGeometries,
-  shellShade,
+  makeShellUniforms,
+  shellInstances,
+  shellShader,
 } from './fuzz'
 import { dollLayout } from './layout'
 import type { PatchHoles } from './patch'
-import { headWidth, onHead, onHeadPolar, onTorso } from './surface'
+import { headWidth, onHeadPolar, onTorso } from './surface'
 import type { DollParams } from './params'
+import { RigContext, rigMetrics, type RigBones } from './rig'
+import { Dyn, Fighter } from './fighter'
+import { Stepper, bowShader, makeBow, type Bow } from './limbs'
 
 const UP = new THREE.Vector3(0, 1, 0)
 const DOWN = new THREE.Vector3(0, -1, 0)
@@ -69,64 +75,79 @@ function Fuzz({
   maps,
   p,
   holes,
+  bow,
 }: {
   geometry: THREE.BufferGeometry
   maps: WoolMaps
   p: DollParams
+  /** Courbure du membre porteur : le duvet la suit. */
+  bow?: Bow
   /** Pièces cousues sous lesquelles retirer la laine — le torse seul en a. */
   holes?: PatchHoles
 }) {
-  const shells = useDisposableList(
-    () => shellGeometries(geometry, p.shell.count, p.shell.height),
-    [geometry, p.shell.count, p.shell.height],
-  )
-  const shades = useMemo(
-    () => shells.map((_, i) => new THREE.Color().setScalar(shellShade(i, shells.length))),
-    [shells],
+  const count = p.shell.count
+  // Toutes les coques en un dessin (voir `shellInstances`).
+  const shells = useDisposable(
+    () => shellInstances(geometry, Math.max(1, count), p.shell.height),
+    [geometry, count, p.shell.height],
   )
 
   // Uniformes stables, valeurs réécrites : la poupée change, le programme non.
   // Remplacer l'objet à chaque génération recompilerait le shader six fois par
   // clic sur « générer ».
   const uni = useMemo(makeHoleUniforms, [])
-  const compile = useMemo(() => holeShader(uni), [uni])
+  const shellUni = useMemo(makeShellUniforms, [])
+  shellUni.uShellCount.value = count
+  shellUni.uShellHeight.value = p.shell.height
+  const compile = useMemo(() => {
+    const hole = holes ? holeShader(uni) : null
+    const shell = shellShader(shellUni)
+    const bend = bow ? bowShader(bow) : null
+    return (sh: THREE.WebGLProgramParametersWithUniforms) => {
+      hole?.(sh)
+      shell(sh)
+      bend?.(sh)
+    }
+  }, [uni, shellUni, holes, bow])
   useMemo(() => {
     uni.uHoleMask.value = holes?.mask ?? null
     uni.uHoleCount.value = holes?.count ?? 0
     holes?.rects.forEach((r, i) => uni.uHole.value[i].copy(r))
   }, [uni, holes])
 
+  if (count <= 0) return null
   return (
-    <>
-      {shells.map((g, i) => (
-        <mesh key={i} geometry={g} renderOrder={i + 1}>
-          <meshPhysicalMaterial
-            {...(holes ? { onBeforeCompile: compile } : {})}
-            map={maps[0]}
-            alphaMap={maps[3]}
-            alphaTest={shellAlphaTest(i, shells.length)}
-            color={shades[i]}
-            roughness={1}
-            metalness={0}
-            sheen={p.wool.sheen}
-            sheenColor={p.wool.sheenColor}
-            sheenRoughness={0.92}
-          />
-        </mesh>
-      ))}
-    </>
+    <mesh geometry={shells} renderOrder={1}>
+      <meshPhysicalMaterial
+        onBeforeCompile={compile}
+        customProgramCacheKey={() => `fuzz${holes ? '-holes' : ''}${bow ? '-bow' : ''}`}
+        map={maps[0]}
+        alphaMap={maps[3]}
+        // Hors de la profondeur : le contour d'encre la lit, et chaque
+        // fibre y aurait sinon son trait (voir `Outline`).
+        depthWrite={false}
+        roughness={1}
+        metalness={0}
+        sheen={p.wool.sheen}
+        sheenColor={p.wool.sheenColor}
+        sheenRoughness={0.92}
+      />
+    </mesh>
   )
 }
 
-function Wool({ maps, p, color }: { maps: WoolMaps; p: DollParams; color?: string }) {
+function Wool({ maps, p, color, bow }: { maps: WoolMaps; p: DollParams; color?: string; bow?: Bow }) {
   // Réglable : c'est le premier levier contre le scintillement, avant même de
   // toucher à la texture.
   const normalScale = useMemo(
     () => new THREE.Vector2(p.wool.normalStrength, p.wool.normalStrength),
     [p.wool.normalStrength],
   )
+  // Membre qui se courbe (voir `limbs.ts`).
+  const compile = useMemo(() => (bow ? bowShader(bow) : undefined), [bow])
   return (
     <meshPhysicalMaterial
+      {...(compile ? { onBeforeCompile: compile, customProgramCacheKey: () => 'wool-bow' } : {})}
       map={maps[0]}
       normalMap={maps[1]}
       // La carte de rugosité est ce qui casse le vernis uniforme : sans elle,
@@ -151,8 +172,23 @@ export function Doll({
   trait = 'nu',
   tone: forced,
   hairColor,
+  face: forcedFace,
+  hairStyle: forcedStyle,
+  fighter: forcedFighter,
+  weapon = false,
 }: {
   p: DollParams
+  /**
+   * Lecteur d'animation piloté de l'extérieur (arène, jeu). Sans lui la
+   * poupée joue son attente, décalée d'une poupée à l'autre.
+   */
+  fighter?: Fighter
+  /** Épingle de vaudou géante en main (main droite de la poupée). */
+  weapon?: boolean
+  /** Coiffure imposée par la planche, pour que les six soient différentes. */
+  hairStyle?: HairStyle
+  /** Visage imposé par la planche, pour que les six expressions soient distinctes. */
+  face?: FaceLook
   position?: [number, number, number]
   /** Laine imposée par la planche, pour que les six teintes soient distinctes. */
   tone?: { base: string; stitch: string }
@@ -162,7 +198,21 @@ export function Doll({
   trait?: TraitId
 }) {
   const root = useRef<THREE.Group>(null!)
+  /** Os de pose : ce que l'animation oriente. Les ressorts sont en dessous. */
+  const hips = useRef<THREE.Group>(null!)
+  const neck = useRef<THREE.Group>(null!)
+  const poseArmL = useRef<THREE.Group>(null!)
+  const poseArmR = useRef<THREE.Group>(null!)
+  const poseLegL = useRef<THREE.Group>(null!)
+  const poseLegR = useRef<THREE.Group>(null!)
   const body = useRef<THREE.Group>(null!)
+  /** Étirement / écrasement du corps entier, pivot aux pieds. */
+  const squash = useRef<THREE.Group>(null!)
+  /** Jambes : fût étirable et pied, repositionnés par l'ancrage au sol. */
+  const legStretch = useRef<Record<number, THREE.Group | null>>({})
+  const legFoot = useRef<Record<number, THREE.Group | null>>({})
+  /** Arme, orientée chaque image depuis la main. */
+  const weaponRef = useRef<THREE.Group>(null)
   const headBone = useRef<THREE.Group>(null!)
   const armL = useRef<THREE.Group>(null!)
   const armR = useRef<THREE.Group>(null!)
@@ -186,8 +236,9 @@ export function Doll({
       relief: p.wool.relief,
       fuzz: p.wool.fuzz,
       seed: p.seed,
+      size: p.wool.mapSize,
     }),
-    [tone, p.wool.relief, p.wool.fuzz, p.seed],
+    [tone, p.wool.relief, p.wool.fuzz, p.seed, p.wool.mapSize],
   )
 
   // Chaque partie a ses propres répétitions pour que la maille garde la même
@@ -282,6 +333,14 @@ export function Doll({
     () => makeCordTexture(256, p.hair.strands, p.hair.turns, p.seed + 808),
     [p.hair.strands, p.hair.turns, p.seed],
   )
+  // Coiffure : locks, ou l'une des coupes en laine de `hairstyles.tsx`. Celles-ci
+  // portent un fil retors — deux à quatre brins, tirés de la graine — et non la
+  // tresse des locks : ce sont deux matières.
+  const style = forcedStyle ?? hairStyleFor(p.seed)
+  const yarn = useDisposable(
+    () => makeYarnTexture(256, 2 + Math.floor(mulberry32(p.seed + 809)() * 3), p.seed + 809),
+    [p.seed],
+  )
   const headWidthAt = useCallback(
     (sy: number, lateral: number) => headWidth(p, sy, lateral),
     [p],
@@ -308,7 +367,8 @@ export function Doll({
   const clearance = Math.min(hair.thickness * 0.45, Math.max(0, segLen * 0.92 - sink))
 
   const locks = useLockAnchors(
-    hair.count,
+    // Pas de racines à calculer pour une coiffure qui n'est pas en locks.
+    style === 'locks' ? hair.count : 0,
     p.seed,
     s.headRadius,
     s.headSquash,
@@ -343,26 +403,16 @@ export function Doll({
     const rnd = mulberry32(p.seed + 2024)
     return {
       spacing: p.face.eyeSpacing * (0.88 + rnd() * 0.24),
-      leftSize: p.face.leftSize * (0.86 + rnd() * 0.28),
-      rightSize: p.face.rightSize * (0.86 + rnd() * 0.28),
+      leftSize: p.face.leftSize * (0.86 + rnd() * 0.28) * EYE_SCALE,
+      rightSize: p.face.rightSize * (0.86 + rnd() * 0.28) * EYE_SCALE,
       leftColor: jitterColor(p.face.leftColor, rnd),
       rightColor: jitterColor(p.face.rightColor, rnd),
     }
   }, [p])
 
-  const eyeL = useMemo(() => onHead(p, -eyes.spacing * 0.5, p.face.eyeHeight, lift), [p, eyes, lift])
-  const eyeR = useMemo(() => onHead(p, eyes.spacing * 0.5, p.face.eyeHeight, lift), [p, eyes, lift])
-
-  const mouth = useMemo(() => {
-    const n = p.face.mouthStitches
-    const half = p.face.mouthWidth * 0.5
-    return Array.from({ length: n }, (_, i) => {
-      const u = n === 1 ? 0 : (i / (n - 1)) * 2 - 1
-      const x = u * half
-      const sag = (1 - u * u) * p.face.mouthWidth * 0.14
-      return onHead(p, x, p.face.mouthHeight - sag, mouthLift)
-    })
-  }, [p, mouthLift])
+  // Visage imposé par la planche — humeurs et détails tous différents —, tiré
+  // de la graine sinon.
+  const look = useMemo(() => forcedFace ?? faceLook(p.seed), [forcedFace, p.seed])
 
   // --- épingles plantées dans le crâne ---
   const headPins = useMemo(() => {
@@ -406,19 +456,125 @@ export function Doll({
     })
   }, [p])
 
+  /**
+   * Les locks sont marqués « cheveux » pour le cel shading **depuis ici** : leur
+   * code (`hair.tsx`) et leur coupe restent intacts, c'est la seule coiffure à
+   * ne pas toucher. On pose la marque sur les matériaux une fois montés.
+   */
+  const locksGroup = useRef<THREE.Group>(null)
+  useEffect(() => {
+    locksGroup.current?.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | undefined
+      if (!m || (m.defines && 'TOON_HAIR' in m.defines)) return
+      m.defines = { ...(m.defines ?? {}), TOON_HAIR: '' }
+      m.needsUpdate = true
+    })
+  }, [style, locks, hair])
+
+  /**
+   * **Ombres portées réservées aux volumes.** Chaque objet qui porte ombre est
+   * redessiné dans la carte d'ombre : 583 sur la planche, dont une majorité de
+   * points de couture, de têtes d'épingle et de perles, dont l'ombre tient dans
+   * un pixel. On la retire à tout ce qui est plus petit qu'un septième du
+   * crâne. Les locks gardent la leur : leur coupe ne se touche pas.
+   */
+  useEffect(() => {
+    const min = s.headRadius * 0.15
+    root.current.traverse((o) => {
+      if (o === locksGroup.current) return
+      const mesh = o as THREE.Mesh
+      if (!mesh.isMesh || !mesh.castShadow) return
+      if (locksGroup.current && isInside(mesh, locksGroup.current)) return
+      const g = mesh.geometry
+      if (!g.boundingSphere) g.computeBoundingSphere()
+      if (g.boundingSphere!.radius < min) mesh.castShadow = false
+    })
+  })
+
+  // Tout ce qui change le contenu des pièces fusionnées : la fusion est refaite.
+  const batchDeps = [p, trait, tone, look, eyes, style, weapon]
+
   // --- ressorts ---
   const springs = useRef<Record<string, SpringBone> | null>(null)
   const springKey = `${s.headRadius}|${lb.armLength}|${lb.legLength}`
   const lastKey = useRef('')
 
-  useFrame((state, dt) => {
+  // Combattant : celui de l'arène, piloté ; sinon une attente propre,
+  // déphasée par la graine pour que la planche ne respire pas à l'unisson.
+  const ownFighter = useMemo(() => new Fighter({ phase: mulberry32(p.seed + 77)() * 3 }), [p.seed])
+  const fighter = forcedFighter ?? ownFighter
+  const metrics = useMemo(() => rigMetrics(p), [p])
+  /** Longueur de l'arme : presque la taille de la poupée — trop grande pour elle. */
+  const weaponLength = metrics.height * 0.92
+  /** Pointe de l'arme en repère monde, avec son inertie : elle est lourde. */
+  const weaponTip = useMemo(() => ({ dyn: new Dyn(3, 4.2, 0.55, 0.2), ready: false }), [])
+  /** Courbure de chaque membre (voir `limbs.ts`). */
+  const bows = useMemo(
+    () => ({
+      arm: { [-1]: makeBow(lb.armLength), 1: makeBow(lb.armLength) } as Record<number, Bow>,
+      leg: { [-1]: makeBow(lb.legLength), 1: makeBow(lb.legLength) } as Record<number, Bow>,
+    }),
+    [lb.armLength, lb.legLength],
+  )
+  const stepper = useMemo(() => new Stepper(), [])
+  const hipW = useMemo(() => ({ [-1]: new THREE.Vector3(), 1: new THREE.Vector3() }) as Record<-1 | 1, THREE.Vector3>, [])
+  /** Pied au repos, repère de la racine : hanche, puis l'axe écarté de la jambe. */
+  const footRest = useMemo(() => {
+    const reach = lb.legLength + lb.legRadius * 0.3
+    const out = {} as Record<-1 | 1, THREE.Vector3>
+    for (const side of [-1, 1] as const)
+      out[side] = new THREE.Vector3(
+        side * (L.hipX + Math.sin(lb.legSpread) * reach),
+        -L.centerY + L.hipY - Math.cos(lb.legSpread) * reach,
+        0,
+      )
+    return out
+  }, [L, lb.legLength, lb.legRadius, lb.legSpread])
+  const bones = useMemo<RigBones>(() => ({ arm: { [-1]: null, 1: null }, leg: { [-1]: null, 1: null } }), [])
+
+  /**
+   * Priorité −1 : avant l'écharpe et le collier, qui relisent la position des
+   * membres pour y poser leurs obstacles. Sans elle ils s'abonnent avant la
+   * poupée (effets des enfants d'abord) et suivent les bras avec une image de
+   * retard. `Rig` est à −2 : la platine avance encore avant.
+   */
+  useFrame((_, dt) => {
     // La platine et la caméra sont pilotées par <Rig>, en amont : ici on ne
     // fait que lire son état, sinon trois poupées le feraient avancer trois
     // fois par frame.
-    root.current.rotation.set(turntable.pitch, turntable.yaw, 0)
+    fighter.update(dt, metrics)
+    if (fighter.drive) {
+      // Arène : la poupée se déplace et fait face à sa course ; la platine
+      // tourne la caméra (voir `Rig`).
+      root.current.position.set(fighter.pos.x, 0, fighter.pos.z)
+      root.current.rotation.set(0, fighter.facing, 0)
+    } else {
+      root.current.rotation.set(turntable.pitch, turntable.yaw, 0)
+    }
+    const pose = fighter.pose
+    // Volume constant : ce que le corps perd en hauteur, il le gagne en
+    // largeur. Et il ploie (cisaillement, pieds fixes) : voir `fighter.shear`.
+    const sq = fighter.squash
+    const w = 1 / Math.sqrt(sq)
+    const sqm = squash.current
+    sqm.matrixAutoUpdate = false
+    sqm.matrix.set(w, fighter.shear.x, 0, 0, 0, sq, 0, 0, 0, fighter.shear.z, w, 0, 0, 0, 0, 1)
+    sqm.matrixWorldNeedsUpdate = true
+    hips.current.position.fromArray(pose.hipsPos)
+    hips.current.rotation.fromArray(pose.hips)
+    neck.current.rotation.fromArray(pose.neck)
+    poseArmL.current.rotation.fromArray(pose['arm-1'])
+    poseArmR.current.rotation.fromArray(pose.arm1)
+    poseLegL.current.rotation.fromArray(pose['leg-1'])
+    poseLegR.current.rotation.fromArray(pose.leg1)
+    bones.arm[-1] = armL.current
+    bones.arm[1] = armR.current
+    bones.leg[-1] = legL.current
+    bones.leg[1] = legR.current
 
-    const breathe = Math.sin(state.clock.elapsedTime * 1.4) * p.motion.breathe
-    body.current.scale.set(1 + breathe, 1 - breathe * 0.55, 1 + breathe)
+    // --- pieds au sol (arène) : la jambe vise son pied planté
+    // Temps du combattant : les pieds gèlent avec lui à l'impact.
+    const ik = fighter.drive ? plantFeet(fighter.dt) : 0
 
     if (!springs.current || lastKey.current !== springKey) {
       springs.current = {
@@ -431,11 +587,23 @@ export function Doll({
       lastKey.current = springKey
     }
 
-    const limbCfg = p.spring
+    // Pendant un geste les membres se raidissent : trop mous, ils traînaient
+    // si loin derrière la pose qu'une attaque ne se lisait plus. Assez pour
+    // que le coup porte, pas assez pour perdre le ballottement.
+    const firm = fighter.firm
+    // Dans l'arène, ressorts des membres et de la tête bien amortis : ils
+    // suivent en retard mais ne rebondissent pas (le rebond faisait gelée).
+    const settle = fighter.drive ? 0.5 : 0
+    const limbCfg = {
+      ...p.spring,
+      drag: Math.max(p.spring.drag, settle),
+      stiffness: p.spring.stiffness + (0.72 - p.spring.stiffness) * firm,
+      gravity: p.spring.gravity * (1 - 0.7 * firm),
+    }
     // La tête est rappelée plus fort : elle acquiesce, elle ne pendouille pas.
     const headCfg = {
       stiffness: p.spring.headStiffness,
-      drag: p.spring.drag,
+      drag: Math.max(p.spring.drag, settle),
       gravity: p.spring.gravity * 0.15,
     }
     springs.current.head.update(dt, headCfg)
@@ -443,24 +611,171 @@ export function Doll({
     springs.current.armR.update(dt, limbCfg)
     springs.current.legL.update(dt, limbCfg)
     springs.current.legR.update(dt, limbCfg)
-  })
+    // Pied planté : le ressort de la jambe s'efface, sinon il décollerait le
+    // pied que l'ancrage vient de poser.
+    if (ik > 0) {
+      legL.current.quaternion.slerp(_qId, ik)
+      legR.current.quaternion.slerp(_qId, ik)
+    }
+    bendArm(armL.current, -1)
+    bendArm(armR.current, 1)
+
+    if (weaponRef.current) aimWeapon(weaponRef.current)
+    // Atelier : de quoi mesurer le ressenti (voir les audits de CLAUDE.md).
+    if (import.meta.env.DEV && fighter.drive)
+      Object.assign(window, { __doll: { head: headBone.current, hips: hips.current, bows, squash: squash.current } })
+  }, -1)
+
+  /**
+   * Ancrage au sol : pas procéduraux (`Stepper`), puis chaque jambe se
+   * réoriente vers son pied, s'étire ou se tasse pour l'atteindre, et plie
+   * comme un genou de tissu quand elle est tassée. Renvoie la part d'ancrage.
+   */
+  const plantFeet = (dt: number) => {
+    root.current.getWorldPosition(_rootW)
+    for (const side of [-1, 1] as const) {
+      const pose = side === -1 ? poseLegL.current : poseLegR.current
+      pose.parent!.updateWorldMatrix(true, false)
+      pose.getWorldPosition(hipW[side])
+    }
+    stepper.update(dt, {
+      root: _rootW,
+      facing: fighter.facing,
+      vel: fighter.vel,
+      rest: footRest,
+      hips: hipW,
+      splay: Math.sin(lb.legSpread) * (lb.legLength + lb.legRadius * 0.3),
+      grounded: fighter.grounded,
+      legLength: lb.legLength,
+      onLand: (side, speed, dur) => fighter.land(speed, side, dur),
+    })
+    const w = stepper.weight
+    if (import.meta.env.DEV) Object.assign(window, { __stepper: stepper, __legK: _legK })
+    const reachRest = lb.legLength + lb.legRadius * 0.3
+    for (const side of [-1, 1] as const) {
+      const pose = side === -1 ? poseLegL.current : poseLegR.current
+      const stretch = legStretch.current[side]
+      const foot = legFoot.current[side]
+      const bow = bows.leg[side].uBow.value
+      if (!stretch || !foot) continue
+      const parent = pose.parent!
+      parent.updateWorldMatrix(true, false)
+      pose.getWorldPosition(_hip)
+      _dir.subVectors(stepper.feet[side].pos, _hip)
+      const D = _dir.length()
+      parent.getWorldQuaternion(_qa).invert()
+      _dir.applyQuaternion(_qa).normalize()
+      _axis.set(side * Math.sin(lb.legSpread), -Math.cos(lb.legSpread), 0)
+      _qb.setFromUnitVectors(_axis, _dir)
+      pose.quaternion.slerp(_qb, w)
+      // Longueur du fût pour que le pied tombe pile sur sa place.
+      // Jusqu'à 1,35 : le tissu s'étire, et au-delà le pied décrochait.
+      const k = THREE.MathUtils.clamp((D - lb.legRadius * 0.3) / lb.legLength, 0.62, 1.35)
+      const kk = 1 + (k - 1) * w
+      if (import.meta.env.DEV) _legK[side] = +((D - lb.legRadius * 0.3) / lb.legLength).toFixed(2)
+      stretch.scale.y = Math.max(kk, 0.8)
+      foot.position.y = -(lb.legLength * kk) - lb.legRadius * 0.3
+      // Tassée, elle plie vers l'avant plutôt que de raccourcir en télescope.
+      const bend = Math.min(lb.legLength * 0.32, Math.max(0, reachRest - D) * 0.9) * w
+      bow.set(0, 0, bend)
+    }
+    return w
+  }
+
+  /**
+   * Un bras qui traîne derrière son mouvement se cambre : le ressort du bras
+   * dit de combien son bout est en retard ; le milieu part à l'opposé, comme
+   * une corde molle qu'on tire.
+   */
+  const bendArm = (bone: THREE.Object3D, side: -1 | 1) => {
+    _dir.copy(DOWN).applyQuaternion(bone.quaternion).sub(DOWN)
+    _qa.copy(bone.quaternion).invert()
+    _dir.applyQuaternion(_qa).multiplyScalar(-lb.armLength * 0.75)
+    if (_dir.length() > lb.armLength * 0.3) _dir.setLength(lb.armLength * 0.3)
+    bows.arm[side].uBow.value.lerp(_dir, 0.5)
+  }
+
+  /**
+   * L'arme est **lourde** : sa pointe suit sa position visée avec inertie, en
+   * repère monde — elle traîne quand la poupée court, fouette quand elle
+   * frappe, et ne descend jamais sous le sol, où elle frotte. La poignée, elle,
+   * reste dans la main.
+   */
+  const aimWeapon = (w: THREE.Group) => {
+    const socket = w.parent!
+    socket.updateWorldMatrix(true, false)
+    socket.getWorldPosition(_hand)
+    hips.current.getWorldQuaternion(_qa)
+    _dir.copy(fighter.weaponDir).applyQuaternion(_qa)
+    _tip.copy(_hand).addScaledVector(_dir, weaponLength)
+    const tip = weaponTip.dyn
+    if (!weaponTip.ready) {
+      for (let i = 0; i < 3; i++) tip.snap(i, _tip.getComponent(i))
+      weaponTip.ready = true
+    }
+    tip.update(fighter.dt, _tip.toArray(_arr3))
+    root.current.getWorldPosition(_rootW)
+    fighter.floorY = _rootW.y + L.floorY
+    const floor = fighter.floorY + s.headRadius * 0.03
+    tip.floor(1, floor)
+    _tip.set(tip.y[0], tip.y[1], tip.y[2])
+    _dir.subVectors(_tip, _hand)
+    if (_dir.lengthSq() < 1e-8) return
+    _dir.normalize()
+    /*
+     * Le sol s'applique à la pointe **dessinée**, pas seulement à la visée :
+     * quand l'arme est en retard sur sa cible, la pointe amortie est plus
+     * près de la main que la longueur de l'arme, et la lame dessinée
+     * dépassait sous le sol (mesuré : 200 images sur 600 d'appuis au hasard).
+     * On relève alors la lame juste assez, sans changer son cap.
+     */
+    const minY = (floor - _hand.y) / weaponLength
+    if (_dir.y < minY) {
+      const dy = Math.max(-1, Math.min(1, minY))
+      const h = Math.hypot(_dir.x, _dir.z)
+      const hk = h > 1e-6 ? Math.sqrt(Math.max(0, 1 - dy * dy)) / h : 0
+      _dir.set(_dir.x * hk, dy, _dir.z * hk)
+      if (h <= 1e-6) _dir.set(0, dy, Math.sqrt(Math.max(0, 1 - dy * dy)))
+    }
+    _qb.setFromUnitVectors(UP, _dir)
+    socket.getWorldQuaternion(_qa).invert()
+    w.quaternion.copy(_qa.multiply(_qb))
+    fighter.tipWorld.copy(_hand).addScaledVector(_dir, weaponLength)
+    // Traînée sur le dernier tiers de la lame : de la poignée à la pointe, elle
+    // faisait une grande nappe grise derrière la poupée.
+    fighter.midWorld.copy(_hand).addScaledVector(_dir, weaponLength * 0.68)
+  }
 
   const arm = (side: -1 | 1, ref: MutableRefObject<THREE.Group>) => {
     const key: LimbSlot = side === -1 ? 'leftArm' : 'rightArm'
     return (
-    <group position={[side * L.shoulderX, L.shoulderY, 0]} rotation={[0, 0, side * lb.armSpread]}>
+    // Os de pose **avant** l'écartement : un geste se donne dans le repère du
+    // corps. Après, « en avant » tournait autour d'un axe incliné de l'angle
+    // d'écartement, et un bras levé passait en travers de la poitrine.
+    <group position={[side * L.shoulderX, L.shoulderY, 0]}>
+      <group ref={side === -1 ? poseArmL : poseArmR}>
+      <group rotation={[0, 0, side * lb.armSpread]}>
       <group ref={ref}>
         <mesh geometry={armGeo} castShadow receiveShadow>
-          <Wool maps={armMaps} p={p} color={slots.tints?.[key]} />
+          <Wool maps={armMaps} p={p} color={slots.tints?.[key]} bow={bows.arm[side]} />
         </mesh>
-        <Fuzz geometry={armGeo} maps={armMaps} p={p} />
+        <Fuzz geometry={armGeo} maps={armMaps} p={p} bow={bows.arm[side]} />
         <group position={[0, -lb.armLength - lb.armRadius * 0.35, 0]}>
           <mesh geometry={handGeo} castShadow>
             <Wool maps={armMaps} p={p} color={slots.tints?.[key]} />
           </mesh>
           <Fuzz geometry={handGeo} maps={armMaps} p={p} />
         </group>
-        {slots.limbs?.[key]}
+        <Batched deps={batchDeps}>{slots.limbs?.[key]}</Batched>
+        {weapon && side === -1 && (
+          <group position={[0, -lb.armLength - lb.armRadius * 0.35, 0]}>
+            <group ref={weaponRef}>
+              <Weapon length={weaponLength} size={s.headRadius} />
+            </group>
+          </group>
+        )}
+      </group>
+      </group>
       </group>
     </group>
     )
@@ -469,19 +784,25 @@ export function Doll({
   const leg = (side: -1 | 1, ref: MutableRefObject<THREE.Group>) => {
     const key: LimbSlot = side === -1 ? 'leftLeg' : 'rightLeg'
     return (
-    <group position={[side * L.hipX, L.hipY, 0]} rotation={[0, 0, side * lb.legSpread]}>
+    <group position={[side * L.hipX, L.hipY, 0]}>
+      <group ref={side === -1 ? poseLegL : poseLegR}>
+      <group rotation={[0, 0, side * lb.legSpread]}>
       <group ref={ref}>
-        <mesh geometry={legGeo} castShadow receiveShadow>
-          <Wool maps={legMaps} p={p} color={slots.tints?.[key]} />
-        </mesh>
-        <Fuzz geometry={legGeo} maps={legMaps} p={p} />
-        <group position={[0, -lb.legLength - lb.legRadius * 0.3, 0]}>
+        <group ref={(el) => void (legStretch.current[side] = el)}>
+          <mesh geometry={legGeo} castShadow receiveShadow>
+            <Wool maps={legMaps} p={p} color={slots.tints?.[key]} bow={bows.leg[side]} />
+          </mesh>
+          <Fuzz geometry={legGeo} maps={legMaps} p={p} bow={bows.leg[side]} />
+          <Batched deps={batchDeps}>{slots.limbs?.[key]}</Batched>
+        </group>
+        <group ref={(el) => void (legFoot.current[side] = el)} position={[0, -lb.legLength - lb.legRadius * 0.3, 0]}>
           <mesh geometry={footGeo} castShadow>
             <Wool maps={legMaps} p={p} color={slots.tints?.[key]} />
           </mesh>
           <Fuzz geometry={footGeo} maps={legMaps} p={p} />
         </group>
-        {slots.limbs?.[key]}
+      </group>
+      </group>
       </group>
     </group>
     )
@@ -489,22 +810,32 @@ export function Doll({
 
   return (
     <group ref={root} position={position}>
+      <RigContext.Provider value={bones}>
+      {/* Bassin : tout le corps, déplacé et penché par l'animation. */}
+      <group ref={hips}>
+      {/* Écrasement pivoté aux pieds : ils restent au sol quand le corps se tasse. */}
+      <group position={[0, L.floorY, 0]}>
+      <group ref={squash}>
+      <group position={[0, -L.floorY, 0]}>
       <group ref={body} position={[0, -L.centerY, 0]}>
         {/* torse */}
         <mesh geometry={torsoGeo} castShadow receiveShadow>
           <Wool maps={torsoMaps} p={p} />
         </mesh>
         <Fuzz geometry={torsoGeo} maps={torsoMaps} p={p} holes={slots.holes} />
-        {slots.torso}
-        {pins.map((pin, i) => (
-          <Pin
-            key={i}
-            length={s.torsoRadius * 0.85}
-            color={pin.color}
-            position={[pin.pos.x, pin.pos.y, pin.pos.z]}
-            quaternion={pin.quat}
-          />
-        ))}
+        {/* Pièces fixes du torse fusionnées par matière (voir `Batched`). */}
+        <Batched deps={batchDeps}>
+          {slots.torso}
+          {pins.map((pin, i) => (
+            <Pin
+              key={i}
+              length={s.torsoRadius * 0.85}
+              color={pin.color}
+              position={[pin.pos.x, pin.pos.y, pin.pos.z]}
+              quaternion={pin.quat}
+            />
+          ))}
+        </Batched>
 
         {arm(-1, armL)}
         {arm(1, armR)}
@@ -514,74 +845,133 @@ export function Doll({
         {/* cou → tête */}
         <group position={[0, L.neckY, 0]}>
           {slots.neck}
+          <group ref={neck}>
           <group ref={headBone}>
             <group position={[0, L.headY, 0]}>
               <mesh geometry={headGeo} castShadow receiveShadow>
                 <Wool maps={headMaps} p={p} />
               </mesh>
               <Fuzz geometry={headGeo} maps={headMaps} p={p} />
-              {slots.head}
+              <Batched deps={batchDeps}>{slots.head}</Batched>
 
-              <Locks
-                anchors={locks.anchors}
-                length={hair.length}
-                radius={hair.thickness}
-                segments={hair.segments}
-                color={hair.color}
-                tipColor={hair.tipColor}
-                tipped={hair.tipped}
-                cord={cord}
-                skullRadius={locks.skullRadius}
-                spring={{
-                  stiffness: p.hair.stiffness,
-                  drag: p.hair.drag,
-                  gravity: p.hair.gravity,
-                }}
-              />
-
-              <group position={eyeL.pos} quaternion={eyeL.quat}>
-                <ButtonEye
-                  radius={eyes.leftSize}
-                  color={eyes.leftColor}
-                  threadColor={p.thread.color}
-                  threadRadius={p.thread.radius * 0.6}
-                  wood={wood}
+              {style === 'locks' ? (
+                <group ref={locksGroup}>
+                <Locks
+                  anchors={locks.anchors}
+                  length={hair.length}
+                  radius={hair.thickness}
+                  segments={hair.segments}
+                  color={hair.color}
+                  tipColor={hair.tipColor}
+                  tipped={hair.tipped}
+                  cord={cord}
+                  skullRadius={locks.skullRadius}
+                  spring={{
+                    stiffness: p.hair.stiffness,
+                    drag: p.hair.drag,
+                    gravity: p.hair.gravity,
+                  }}
                 />
-              </group>
-              <group position={eyeR.pos} quaternion={eyeR.quat}>
-                <ButtonEye
-                  radius={eyes.rightSize}
-                  color={eyes.rightColor}
-                  threadColor={p.thread.color}
-                  threadRadius={p.thread.radius * 0.6}
-                  wood={wood}
-                />
-              </group>
-
-              {headPins.map((pin, i) => (
-                <Pin
-                  key={i}
-                  length={pin.length}
-                  color={pin.color}
-                  position={[pin.pos.x, pin.pos.y, pin.pos.z]}
-                  quaternion={pin.quat}
-                />
-              ))}
-
-              {mouth.map((m, i) => (
-                <group key={i} position={m.pos} quaternion={m.quat}>
-                  <CrossStitch
-                    size={p.face.mouthWidth * 0.28}
-                    radius={p.thread.radius}
-                    color={p.thread.mouthColor}
-                    dip={stitchDip}
-                  />
                 </group>
-              ))}
+              ) : null}
+              {style !== 'locks' && (
+                <Hairdo p={p} style={style} color={hair.color} yarn={yarn} braid={cord} />
+              )}
+
+              <Batched deps={batchDeps}>
+                <Face
+                  p={p}
+                  look={look}
+                  eyes={eyes}
+                  wood={wood}
+                  lift={lift}
+                  mouthLift={mouthLift}
+                  stitchDip={stitchDip}
+                />
+
+                {headPins.map((pin, i) => (
+                  <Pin
+                    key={i}
+                    length={pin.length}
+                    color={pin.color}
+                    position={[pin.pos.x, pin.pos.y, pin.pos.z]}
+                    quaternion={pin.quat}
+                  />
+                ))}
+              </Batched>
+
             </group>
+          </group>
           </group>
         </group>
       </group>
+      </group>
+      </group>
+      </group>
+      </group>
+      </RigContext.Provider>
+    </group>
+  )
+}
+
+function isInside(o: THREE.Object3D, parent: THREE.Object3D) {
+  for (let p = o.parent; p; p = p.parent) if (p === parent) return true
+  return false
+}
+
+const _hand = new THREE.Vector3()
+const _dir = new THREE.Vector3()
+const _tip = new THREE.Vector3()
+const _rootW = new THREE.Vector3()
+const _hip = new THREE.Vector3()
+const _axis = new THREE.Vector3()
+const _qId = new THREE.Quaternion()
+const _legK: Record<number, number> = {}
+const _qa = new THREE.Quaternion()
+const _qb = new THREE.Quaternion()
+const _arr3: number[] = [0, 0, 0]
+
+/**
+ * Arme : une épingle de vaudou géante, presque aussi grande que la poupée.
+ *
+ * La même épingle que celles plantées dans les peluches, à l'échelle d'une
+ * arme qu'elle peine à porter : c'est l'objet du monde qui dit « vaudou », et
+ * sa disproportion dit le reste. Tige d'acier épaisse et effilée, tête de verre
+ * rouge en pommeau, poignée de fil enroulé, perle de bois en garde. Le long
+ * de +y depuis la main ; `Doll` l'oriente.
+ */
+function Weapon({ length, size }: { length: number; size: number }) {
+  const shaft = length - size * 0.42
+  const steel = <meshStandardMaterial color="#b3aea5" metalness={1} roughness={0.32} />
+  const thread = <meshStandardMaterial color="#3a2a22" roughness={0.95} />
+  return (
+    <group>
+      {/* pommeau : la tête de l'épingle, derrière le poing */}
+      <mesh position={[0, -size * 0.1, 0]} castShadow>
+        <sphereGeometry args={[size * 0.2, 24, 16]} />
+        <meshPhysicalMaterial color="#b3261e" roughness={0.18} clearcoat={1} clearcoatRoughness={0.08} />
+      </mesh>
+      {/* poignée : la tige, gainée de fil */}
+      <mesh position={[0, size * 0.2, 0]} castShadow>
+        <cylinderGeometry args={[size * 0.055, size * 0.055, size * 0.38, 12]} />
+        {thread}
+      </mesh>
+      {[0.06, 0.16, 0.26, 0.34].map((y) => (
+        <mesh key={y} position={[0, size * y, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[size * 0.058, size * 0.014, 6, 16]} />
+          {thread}
+        </mesh>
+      ))}
+      {/* garde : une perle de bois */}
+      <mesh position={[0, size * 0.42, 0]} castShadow>
+        <sphereGeometry args={[size * 0.1, 16, 12]} />
+        <meshStandardMaterial color="#8a5a34" roughness={0.6} />
+      </mesh>
+      {/* tige d'acier, épaisse et effilée jusqu'à la pointe */}
+      <mesh position={[0, size * 0.42 + shaft / 2, 0]} castShadow>
+        <cylinderGeometry args={[size * 0.008, size * 0.062, shaft, 14]} />
+        {steel}
+      </mesh>
     </group>
   )
 }

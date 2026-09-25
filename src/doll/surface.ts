@@ -122,6 +122,11 @@ export function bodyRadius(p: DollParams, y: number) {
  * `shift` décale le résultat vers le repère de l'appelant : l'écharpe vit plus
  * bas que le cou, le collier à sa hauteur.
  */
+/** Sphères le long d'un bras : fraction de la longueur, facteur de rayon. */
+export const ARM_T = [[0, 1.15], [0.4, 1], [0.8, 1], [1.15, 1.25]] as const
+/** Idem pour une jambe. */
+export const LEG_T = [[0, 1.1], [0.4, 1], [0.8, 1], [1.1, 1.3]] as const
+
 export function armSpheres(p: DollParams, skin: number, shift = 0): Collider[] {
   const s = p.shape
   const lb = p.limbs
@@ -132,7 +137,7 @@ export function armSpheres(p: DollParams, skin: number, shift = 0): Collider[] {
 
   const out: Collider[] = []
   for (const side of [-1, 1]) {
-    for (const [t, k] of [[0, 1.15], [0.4, 1], [0.8, 1], [1.15, 1.25]] as const) {
+    for (const [t, k] of ARM_T) {
       out.push({
         center: new THREE.Vector3(
           side * (shoulderX + t * lb.armLength * ax),
@@ -166,7 +171,7 @@ export function legSpheres(p: DollParams, skin: number, shift = 0): Collider[] {
 
   const out: Collider[] = []
   for (const side of [-1, 1]) {
-    for (const [t, k] of [[0, 1.1], [0.4, 1], [0.8, 1], [1.1, 1.3]] as const) {
+    for (const [t, k] of LEG_T) {
       out.push({
         center: new THREE.Vector3(
           side * (hipX + t * lb.legLength * ax),

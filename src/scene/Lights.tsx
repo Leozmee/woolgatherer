@@ -1,4 +1,7 @@
+import { useEffect } from 'react'
+import { useThree } from '@react-three/fiber'
 import { ContactShadows, Environment, Lightformer } from '@react-three/drei'
+import type { Lighting } from './toon'
 
 /**
  * Éclairage studio, entièrement local : l'environnement est peint avec des
@@ -8,15 +11,29 @@ import { ContactShadows, Environment, Lightformer } from '@react-three/drei'
  * lui qui allume le duvet sur le contour et fait lire « laine » plutôt que
  * « plastique mat ».
  */
-export function Lights({ floorY, contact = true }: { floorY: number; contact?: boolean }) {
+export function Lights({
+  floorY,
+  contact = true,
+  lighting,
+}: {
+  floorY: number
+  contact?: boolean
+  /** Dosage des lumières, propre à chaque rendu (voir `toon.ts`). */
+  lighting: Lighting
+}) {
+  const scene = useThree((st) => st.scene)
+  useEffect(() => {
+    scene.environmentIntensity = lighting.env
+  }, [scene, lighting.env])
   return (
     <>
-      <ambientLight intensity={0.18} />
+      <ambientLight intensity={lighting.ambient} color={lighting.ambientColor ?? '#ffffff'} />
 
       {/* clé — porte l'ombre */}
       <directionalLight
         position={[3.4, 4.6, 3.2]}
-        intensity={1.25}
+        intensity={lighting.key}
+        color={lighting.keyColor ?? '#ffffff'}
         castShadow
         shadow-mapSize={[1024, 1024]}
         shadow-bias={-0.0009}
@@ -30,10 +47,10 @@ export function Lights({ floorY, contact = true }: { floorY: number; contact?: b
       />
 
       {/* déboucheur froid, côté opposé */}
-      <directionalLight position={[-3.4, 1.4, 2.2]} intensity={0.35} color="#cdd8e8" />
+      <directionalLight position={[-3.4, 1.4, 2.2]} intensity={lighting.fill} color={lighting.fillColor ?? '#cdd8e8'} />
 
       {/* contre-jour rasant */}
-      <directionalLight position={[-1.1, 2.1, -4.2]} intensity={1.5} color="#ffe6c8" />
+      <directionalLight position={[-1.1, 2.1, -4.2]} intensity={lighting.rim} color={lighting.rimColor ?? '#ffe6c8'} />
 
       <Environment resolution={256}>
         <Lightformer intensity={1.1} position={[0, 5, 1]} scale={[9, 9, 1]} color="#fffaf2" />

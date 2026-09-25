@@ -56,46 +56,6 @@ export function makeFiberTexture(size: number, count: number, seed: number): THR
 }
 
 /**
- * Copies du maillage repoussées le long des normales.
- *
- * On les pré-calcule plutôt que de décaler les sommets dans un shader : ça
- * évite d'injecter du GLSL dans MeshPhysicalMaterial — donc de se battre avec
- * son éclairage — pour un coût mémoire négligeable à cette densité.
- */
-export function shellGeometries(
-  source: THREE.BufferGeometry,
-  count: number,
-  height: number,
-): THREE.BufferGeometry[] {
-  const out: THREE.BufferGeometry[] = []
-  for (let i = 0; i < count; i++) {
-    const geo = source.clone()
-    const pos = geo.attributes.position as THREE.BufferAttribute
-    const nor = geo.attributes.normal as THREE.BufferAttribute
-    // Progression non linéaire : les coques se resserrent vers l'extérieur, ce
-    // qui densifie la base du duvet et affine son extrémité.
-    const t = Math.pow((i + 1) / count, 0.75) * height
-    const v = new THREE.Vector3()
-    const n = new THREE.Vector3()
-    for (let k = 0; k < pos.count; k++) {
-      v.fromBufferAttribute(pos, k)
-      n.fromBufferAttribute(nor, k)
-      v.addScaledVector(n, t)
-      pos.setXYZ(k, v.x, v.y, v.z)
-    }
-    pos.needsUpdate = true
-    out.push(geo)
-  }
-  return out
-}
-
-/** Seuil de découpe de la coque `i` : plus on s'éloigne, moins de fibres restent. */
-export const shellAlphaTest = (i: number, count: number) => 0.06 + ((i + 1) / (count + 1)) * 0.82
-
-/** Assombrissement de la coque `i` : le fond du duvet est dans l'ombre du reste. */
-export const shellShade = (i: number, count: number) => 0.62 + ((i + 1) / count) * 0.38
-
-/**
  * Trous du duvet, sous les pièces cousues.
  *
  * Une pièce ne peut pas être relevée assez pour dominer le duvet sans paraître
@@ -178,6 +138,102 @@ uniform int uHoleCount;`,
   }
 }
 #include <alphatest_fragment>`,
+      )
+  }
+}
+
+/**
+ * Toutes les coques d'un volume en **un seul dessin**.
+ *
+ * Une coque par maillage coûtait un appel de rendu par coque et par volume :
+ * 304 appels pour la planche, le premier poste de la scène. Ici la géométrie
+ * source est dessinée `count` fois par instanciation, et c'est le vertex shader
+ * qui repousse chaque instance le long des normales ; seuil de découpe et
+ * teinte se lisent sur son rang. Les attributs sont **partagés** avec la
+ * source, pas copiés : une nappe réécrite à chaque image (l'écharpe) entraîne
+ * ses coques sans rien faire.
+ *
+ * Les instances se dessinent dans l'ordre de leur rang, comme le faisait
+ * `renderOrder` : du fond du duvet vers sa pointe.
+ */
+export function shellInstances(source: THREE.BufferGeometry, count: number, height: number) {
+  const g = new THREE.InstancedBufferGeometry()
+  g.index = source.index
+  for (const [name, attr] of Object.entries(source.attributes)) g.setAttribute(name, attr)
+  g.setAttribute(
+    'aShell',
+    new THREE.InstancedBufferAttribute(Float32Array.from({ length: count }, (_, i) => i), 1),
+  )
+  g.instanceCount = count
+  if (!source.boundingSphere) source.computeBoundingSphere()
+  g.boundingSphere = source.boundingSphere!.clone()
+  g.boundingSphere.radius += height
+  return g
+}
+
+export type ShellUniforms = {
+  uShellCount: { value: number }
+  uShellHeight: { value: number }
+  /** Seuil ajouté à celui de `shellAlphaTest`, plafonné à 0,95. */
+  uShellBias: { value: number }
+  /** Facteur sur la teinte de `shellShade`. */
+  uShellShade: { value: number }
+}
+
+export function makeShellUniforms(): ShellUniforms {
+  return {
+    uShellCount: { value: 1 },
+    uShellHeight: { value: 0 },
+    uShellBias: { value: 0 },
+    uShellShade: { value: 1 },
+  }
+}
+
+/**
+ * Coques au shader, relues sur le rang d'instance. À composer **après** un
+ * autre `onBeforeCompile` (les trous), qui laisse l'inclusion du test alpha en
+ * place.
+ *
+ * - **Décalage** : progression non linéaire, les coques se resserrent vers
+ *   l'extérieur — base du duvet dense, extrémité fine.
+ * - **Seuil** : plus on s'éloigne, moins de fibres restent.
+ * - **Teinte** : le fond du duvet est dans l'ombre du reste.
+ */
+export function shellShader(uni: ShellUniforms) {
+  return (sh: THREE.WebGLProgramParametersWithUniforms) => {
+    Object.assign(sh.uniforms, uni)
+    sh.vertexShader = sh.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+attribute float aShell;
+uniform float uShellCount;
+uniform float uShellHeight;
+varying float vShell;`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+vShell = aShell;
+transformed += normalize(objectNormal) * pow((aShell + 1.0) / uShellCount, 0.75) * uShellHeight;`,
+      )
+    sh.fragmentShader = sh.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+uniform float uShellCount;
+uniform float uShellBias;
+uniform float uShellShade;
+varying float vShell;`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+diffuseColor.rgb *= (0.62 + ((vShell + 1.0) / uShellCount) * 0.38) * uShellShade;`,
+      )
+      .replace(
+        '#include <alphatest_fragment>',
+        `if (diffuseColor.a < min(0.95, 0.06 + ((vShell + 1.0) / (uShellCount + 1.0)) * 0.82 + uShellBias)) discard;`,
       )
   }
 }
