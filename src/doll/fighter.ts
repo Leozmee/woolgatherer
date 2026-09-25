@@ -1468,21 +1468,31 @@ export class Fighter {
     const sf = Math.sin(this.facing)
     const aFwd = this.accel.x * sf + this.accel.z * cf
     const clampA = (v: number, k: number, lim: number) => Math.max(-lim, Math.min(lim, v * k))
+    /*
+     * Poids de l'arme : seulement dans l'arène. Sur la planche et en
+     * présentation la poupée se tient **droite** — le penché vers l'arme (0,07
+     * rad) et le bras tiré la faisaient toutes pencher du même côté dans le
+     * menu de sélection. Le balancement y reste, à peine.
+     */
+    const armed = this.drive ? 1 : 0
+    const swayK = this.drive ? 1 : 0.35
 
     set(
       t.hips,
       // Inertie : le corps reste en arrière quand on accélère et continue
       // vers l'avant quand on freine — la racine obéit, le corps traîne.
-      0.04 + 0.16 * run + 0.3 * dash + hop * 0.04 * run * (1 - dash) - clampA(aFwd, 0.045, 0.4),
+      0.04 * armed + 0.16 * run + 0.3 * dash + hop * 0.04 * run * (1 - dash) - clampA(aFwd, 0.045, 0.4),
       // Torsion de foulée : à 0,16 rad elle se lisait comme un roulis de plus.
       s * 0.06 * run * (1 - 0.5 * dash) + g.yaw * 0.25 * gw,
-      // Penché vers l'arme au repos (son poids), dans le virage — plus fort au
-      // sprint, comme un coureur qui prend un virage —, sur le pied d'appui.
-      0.07 * (1 - run) +
+      // Penché vers l'arme au repos (son poids, arène seulement), dans le
+      // virage — plus fort au sprint, comme un coureur qui prend un virage —,
+      // sur le pied d'appui. Le report de poids du regard d'attente, lui
+      // aussi, ne vaut que dans l'arène : sur la planche la poupée reste droite.
+      0.07 * armed * (1 - run) +
         clampA(this.turnRate, -0.07 - 0.06 * dash, 0.35 + 0.15 * dash) +
-        sway * 0.02 * (1 - run) +
+        sway * 0.02 * swayK * (1 - run) +
         this.waddle +
-        g.shift * gw,
+        g.shift * gw * armed,
     )
     // Le rebond de course vient surtout des pas posés (`land`) ; ici un fond.
     // Corps plus bas en course, plus encore au sprint : les genoux plient.
@@ -1503,10 +1513,11 @@ export class Fighter {
     // Bras de l'arme tiré vers l'arrière et vers le bas par le poids ; l'autre
     // balance à contretemps et compense. Coudes pliés d'autant plus qu'on
     // court : bras ballants à l'arrêt, repliés en course, en équerre au sprint.
-    set(t['arm-1'], 0.35 * run - 0.1 + 0.5 * dash, 0, 0.3 - 0.1 * run)
+    // Le poids de l'arme ne tire le bras que dans l'arène.
+    set(t['arm-1'], 0.35 * run - 0.1 * armed + 0.5 * dash, 0, 0.3 * armed - 0.1 * run)
     bend(t['elbow-1'], -0.4 - 0.3 * run - 0.4 * dash + breathe * 0.03 * (1 - run))
     const swing = s * (0.9 + 0.3 * dash) * run
-    set(t.arm1, swing - 0.1 + sway * 0.05 * (1 - run) + 0.1 * dash, 0, -0.1 * run + 0.08)
+    set(t.arm1, swing - 0.1 * armed + sway * 0.05 * swayK * (1 - run) + 0.1 * dash, 0, -0.1 * run + 0.08 * armed)
     // L'avant-bras remonte quand le bras part devant : un vrai balancier.
     bend(t.elbow1, -0.25 - 0.45 * run - 0.6 * dash - 0.35 * Math.max(0, -s) * run + breathe * 0.04 * (1 - run))
     // La tête exagère ce que fait le corps, avec retard : elle part en
@@ -1516,7 +1527,7 @@ export class Fighter {
       t.neck,
       -0.12 * run - 0.24 * dash + Math.sin(this.time * 2.3 + 1) * 0.04 - clampA(aFwd, 0.05, 0.45) + g.pitch * gw,
       clampA(this.turnRate, 0.06, 0.4) + g.yaw * 0.75 * gw,
-      -sway * 0.05 * (1 - run) - this.waddle * 0.8,
+      -sway * 0.05 * swayK * (1 - run) - this.waddle * 0.8,
     )
     // Au repos, plantée pointe au sol devant elle, du côté de l'arme : on la
     // voit, et on voit qu'elle est trop grande. En course elle traîne derrière,
