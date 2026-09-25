@@ -1268,51 +1268,133 @@ function bangs(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
    * Frange : elle descend jusqu'aux sourcils et peut les couvrir — c'est le
    * principe d'une grande frange. Jamais sur les boutons.
    *
-   * Physique **tombante** : quatre mèches, chacune son pivot au haut du front,
-   * peu de rappel et du poids — elle retombe sous son poids et suit la tête
-   * avec retard, au lieu de revenir en place d'un bloc comme un rabat. Son
-   * bas est décollé du front : de quoi balancer sans rentrer dans la tête, que
-   * le collider du crâne protège en plus.
+   * Un ressort par grosse mèche (5 ou 6), pivot au **centre du crâne** comme
+   * les longueurs, bout orienté vers la mèche. Pivotant au ras du front, la
+   * frange avait un bras de levier minuscule : mesuré pendant une rotation,
+   * l'avant de la coupe se déplaçait huit fois moins que les côtés — la
+   * moitié de la coupe paraissait figée. Autour du centre, le bras de levier
+   * est le rayon du crâne, et la frange glisse sur le front sans s'y enfoncer.
+   *
+   * Racines sur la raie, **à la même place que les longueurs voisines** : la
+   * hauteur de raie correspond à l'azimut du brin. Partant toutes de derrière
+   * le sommet, les mèches qui s'allongent vers les tempes traversaient la tête
+   * en biais et croisaient les longueurs. Courte au centre, au-dessus des
+   * boutons, elle **s'allonge vers les tempes** jusqu'à la longueur des mèches
+   * latérales : frange et longueurs se raccordent en une seule coupe.
    */
   // Jusqu'au-dessus des boutons : les sourcils sont couverts — c'est le
   // principe d'une grande frange. Les pointes des mèches remontent un peu.
   const edge = hairline(p, 0, 1.02)(0)
-  /**
-   * Un ressort par grosse mèche de frange (5 ou 6), pivot au **centre du
-   * crâne** comme les longueurs, bout orienté vers la mèche.
-   *
-   * Pivotant au ras du front, la frange avait un bras de levier minuscule :
-   * mesuré pendant une rotation, l'avant de la coupe se déplaçait huit fois
-   * moins que les côtés — la moitié de la coupe paraissait figée. Autour du
-   * centre, le bras de levier est le rayon du crâne, et la frange glisse sur
-   * le front sans s'y enfoncer.
-   */
   const tufts = 5 + Math.floor(rnd() * 2)
-  const SECTORS = tufts
-  const fringe0 = out.movers.length
-  for (let k = 0; k < SECTORS; k++) {
-    const ac = ((k + 0.5) / SECTORS * 2 - 1) * width * 0.92
+  fringeTufts(p, rnd, r, out, {
+    width,
+    tufts,
+    edge,
+    sideTo: longEnd,
+    // Premier tirage : l'ancien choix « effilée ou coupée droite », toujours
+    // effilée depuis — coupée droite, elle faisait un bord au cordeau. Gardé
+    // pour ne pas décaler la suite de la graine. Épaisse ensuite : assez de
+    // brins pour que le front ne se voie plus au travers.
+    count: () => (rnd(), 110 + Math.floor(rnd() * 20)),
+    radius: r * 1.15,
+    root: (tipAz, j) => new THREE.Vector3(Math.sign(tipAz || 1) * 0.03, 1, Math.cos(tipAz) * 0.55 - 0.12 + j * 0.08).normalize(),
+    // Par-dessus les longueurs à la jonction : celles-ci gonflent (volume) ;
+    // plaquée, la frange passait dessous vers les tempes. Décollée d'autant,
+    // progressivement, elle recouvre le raccord.
+    over: (side) => FRINGE_OVER * R * clamp((side - 0.35) / 0.5, 0, 1),
+    spring: { stiffness: [0.018, 0.02], drag: [0.05, 0.05], maxAngle: 0.42 },
+    // Toute la frange bouge, pas seulement son bas : autour du centre du
+    // crâne, elle glisse sur le front sans s'y enfoncer.
+    free: (t) => 0.4 + 0.6 * t,
+    fling: (t) => t,
+    hang: true,
+  })
+}
+
+type FringeOpts = {
+  /** Demi-largeur de la frange, en azimut. */
+  width: number
+  /** Nombre de grosses mèches, un ressort chacune. */
+  tufts: number
+  /** Bord au centre, en hauteur normalisée du crâne. */
+  edge: number
+  /**
+   * Hauteur que les pointes atteignent vers les tempes, au-delà de
+   * `sideFrom` de la largeur (0,55) : la frange rejoint les mèches latérales.
+   * Égale à `edge`, le bord reste à peu près droit.
+   */
+  sideTo: number
+  sideFrom?: number
+  /** Nombre de brins, tiré après les ressorts — l'ordre des tirages compte. */
+  count: () => number
+  /** Rayon du tube. Le relèvement se compte en rayons de fil `r`. */
+  radius: number
+  /** Direction de la racine d'un brin qui finit à `tipAz` ; `j` ∈ [−½, ½]. */
+  root: (tipAz: number, j: number) => THREE.Vector3
+  /** Décollement selon la position de la pointe (0 au centre, 1 aux tempes). */
+  over?: (side: number) => number
+  /** Relèvement de base : r·(a + hasard·b) ; [0,8 ; 2,2] par défaut. */
+  layer?: [number, number]
+  spring: { stiffness: [number, number]; drag: [number, number]; maxAngle: number }
+  free: (t: number) => number
+  fling: (t: number) => number
+  /**
+   * Frange **tombante** : sous le haut du front elle ne suit plus la courbe du
+   * crâne — qui fuit vers l'arrière sous elle — mais descend à la verticale.
+   */
+  hang?: boolean
+  /**
+   * Frange **balayée** d'un côté, en radians, signée : les pointes glissent
+   * vers ce côté, s'y allongent et raccourcissent de l'autre. Une frange
+   * symétrique sur chaque coupe à cheveux tirés, c'était quatre fois le
+   * même front sur une planche.
+   */
+  sweep?: number
+  /** Profondeur des pointes (bords de mèche plus courts), 0,06 par défaut. */
+  point?: number
+  /** Borne haute de `onDir` : 0,98 pour la grande frange, `POLE` ailleurs. */
+  cap?: number
+}
+
+/**
+ * Frange en grosses mèches pointues — la brique de la grande frange, partagée.
+ *
+ * Deux rangées de mèches décalées d'une demi-mèche : convergeant chacune vers
+ * sa pointe, une seule rangée laissait le front à nu entre deux pointes — la
+ * frange paraissait clairsemée. La seconde comble les vides. Chaque mèche a
+ * sa longueur ; ses bords sont plus courts (la pointe), et la pointe se
+ * relève d'un souffle, comme les pics des longueurs.
+ *
+ * Tirages dans l'ordre d'origine (ressorts, compte, longueurs de mèche, puis
+ * par brin : pointe, racine, relèvement, phase) : la grande frange reste
+ * identique au bit près depuis l'extraction.
+ */
+function fringeTufts(p: DollParams, rnd: () => number, r: number, out: Parts, o: FringeOpts) {
+  const R = p.shape.headRadius
+  const { width, tufts, edge } = o
+  const first = out.movers.length
+  for (let k = 0; k < tufts; k++) {
+    const ac = (((k + 0.5) / tufts) * 2 - 1) * width * 0.92
     out.movers.push({
       pivot: new THREE.Vector3(),
       dir: new THREE.Vector3(Math.sin(ac) * 0.75, -0.66, Math.cos(ac) * 0.75).normalize(),
       length: R,
-      cfg: { stiffness: 0.018 + rnd() * 0.02, drag: 0.05 + rnd() * 0.05, gravity: 0 },
-      maxAngle: 0.42,
+      cfg: {
+        stiffness: o.spring.stiffness[0] + rnd() * o.spring.stiffness[1],
+        drag: o.spring.drag[0] + rnd() * o.spring.drag[1],
+        gravity: 0,
+      },
+      maxAngle: o.spring.maxAngle,
     })
   }
-  // Toujours effilée : coupée droite, elle faisait un bord au cordeau.
-  rnd()
-  // Épaisse : assez de brins pour que le front ne se voie plus au travers.
-  const count = 110 + Math.floor(rnd() * 20)
+  const count = o.count()
   const tuftLen = Array.from({ length: tufts }, () => rnd())
+  const sideFrom = o.sideFrom ?? 0.55
+  const [l0, l1] = o.layer ?? [0.8, 2.2]
+  const sweep = o.sweep ?? 0
   const M = 16
   for (let i = 0; i < count; i++) {
     const u = (i + 0.5) / count
-    /**
-     * Deux rangées de mèches décalées d'une demi-mèche : convergeant chacune
-     * vers sa pointe, une seule rangée laissait le front à nu entre deux
-     * pointes — la frange paraissait clairsemée. La seconde comble les vides.
-     */
     const shift = i % 2 ? 0.5 : 0
     const f = clamp(u * tufts + shift - 0.25, 0, tufts - 0.001)
     const c = Math.floor(f)
@@ -1321,38 +1403,24 @@ function bangs(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
     const center = (((c + 0.5) / tufts) * 2 - 1) * width * 0.92
     // Convergence marquée, mais deux rangées décalées gardent le front
     // couvert : des pics nets sans trous.
-    const tipAz = az + (center - az) * 0.6
-    // Le bord remonte sur les tempes : une frange droite d'une tempe à
-    // l'autre descendrait sur les boutons. Pointe au centre de la mèche,
-    // bords plus courts.
-    /**
-     * Courte au centre, au-dessus des boutons, elle **s'allonge vers les
-     * tempes** jusqu'à la longueur des mèches latérales : frange et longueurs
-     * se raccordent en une seule coupe. Remontant vers les tempes comme
-     * avant, elle laissait un creux à la jonction — une frange plaquée d'un
-     * côté, des cheveux qui tombent de l'autre. L'allongement ne commence
-     * qu'au-delà des yeux.
+    let tipAz = az + (center - az) * 0.6
+    /*
+     * Balayage : les pointes glissent vers le côté `sweep`, d'autant plus
+     * qu'elles en sont proches — la mèche du bord opposé ne bouge presque pas,
+     * sinon elle découvrirait la tempe. Monotone en azimut (pente < 1) : deux
+     * brins ne se croisent pas. La longueur suit : plus longue du côté où
+     * elle retombe, plus courte de l'autre.
      */
-    const side = Math.abs(tipAz) / width
-    const lengthen = (edge - longEnd) * 0.9 * (side < 0.55 ? 0 : ((side - 0.55) / 0.45) ** 1.6)
-    const tipSy = edge + tuftLen[c] * 0.05 + Math.abs(w) ** 1.5 * 0.06 + rnd() * 0.015 - lengthen
-    /**
-     * Racines sur la raie, **à la même place que les longueurs voisines** —
-     * la hauteur de raie correspond à l'azimut du brin. Partant toutes de
-     * derrière le sommet, les mèches de frange qui s'allongent vers les
-     * tempes traversaient la tête en biais et croisaient les longueurs.
-     */
-    const from = new THREE.Vector3(
-      Math.sign(tipAz || 1) * 0.03,
-      1,
-      Math.cos(tipAz) * 0.55 - 0.12 + (rnd() - 0.5) * 0.08,
-    ).normalize()
+    const toward = sweep ? 0.5 + 0.5 * (Math.sign(sweep) * tipAz) / width : 0
+    tipAz += sweep * toward
+    const side = Math.min(1, Math.abs(tipAz) / width)
+    const lengthen = (edge - o.sideTo) * 0.9 * (side < sideFrom ? 0 : ((side - sideFrom) / (1 - sideFrom)) ** 1.6)
+    const swept = sweep ? Math.abs(sweep) * 0.45 * (toward - 0.5) : 0
+    const tipSy =
+      edge + tuftLen[c] * 0.05 + Math.abs(w) ** 1.5 * (o.point ?? 0.06) + rnd() * 0.015 - lengthen - swept
+    const from = o.root(tipAz, rnd() - 0.5)
     const tip = dirOf(tipAz, clamp(tipSy, -0.9, 0.9))
-    // Par-dessus les longueurs à la jonction : celles-ci gonflent (volume) ;
-    // plaquée, la frange passait dessous vers les tempes. Décollée d'autant,
-    // progressivement, elle recouvre le raccord.
-    const over = FRINGE_OVER * R * clamp((side - 0.35) / 0.5, 0, 1)
-    const layer = r * (0.8 + rnd() * 2.2) + over
+    const layer = r * (l0 + rnd() * l1) + (o.over ? o.over(side) : 0)
     const pts: THREE.Vector3[] = []
     let hang: THREE.Vector3 | null = null
     for (let k = 0; k <= M; k++) {
@@ -1360,14 +1428,13 @@ function bangs(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
       const d = from.clone().lerp(tip, t).normalize()
       // Pointe relevée d'un souffle, comme les pics des longueurs.
       const lift = k === 0 ? -r * 2 : layer + R * 0.05 * Math.max(0, (t - 0.8) / 0.2) ** 2
-      const q = onDir(p, d, lift).pos
-      /**
-       * **Tombante** : à partir du haut du front, la frange ne suit plus la
-       * courbe du crâne — qui fuit vers l'arrière sous elle — mais descend à
-       * la verticale sous son poids. Le point ne peut pas passer derrière la
-       * surface : on garde le plus avancé des deux.
+      const q = onDir(p, d, lift, o.cap).pos
+      /*
+       * **Tombante** : à partir du haut du front, le point descend à la
+       * verticale au lieu de suivre le crâne, sans passer derrière la surface —
+       * on garde le plus avancé des deux.
        */
-      if (t > 0.62 && side < 0.55) {
+      if (o.hang && t > 0.62 && side < sideFrom) {
         hang ??= pts[pts.length - 1].clone()
         const drop = hang.clone()
         drop.y = q.y
@@ -1375,12 +1442,9 @@ function bangs(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
       }
       pts.push(q)
     }
-    // Le ressort de la mèche du brin.
-    const mover = fringe0 + c
-    // Toute la frange bouge, pas seulement son bas : autour du centre du
-    // crâne, elle glisse sur le front sans s'y enfoncer.
-    out.yarn.push(yarn(pts, r * 1.15, { mover, free: (t) => 0.4 + 0.6 * t, fling: (t) => t, phase: rnd() * 6 }))
+    out.yarn.push(yarn(pts, o.radius, { mover: first + c, free: o.free, fling: o.fling, phase: rnd() * 6 }))
   }
+  return first
 }
 
 /**
