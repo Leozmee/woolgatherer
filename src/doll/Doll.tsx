@@ -24,6 +24,7 @@ import {
   shellShader,
 } from './fuzz'
 import { dollLayout } from './layout'
+import { Zip, zipFuzzShader, zipHole } from './zip'
 import type { PatchHoles } from './patch'
 import { headWidth, onHeadPolar, onTorso } from './surface'
 import type { DollParams } from './params'
@@ -78,12 +79,15 @@ function Fuzz({
   p,
   holes,
   joint,
+  zip,
 }: {
   geometry: THREE.BufferGeometry
   maps: WoolMaps
   p: DollParams
   /** Pli du membre porteur (genou, coude) : le duvet le suit. */
   joint?: Joint
+  /** Bande du crâne sans duvet, sous la fermeture éclair (`zipHole`). */
+  zip?: ReturnType<typeof zipHole>
   /** Pièces cousues sous lesquelles retirer la laine — le torse seul en a. */
   holes?: PatchHoles
 }) {
@@ -105,12 +109,14 @@ function Fuzz({
     const hole = holes ? holeShader(uni) : null
     const shell = shellShader(shellUni)
     const bend = joint ? jointShader(joint) : null
+    const zipCut = zip ? zipFuzzShader(zip) : null
     return (sh: THREE.WebGLProgramParametersWithUniforms) => {
       hole?.(sh)
       shell(sh)
       bend?.(sh)
+      zipCut?.(sh)
     }
-  }, [uni, shellUni, holes, joint])
+  }, [uni, shellUni, holes, joint, zip])
   useMemo(() => {
     uni.uHoleMask.value = holes?.mask ?? null
     uni.uHoleCount.value = holes?.count ?? 0
@@ -122,7 +128,9 @@ function Fuzz({
     <mesh geometry={shells} renderOrder={1}>
       <meshPhysicalMaterial
         onBeforeCompile={compile}
-        customProgramCacheKey={() => `fuzz${holes ? '-holes' : ''}${joint ? '-joint' : ''}`}
+        customProgramCacheKey={() =>
+          `fuzz${holes ? '-holes' : ''}${joint ? '-joint' : ''}${zip ? `-zip${zip.half.toFixed(4)}${zip.top.toFixed(4)}${zip.bottom.toFixed(4)}` : ''}`
+        }
         map={maps[0]}
         alphaMap={maps[3]}
         // Hors de la profondeur : le contour d'encre la lit, et chaque
@@ -385,6 +393,9 @@ export function Doll({
     clearance,
     hair.crown,
   )
+
+  // Fermeture éclair : bande de duvet retirée sous son ruban.
+  const zipBand = useMemo(() => zipHole(p), [p])
 
   // --- visage ---
   const lift = s.lumps * s.headRadius * 0.7 + 0.004
@@ -990,7 +1001,12 @@ export function Doll({
               <mesh geometry={headGeo} castShadow receiveShadow>
                 <Wool maps={headMaps} p={p} />
               </mesh>
-              <Fuzz geometry={headGeo} maps={headMaps} p={p} />
+              <Fuzz geometry={headGeo} maps={headMaps} p={p} zip={zipBand} />
+              {/* Fermeture éclair à l'arrière du crâne : ruban, dents et
+                  curseur fusionnés, languette sur ressort (voir `zip.tsx`). */}
+              <Batched deps={batchDeps}>
+                <Zip p={p} />
+              </Batched>
               <Batched deps={batchDeps}>{slots.head}</Batched>
 
               {style === 'locks' ? (
