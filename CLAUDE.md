@@ -517,6 +517,22 @@ qui importe `Fighter`, `SpringBone`, `solveLeg`, bundlé par esbuild
 (`npx esbuild src/__sim.ts --bundle --platform=node --format=esm --outfile=/tmp/sim.mjs`),
 puis supprimé. Mesures de référence ci-dessous.
 
+### Travaux en cours sauvegardés (non fusionnés)
+
+Instantanés poussés pour ne rien perdre si le conteneur disparaît — fichiers
+non commités compris, **non vérifiés** : à relire, tester et fusionner.
+
+| Branche | Contenu | Base |
+|---|---|---|
+| `claude/wip-silhouettes` | Écharpe en jeu (physique et aspect aux vitesses réelles), collier, silhouettes signature des 4 autres variantes — agent en cours | `fa6158a` |
+| `claude/wip-visages` | Visages plus riches, expressions réactives (`expression.tsx`) — agent en cours | `fa6158a` |
+| `claude/coupes-wip` | Premier pas de la refonte des coupes : frange en pointes en brique partagée (commit propre) | `fa6158a` |
+| `claude/wip-coupes` | Même agent, travail non commité en plus (queue de cheval, chouchou…) — arrêté faute de budget | `70d1049` |
+| `claude/wip-outils` | Simulations Node, scripts de capture, bancs de l'audit (`tools/audit/`) | branche principale |
+
+Les deux premiers seront remplacés par la fusion de leur rapport final s'il
+arrive ; sinon, reprendre depuis ces branches.
+
 ### Journal
 
 #### 2026-09-25 — fermeture éclair, endurance
