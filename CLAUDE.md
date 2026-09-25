@@ -49,19 +49,20 @@ src/
 │   ├── fringe.ts       mèches de frange dérivées du bout d'une nappe
 │   ├── scarf.tsx       écharpe : nappe simulée d'un bout à l'autre + franges
 │   ├── wood.ts         veinage de bois (boutons, perles, breloques)
-│   ├── rig.ts          squelette : os, cotes, suivi des membres, inertie des tissus
-│   ├── fighter.ts      combattant : contrôle, gestes pose à pose tirés par des ressorts
-│   ├── limbs.ts        pas procéduraux (pieds plantés) + courbure des membres
+│   ├── rig.ts          squelette : os (dont coudes/genoux), cotes, suivi des membres, FrameCarry, sol local
+│   ├── fighter.ts      combattant : contrôle, gestes pose à pose, cycle de pas, saut/double saut, dash, glissade, K.O.
+│   ├── limbs.ts        pieds (Stepper : cycle / réactif / glissade), pli coude-genou (jointShader), IK de jambe
 │   ├── traits.tsx      signes distinctifs par emplacement nommé
 │   ├── parts.tsx       primitives : fil, point de croix, bouton, épingle
-│   └── Doll.tsx        assemblage + boucle d'animation
+│   ├── zip.tsx         fermeture éclair au dos du crâne, languette sur ressort
+│   └── Doll.tsx        assemblage + boucle d'animation (IK, ressorts, colliders du corps, silhouette)
 ├── scene/
 │   ├── Lights.tsx      studio local (Lightformer, pas de HDRI réseau), dosé par rendu
 │   ├── toon.ts         cel shading dans le chunk d'éclairage + catalogue des rendus
 │   ├── Outline.tsx     encre anime : passe plein écran sur la profondeur
 │   ├── Rig.tsx         caméra + platine
 │   ├── KeepPrograms.tsx garde les shaders compilés en vie
-│   ├── Arena.tsx       traînée de l'arme
+│   ├── Arena.tsx       traînée de l'arme, poussière, tapis cousu, images rémanentes, cercle du double saut
 │   └── BlobShadow.tsx  ombre approchée pour la planche
 └── App.tsx             planche (choisir) → présentation (jouer) → arène de combat
 ```
@@ -477,7 +478,166 @@ Bandage et bracelet sont les **seuls** accessoires portés sur un membre.
 
 ## Prochaine étape
 
+**Voir d'abord « Passation — au prochain Claude » ci-dessous** : demandes de Leo en cours et branches non fusionnées. Ce qui suit est l'objectif de plus long terme.
+
 Passage à la galerie. Le poste de coût est connu : à réglage plein une poupée tient ~300 appels de rendu (14 coques × 8 volumes + 16 locks × 11 segments). `App.lightened()` rabote déjà ces deux postes pour la planche. À 20 poupées il faudra de l'instanciation, ou partager les cartes de laine par couleur. L'écharpe ajoute en plus **sa propre tuile de tricot** (768², 75–240 ms) sur la poupée qui la porte : à l'échelle de la galerie il faudra la mettre en cache par teinte.
+
+## Passation — au prochain Claude qui reprend ce projet
+
+Bonjour. Tu reprends le travail d'une longue session cloud (25 sept. 2026) sur
+la jouabilité et l'animation des poupées. Lis ceci en entier avant de toucher
+au code : il y a du travail fini, du travail **en cours sur des branches non
+fusionnées**, et des demandes de Leo pas encore traitées.
+
+### Qui est Leo et comment il travaille
+
+- Il écrit en français (souvent vite, avec des fautes) ; réponds en français,
+  commits et commentaires de code en français aussi.
+- Il veut des **pushs réguliers** et que ce `CLAUDE.md` soit **tenu à jour**
+  à chaque étape (section « Journal » plus bas).
+- Il teste **en local sur sa machine** (`~/Projets/DummyFaces`) : donne-lui
+  toujours les commandes git exactes pour récupérer la branche (il a déjà créé
+  par erreur une branche locale depuis `peluches-jouables` avec
+  `git checkout -b`, et testait l'ancien code). Commandes qui marchent :
+  `git fetch origin && git checkout -B <branche> origin/<branche> &&
+  git branch --set-upstream-to=origin/<branche> && npm install && npm run dev`.
+- Il a un **budget limité** (il l'a signalé : ~18 $ restants sur 100 à la fin
+  de la session). Évite de lancer beaucoup d'agents en parallèle ; mesure en
+  Node plutôt qu'en captures headless (lentes) ; va à l'essentiel.
+- Il a demandé explicitement des **agents spécialisés par tâche** quand c'est
+  utile : worktree isolé par agent, consignes autonomes, pas d'édition de
+  `CLAUDE.md` par les agents (c'est toi qui consolides).
+- Il ne veut rien perdre : si tu arrêtes un agent, pousse son travail sur une
+  branche `claude/wip-*` (voir « Travaux en cours sauvegardés »).
+
+### Où en est le code
+
+Branche de travail : **`claude/quirky-galileo-g4u9c5`** (partie de
+`peluches-jouables`, qui en a fusionné une première version). Elle contient
+tout ce qui est fini et vérifié. Le journal détaillé est plus bas ; en bref :
+
+- **Locomotion** (`fighter.ts` : `advanceCycle`, `rhythm` ; `limbs.ts` :
+  `Stepper`) : cycle de pas à phase continue. Trot par défaut (2,4 u/s, 5,2
+  pas/s, appui 41 %, 18 % de vol) ; course sur Maj (5,4 u/s, 6,7 pas/s, 43 % de
+  vol). Pied fixe en appui, vol en courbes à vitesse nulle aux deux bouts,
+  pose compensée du temps écoulé. Le rythme (rebond, bascule, balancier des
+  bras) est ajouté **après** les ressorts de pose. Le `Stepper` a trois modes :
+  cycle (en mouvement), réactif (arrêt, demi-tour sur place), glissade.
+- **Squelette** : coude et genou à mi-membre (`JOINT`), pli fondu dans le
+  vertex shader (`jointShader`, duvet compris), IK de jambe à deux segments
+  (`solveLeg`), ressorts d'avant-bras/tibia, butées (bassin compris : torsion
+  ±1,4, bascule ±0,9, avant libre pour le salto).
+- **Gestes** : combo de 3 coups, parade, coup reçu (côté aléatoire), K.O.
+  physique (`toppleStep`) et relevée (`rise`), saut à hauteur variable,
+  **double saut** avec salto (`flip`) et **cercle rituel holographique**
+  (`Sigil`), plongeon en l'air (`plunge` → `slam`), **dash d'esquive** (L,
+  garde le cap) avec **images rémanentes** (`Ghosts`), **glissade**
+  (seulement en course : Maj + L tenus ; carve sans perdre de vitesse ; fin
+  dès qu'on lâche L ou Maj). Arène de rayon 10, tapis cousu, poussière.
+- **Physique** : `SpringBone` à pas fixe de 1/60 s (même comportement à
+  30/60/144 Hz) ; `ClothSheet` avec `carry` (inertie « monde », rotations
+  comprises) et `floor` ; colliders du corps pour les mains et la lame.
+- **Silhouettes** (version de base) : écharpe à pan arrière ×2,7, collier ×1,75
+  instancié avec chaîne pendante et cadenas. **Leo trouve l'écharpe
+  « foireuse » en jeu** — voir plus bas.
+- **Fermeture éclair** au dos du crâne de toutes les poupées (`zip.tsx`).
+
+### Ce qui reste à faire, par ordre de priorité
+
+1. **Écharpe en jeu** (plainte directe de Leo : « l'écharpe est foireuse,
+   améliore sa physique et son aspect in game »). Un agent y travaillait :
+   son état est sur **`claude/wip-silhouettes`** (base `fa6158a`, touche
+   `cloth.ts`, `rig.ts`, `scarf.tsx`, `fringe.ts`, `traits.tsx`). Relis ce
+   diff, teste-le **dans l'arène aux vitesses réelles** (trot, course, dash
+   7 u/s, glissade 8,5 u/s, salto, K.O.), puis fusionne ce qui est bon.
+   Suspect principal côté tissu : `CARRY = 0.92` laisse le pan quasi immobile
+   dans le monde, donc à grande vitesse il s'étire d'un coup par image ;
+   borner la part transportée selon la vitesse, borner l'étirement par lien,
+   plus d'itérations seulement quand ça bouge vite. Mesure l'étirement max et
+   la pénétration dans les colliders sur une séquence scriptée.
+2. **Collier** : chaîne pendante et cadenas à vérifier de face (le cadenas ne
+   doit ni traverser le ventre ni descendre trop bas ; `HANG = 0.42` de la
+   hauteur du torse) et il doit balancer franchement pendant les coups.
+3. **Silhouettes des 4 autres variantes** (demande de Leo : « un élément de
+   silhouette extrêmement identifiable » par personnage, qui participe à
+   l'animation) : couronne d'épingles, ceinture, nœud papillon, couture
+   intégrale. Peut-être entamé sur `claude/wip-silhouettes`.
+4. **Visages et expressions** (demande de Leo, même thème : boutons, points
+   cousus, broderies). Travail d'agent sur **`claude/wip-visages`** (nouveau
+   `src/doll/expression.tsx`, modifs de `face.tsx` et d'une prop dans
+   `Doll.tsx`) : expressions réactives à `fighter.current` / `fighter.hp`.
+   Relire, tester, fusionner. Attention : `Face` est dans un `<Batched>`
+   (géométrie fusionnée, figée) — ce qui bouge doit en sortir.
+5. **Fermeture éclair dans les coiffures** : la plupart des coupes la
+   recouvrent. Il faut une raie arrière / exclusion de bande
+   (`zipHole(p)` donne la bande) dans `hairstyles.tsx` (pas dans `hair.tsx`,
+   intouchable ; les locks s'écartent déjà en partie). Vérifier aussi que la
+   languette balance bien dans l'arène.
+6. **Refonte des coupes** (demande de Leo : « reprends l'aspect / les coupes
+   pour encore les améliorer ») : plan dans `.claude/runs/hair-anime-design/`
+   (branche `coupes-anime`). Un agent a été **arrêté faute de budget** :
+   commit propre sur `claude/coupes-wip` (frange en pointes en brique
+   partagée), travail non commité en plus sur `claude/wip-coupes` (queue de
+   cheval, chouchou…). Rien n'est vérifié.
+7. **Audit de fluidité** : un agent en lecture seule préparait un rapport
+   classé (allocations par image, coût CPU des simulations, appels de rendu).
+   S'il n'est pas arrivé dans ce fichier, refais un audit rapide : allocations
+   dans les `useFrame` de `Doll.tsx` (objets `{...cfg}` par image, `.slice()`
+   dans `aimWeapon`), coût de l'écharpe (74 rangs × 10 colonnes × 9
+   itérations), appels de rendu arène/planche (`window.__gl.info.render`).
+
+### Comment vérifier sans te ruiner
+
+- **Mécanique en Node** : copie un script dans `src/__x.ts`, bundle avec
+  `npx esbuild src/__x.ts --bundle --platform=node --format=esm --outfile=/tmp/x.mjs`,
+  exécute, **supprime** `src/__x.ts`. Exemples prêts sur
+  `claude/wip-outils` (`tools/audit/jerk.ts` : à-coups des pieds et du
+  bassin, portée des jambes, vol ; `sim.ts` : IK, ressorts à 30/60/144 Hz,
+  saut, dash…). Le test d'endurance (une minute d'appuis au hasard, pas de
+  1/144 à 1/20 s) a trouvé deux vrais bugs : refais-le après toute
+  modification de `fighter.ts` / `limbs.ts`.
+- **Navigateur headless** : Chromium swiftshader, ~2 images/s. Utile pour
+  des captures de contrôle, inutile pour juger un mouvement. Pièges :
+  - le composant `Controls` **réécrit `fighter.input` à chaque image** : pilote
+    avec le clavier Playwright (ZQSD, Maj, L, espace, J), pas en écrivant
+    `input` ;
+  - clique via le DOM (`document.querySelector('#play').click()`) : le clic
+    Playwright attend une stabilité que le rendu lent n'offre pas ;
+  - attends en **temps de jeu** (`fighter.time`) et fige avec
+    `window.__fighter.speed = 0.005` avant une capture ;
+  - une simulation de tissu n'est pas stabilisée en quelques images : pompe
+    les pas avant de juger un drapé.
+- **Serveur de dev** : si plusieurs serveurs Vite tournent (agents en
+  worktree avec `node_modules` en symlink), ils partagent `node_modules/.vite`
+  et l'app casse (« Invalid hook call », deux React). Chaque serveur doit
+  avoir son `cacheDir`, via une config **dans** le dépôt, non commitée
+  (`vite.local.config.mjs`, exclue par `.git/info/exclude`) — hors du dépôt,
+  `react-refresh` ne se résout plus. Et ne fais pas `pkill -f vite…` dans la
+  même commande que le motif : le shell se tue lui-même.
+- Les worktrees d'agents vivent dans `.claude/worktrees/` **à l'intérieur**
+  du dépôt : ajoute `.claude/worktrees/` à `.git/info/exclude` avant tout
+  `git add -A`.
+
+### Accès atelier (dev)
+
+`window.__fighter` (état : `current`, `pos`, `vel`, `cycle`, `gliding`,
+`speed` pour un ralenti, `press('attack'|'jump'|'dodge'|'hit'|'ko')`),
+`window.__stepper`, `window.__legK`, `window.__doll` (`joints`, tête,
+bassin), `window.__scene`, `window.__gl`, `window.__turntable` (yaw, pitch,
+distance, panY), `window.__advance`, `window.__hairs`.
+
+### Conventions à respecter (rappel des principes du projet)
+
+- Tout est procédural et dérive de la graine ; aucun asset externe.
+- `surface.ts` est la source unique des profils (`onHeadPolar`, `onTorso`…).
+- Commentaires en français qui expliquent **pourquoi**, et chiffrent ce qui a
+  été mesuré ; un piège trouvé s'écrit dans « Pièges rencontrés ».
+- Pas d'allocation par image, instanciation / `<Batched>` pour les petites
+  pièces fixes, surveiller les appels de rendu.
+- `hair.tsx` (locks) ne se touche pas.
+- Le cercle du double saut est un dessin original façon vévé : Leo avait
+  montré le sceau de Baphomet en exemple, qui est un symbole déposé — ne le
+  reproduis pas tel quel.
 
 ## Journal des avancées (session cloud)
 
