@@ -1,0 +1,2213 @@
+{
+ "board": {
+  "frames": 3,
+  "calls": 486,
+  "tris": 1425634,
+  "shadow": {
+   "c": 140,
+   "t": 350216
+  },
+  "passes": [
+   {
+    "name": "scene→rt",
+    "c": 485,
+    "t": 1425632,
+    "cam": "PerspectiveCamera"
+   },
+   {
+    "name": "overlay",
+    "c": 1,
+    "t": 2,
+    "cam": "OrthographicCamera"
+   }
+  ],
+  "programs": 35,
+  "geometries": 265,
+  "textures": 91
+ },
+ "dolls": [
+  {
+   "i": 0,
+   "enterPresentation": {
+    "longtasks": [
+     65,
+     32092,
+     222
+    ],
+    "programsLinked": 3,
+    "linkMs": 0,
+    "texUploads": 14,
+    "texMB": 16.6,
+    "texMs": 0,
+    "bigTex": [
+     "512x512:0.0ms",
+     "512x512:0.0ms",
+     "texSubImage2D:1024x1024:0.1ms",
+     "texSubImage2D:1024x1024:0.1ms",
+     "texSubImage2D:1024x1024:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:512x512:0.0ms"
+    ]
+   },
+   "presentation": {
+    "frames": 2,
+    "calls": 666,
+    "tris": 803052,
+    "shadow": {
+     "c": 308,
+     "t": 117440
+    },
+    "passes": [
+     {
+      "name": "scene→rt",
+      "c": 330,
+      "t": 401520,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "scene→rt",
+      "c": 331,
+      "t": 401522,
+      "cam": "PerspectiveCamera"
+     },
+     {
+      "name": "overlay",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     }
+    ],
+    "programs": 38,
+    "geometries": 75,
+    "textures": 21
+   },
+   "presentBreakdown": {
+    "objects": 705,
+    "hidden": 123,
+    "meshes": 177,
+    "top": [
+     "MeshPhysicalMaterial|fuzz-joint|coques: 4 dessins, 110k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz-zip0.03730.4245-0.3287|coques: 1 dessins, 77k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz-holes|coques: 1 dessins, 47k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz|coques: 4 dessins, 46k tri, 0 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|BufferGeometry|cheveux: 110 dessins, 24k tri, 110 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|SphereGeometry: 8 dessins, 13k tri, 7 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|BufferGeometry: 10 dessins, 11k tri, 9 ombre",
+     "MeshPhysicalMaterial|wool-joint|CapsuleGeometry: 4 dessins, 8k tri, 4 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|SphereGeometry|cheveux: 20 dessins, 4k tri, 20 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|BufferGeometry: 3 dessins, 1k tri, 1 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|TorusGeometry: 4 dessins, 1k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|ExtrudeGeometry: 1 dessins, 0k tri, 0 ombre",
+     "MeshBasicMaterial|onBeforeCompile() {\n  }|BufferGeometry: 1 dessins, 0k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|SphereGeometry: 1 dessins, 0k tri, 0 ombre"
+    ]
+   },
+   "name": "COUTURE INTÉGRALE / poire · locks",
+   "shellNormals": {
+    "withNormal": 10,
+    "withoutNormal": 0,
+    "meshes": 300,
+    "instancedMeshes": 0,
+    "castShadow": 154
+   },
+   "enterArena": {
+    "longtasks": [
+     10949
+    ],
+    "programsLinked": 3,
+    "linkMs": 0,
+    "texUploads": 0,
+    "texMB": 0,
+    "texMs": 0,
+    "bigTex": []
+   },
+   "arenaIdle": {
+    "frames": 2,
+    "calls": 672,
+    "tris": 814520,
+    "shadow": {
+     "c": 308,
+     "t": 117440
+    },
+    "passes": [
+     {
+      "name": "scene→rt",
+      "c": 333,
+      "t": 407254,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "scene→rt",
+      "c": 334,
+      "t": 407256,
+      "cam": "PerspectiveCamera"
+     },
+     {
+      "name": "overlay",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     }
+    ],
+    "programs": 41,
+    "geometries": 80,
+    "textures": 21
+   },
+   "arenaBreakdown": {
+    "objects": 711,
+    "hidden": 123,
+    "meshes": 182,
+    "top": [
+     "MeshPhysicalMaterial|fuzz-joint|coques: 4 dessins, 110k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz-zip0.03730.4245-0.3287|coques: 1 dessins, 77k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz-holes|coques: 1 dessins, 47k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz|coques: 4 dessins, 46k tri, 0 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|BufferGeometry|cheveux: 110 dessins, 24k tri, 110 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|SphereGeometry: 8 dessins, 13k tri, 7 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|BufferGeometry: 10 dessins, 11k tri, 9 ombre",
+     "MeshPhysicalMaterial|wool-joint|CapsuleGeometry: 4 dessins, 8k tri, 4 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|BoxGeometry: 2 dessins, 6k tri, 0 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|SphereGeometry|cheveux: 20 dessins, 4k tri, 20 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|BufferGeometry: 3 dessins, 1k tri, 1 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|TorusGeometry: 4 dessins, 1k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|ExtrudeGeometry: 1 dessins, 0k tri, 0 ombre",
+     "MeshBasicMaterial|onBeforeCompile() {\n  }|BufferGeometry: 1 dessins, 0k tri, 0 ombre"
+    ]
+   },
+   "arenaIdleCpu": {
+    "frames": 6,
+    "useFrameMsPerFrame": 11.767,
+    "glRenderJsMsPerFrame": 9.52,
+    "subs": {
+     "Controls": {
+      "perFrameMs": 0.067,
+      "maxMs": 0.2,
+      "calls": 6
+     },
+     "Rig": {
+      "perFrameMs": 0.05,
+      "maxMs": 0.2,
+      "calls": 6
+     },
+     "Doll": {
+      "perFrameMs": 0.35,
+      "maxMs": 0.4,
+      "calls": 6
+     },
+     "KeepPrograms": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 6
+     },
+     "other:() => { if (frames === Infinity || count < frames) { ": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 6
+     },
+     "Lights": {
+      "perFrameMs": 0.033,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "ContactShadows": {
+      "perFrameMs": 4.05,
+      "maxMs": 5.8,
+      "calls": 6
+     },
+     "other:(_2, dt) => { if (!spring.current) return; const hea": {
+      "perFrameMs": 0.05,
+      "maxMs": 0.3,
+      "calls": 6
+     },
+     "other:(_2, dt) => { if (!springs.current || lastKey.current !=": {
+      "perFrameMs": 1.55,
+      "maxMs": 2.2,
+      "calls": 6
+     },
+     "WeaponTrail": {
+      "perFrameMs": 0.017,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Dust": {
+      "perFrameMs": 0.05,
+      "maxMs": 0.2,
+      "calls": 6
+     },
+     "Ghosts": {
+      "perFrameMs": 0.033,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Outline": {
+      "perFrameMs": 5.517,
+      "maxMs": 10.1,
+      "calls": 6
+     }
+    }
+   },
+   "arenaRunCpu": {
+    "frames": 8,
+    "useFrameMsPerFrame": 43.213,
+    "glRenderJsMsPerFrame": 27.14,
+    "subs": {
+     "Controls": {
+      "perFrameMs": 0.075,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "Rig": {
+      "perFrameMs": 0.075,
+      "maxMs": 0.2,
+      "calls": 8
+     },
+     "Doll": {
+      "perFrameMs": 14.263,
+      "maxMs": 110.3,
+      "calls": 8
+     },
+     "KeepPrograms": {
+      "perFrameMs": 0.012,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "other:() => { if (frames === Infinity || count < frames) { ": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 8
+     },
+     "Lights": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 8
+     },
+     "ContactShadows": {
+      "perFrameMs": 20.537,
+      "maxMs": 119.7,
+      "calls": 8
+     },
+     "other:(_2, dt) => { if (!spring.current) return; const hea": {
+      "perFrameMs": 0.012,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "other:(_2, dt) => { if (!springs.current || lastKey.current !=": {
+      "perFrameMs": 1.263,
+      "maxMs": 2.1,
+      "calls": 8
+     },
+     "WeaponTrail": {
+      "perFrameMs": 0.063,
+      "maxMs": 0.2,
+      "calls": 8
+     },
+     "Dust": {
+      "perFrameMs": 0.012,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "Ghosts": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 8
+     },
+     "Outline": {
+      "perFrameMs": 6.9,
+      "maxMs": 13.7,
+      "calls": 8
+     }
+    }
+   },
+   "arenaRun": {
+    "frames": 1,
+    "calls": 674,
+    "tris": 815720,
+    "shadow": {
+     "c": 308,
+     "t": 117440
+    },
+    "passes": [
+     {
+      "name": "scene→rt",
+      "c": 334,
+      "t": 407654,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "scene→rt",
+      "c": 335,
+      "t": 408056,
+      "cam": "PerspectiveCamera"
+     },
+     {
+      "name": "overlay",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     }
+    ],
+    "programs": 41,
+    "geometries": 80,
+    "textures": 21
+   },
+   "exitArena": {
+    "longtasks": [],
+    "programsLinked": 0,
+    "linkMs": 0,
+    "texUploads": 0,
+    "texMB": 0,
+    "texMs": 0,
+    "bigTex": []
+   },
+   "backToBoard": {
+    "longtasks": [
+     35086,
+     492,
+     61,
+     78,
+     347
+    ],
+    "programsLinked": 1,
+    "linkMs": 2,
+    "texUploads": 84,
+    "texMB": 37.5,
+    "texMs": 2,
+    "bigTex": [
+     "texSubImage2D:512x512:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:384x384:0.0ms",
+     "texSubImage2D:384x384:0.0ms",
+     "texSubImage2D:384x384:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:512x512:0.0ms"
+    ]
+   }
+  },
+  {
+   "i": 1,
+   "enterPresentation": {
+    "longtasks": [
+     200,
+     52678,
+     101,
+     120
+    ],
+    "programsLinked": 0,
+    "linkMs": 0,
+    "texUploads": 18,
+    "texMB": 24.4,
+    "texMs": 1,
+    "bigTex": [
+     "512x512:0.1ms",
+     "512x512:0.0ms",
+     "texSubImage2D:1024x1024:0.1ms",
+     "texSubImage2D:1024x1024:0.0ms",
+     "texSubImage2D:1024x1024:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:768x768:0.1ms",
+     "texSubImage2D:768x768:0.0ms",
+     "texSubImage2D:768x768:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.1ms"
+    ]
+   },
+   "presentation": {
+    "frames": 2,
+    "calls": 168,
+    "tris": 1061972,
+    "shadow": {
+     "c": 56,
+     "t": 159648
+    },
+    "passes": [
+     {
+      "name": "scene→rt",
+      "c": 81,
+      "t": 530980,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "scene→rt",
+      "c": 82,
+      "t": 530982,
+      "cam": "PerspectiveCamera"
+     },
+     {
+      "name": "overlay",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     }
+    ],
+    "programs": 42,
+    "geometries": 73,
+    "textures": 27
+   },
+   "presentBreakdown": {
+    "objects": 248,
+    "hidden": 57,
+    "meshes": 54,
+    "top": [
+     "MeshPhysicalMaterial|fuzz-joint|coques: 4 dessins, 110k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz-zip0.04010.4564-0.3533|coques: 1 dessins, 77k tri, 0 ombre",
+     "MeshPhysicalMaterial|scarf-shell|coques: 1 dessins, 67k tri, 0 ombre",
+     "MeshPhysicalMaterial|hairdo|BufferGeometry|cheveux: 1 dessins, 53k tri, 1 ombre",
+     "MeshPhysicalMaterial|fuzz-holes|coques: 1 dessins, 47k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz|coques: 4 dessins, 46k tri, 0 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|BufferGeometry: 13 dessins, 24k tri, 11 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|SphereGeometry: 8 dessins, 13k tri, 7 ombre",
+     "MeshPhysicalMaterial|wool-joint|CapsuleGeometry: 4 dessins, 8k tri, 4 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|BufferGeometry: 3 dessins, 1k tri, 1 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|TubeGeometry: 1 dessins, 1k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|TorusGeometry: 4 dessins, 1k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|ExtrudeGeometry: 1 dessins, 0k tri, 0 ombre",
+     "MeshBasicMaterial|onBeforeCompile() {\n  }|BufferGeometry: 1 dessins, 0k tri, 0 ombre"
+    ]
+   },
+   "name": "ÉCHARPE / bouboule · grande frange",
+   "shellNormals": {
+    "withNormal": 10,
+    "withoutNormal": 1,
+    "meshes": 111,
+    "instancedMeshes": 0,
+    "castShadow": 28
+   },
+   "enterArena": {
+    "longtasks": [
+     61,
+     16767
+    ],
+    "programsLinked": 2,
+    "linkMs": 0,
+    "texUploads": 0,
+    "texMB": 0,
+    "texMs": 0,
+    "bigTex": []
+   },
+   "arenaIdle": {
+    "frames": 2,
+    "calls": 174,
+    "tris": 1073440,
+    "shadow": {
+     "c": 56,
+     "t": 159648
+    },
+    "passes": [
+     {
+      "name": "scene→rt",
+      "c": 84,
+      "t": 536714,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "scene→rt",
+      "c": 85,
+      "t": 536716,
+      "cam": "PerspectiveCamera"
+     },
+     {
+      "name": "overlay",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     }
+    ],
+    "programs": 44,
+    "geometries": 78,
+    "textures": 27
+   },
+   "arenaBreakdown": {
+    "objects": 254,
+    "hidden": 57,
+    "meshes": 59,
+    "top": [
+     "MeshPhysicalMaterial|fuzz-joint|coques: 4 dessins, 110k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz-zip0.04010.4564-0.3533|coques: 1 dessins, 77k tri, 0 ombre",
+     "MeshPhysicalMaterial|scarf-shell|coques: 1 dessins, 67k tri, 0 ombre",
+     "MeshPhysicalMaterial|hairdo|BufferGeometry|cheveux: 1 dessins, 53k tri, 1 ombre",
+     "MeshPhysicalMaterial|fuzz-holes|coques: 1 dessins, 47k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz|coques: 4 dessins, 46k tri, 0 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|BufferGeometry: 13 dessins, 24k tri, 11 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|SphereGeometry: 8 dessins, 13k tri, 7 ombre",
+     "MeshPhysicalMaterial|wool-joint|CapsuleGeometry: 4 dessins, 8k tri, 4 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|BoxGeometry: 2 dessins, 6k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|BufferGeometry: 3 dessins, 1k tri, 1 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|TubeGeometry: 1 dessins, 1k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|TorusGeometry: 4 dessins, 1k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|ExtrudeGeometry: 1 dessins, 0k tri, 0 ombre"
+    ]
+   },
+   "arenaIdleCpu": {
+    "frames": 6,
+    "useFrameMsPerFrame": 22.667,
+    "glRenderJsMsPerFrame": 6.1,
+    "subs": {
+     "Controls": {
+      "perFrameMs": 0.033,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Rig": {
+      "perFrameMs": 0.067,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Doll": {
+      "perFrameMs": 0.367,
+      "maxMs": 0.5,
+      "calls": 6
+     },
+     "KeepPrograms": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 6
+     },
+     "other:() => { if (frames === Infinity || count < frames) { ": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 6
+     },
+     "Lights": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 6
+     },
+     "ContactShadows": {
+      "perFrameMs": 2.767,
+      "maxMs": 4.7,
+      "calls": 6
+     },
+     "Scarf": {
+      "perFrameMs": 15.617,
+      "maxMs": 35.4,
+      "calls": 6
+     },
+     "other:(_2, dt) => { if (!spring.current) return; const hea": {
+      "perFrameMs": 0.067,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Hairdo": {
+      "perFrameMs": 0.183,
+      "maxMs": 0.3,
+      "calls": 6
+     },
+     "WeaponTrail": {
+      "perFrameMs": 0.05,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Dust": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 6
+     },
+     "Ghosts": {
+      "perFrameMs": 0.017,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Outline": {
+      "perFrameMs": 3.5,
+      "maxMs": 6.5,
+      "calls": 6
+     }
+    }
+   },
+   "arenaRunCpu": {
+    "frames": 8,
+    "useFrameMsPerFrame": 16.5,
+    "glRenderJsMsPerFrame": 6.31,
+    "subs": {
+     "Controls": {
+      "perFrameMs": 0.025,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "Rig": {
+      "perFrameMs": 0.287,
+      "maxMs": 1.7,
+      "calls": 8
+     },
+     "Doll": {
+      "perFrameMs": 0.375,
+      "maxMs": 0.6,
+      "calls": 8
+     },
+     "KeepPrograms": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 8
+     },
+     "other:() => { if (frames === Infinity || count < frames) { ": {
+      "perFrameMs": 0.012,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "Lights": {
+      "perFrameMs": 0.013,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "ContactShadows": {
+      "perFrameMs": 2.987,
+      "maxMs": 6.9,
+      "calls": 8
+     },
+     "Scarf": {
+      "perFrameMs": 8.975,
+      "maxMs": 24.5,
+      "calls": 8
+     },
+     "other:(_2, dt) => { if (!spring.current) return; const hea": {
+      "perFrameMs": 0.012,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "Hairdo": {
+      "perFrameMs": 0.275,
+      "maxMs": 0.7,
+      "calls": 8
+     },
+     "WeaponTrail": {
+      "perFrameMs": 0.088,
+      "maxMs": 0.4,
+      "calls": 8
+     },
+     "Dust": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 8
+     },
+     "Ghosts": {
+      "perFrameMs": 0.05,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "Outline": {
+      "perFrameMs": 3.4,
+      "maxMs": 10,
+      "calls": 8
+     }
+    }
+   },
+   "arenaRun": {
+    "frames": 1,
+    "calls": 176,
+    "tris": 1075040,
+    "shadow": {
+     "c": 56,
+     "t": 159648
+    },
+    "passes": [
+     {
+      "name": "scene→rt",
+      "c": 85,
+      "t": 537514,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "scene→rt",
+      "c": 86,
+      "t": 537516,
+      "cam": "PerspectiveCamera"
+     },
+     {
+      "name": "overlay",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     }
+    ],
+    "programs": 44,
+    "geometries": 78,
+    "textures": 27
+   },
+   "exitArena": {
+    "longtasks": [],
+    "programsLinked": 0,
+    "linkMs": 0,
+    "texUploads": 0,
+    "texMB": 0,
+    "texMs": 0,
+    "bigTex": []
+   },
+   "backToBoard": {
+    "longtasks": [
+     50709,
+     125,
+     101,
+     72,
+     81,
+     58,
+     51
+    ],
+    "programsLinked": 0,
+    "linkMs": 0,
+    "texUploads": 84,
+    "texMB": 37.5,
+    "texMs": 4,
+    "bigTex": [
+     "texSubImage2D:512x512:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.2ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:384x384:0.0ms",
+     "texSubImage2D:384x384:0.1ms",
+     "texSubImage2D:384x384:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.2ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.1ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:1.8ms"
+    ]
+   }
+  },
+  {
+   "i": 2,
+   "enterPresentation": {
+    "longtasks": [
+     50363
+    ],
+    "programsLinked": 0,
+    "linkMs": 0,
+    "texUploads": 16,
+    "texMB": 16.8,
+    "texMs": 0,
+    "bigTex": [
+     "512x512:0.0ms",
+     "512x512:0.0ms",
+     "texSubImage2D:1024x1024:0.0ms",
+     "texSubImage2D:1024x1024:0.0ms",
+     "texSubImage2D:1024x1024:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms"
+    ]
+   },
+   "presentation": {
+    "frames": 2,
+    "calls": 164,
+    "tris": 762780,
+    "shadow": {
+     "c": 52,
+     "t": 96200
+    },
+    "passes": [
+     {
+      "name": "scene→rt",
+      "c": 79,
+      "t": 381384,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "scene→rt",
+      "c": 80,
+      "t": 381386,
+      "cam": "PerspectiveCamera"
+     },
+     {
+      "name": "overlay",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     }
+    ],
+    "programs": 44,
+    "geometries": 79,
+    "textures": 27
+   },
+   "presentBreakdown": {
+    "objects": 250,
+    "hidden": 62,
+    "meshes": 54,
+    "top": [
+     "MeshPhysicalMaterial|fuzz-joint|coques: 4 dessins, 110k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz-zip0.03480.3999-0.3096|coques: 1 dessins, 77k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz-holes|coques: 1 dessins, 47k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz|coques: 4 dessins, 46k tri, 0 ombre",
+     "MeshPhysicalMaterial|hairdo|BufferGeometry|cheveux: 1 dessins, 23k tri, 1 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|SphereGeometry: 14 dessins, 15k tri, 7 ombre",
+     "MeshPhysicalMaterial|wool-joint|CapsuleGeometry: 4 dessins, 8k tri, 4 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|BufferGeometry: 10 dessins, 3k tri, 10 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|BufferGeometry: 4 dessins, 2k tri, 2 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|TorusGeometry: 4 dessins, 1k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|ExtrudeGeometry: 1 dessins, 0k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|SphereGeometry: 1 dessins, 0k tri, 0 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|TorusGeometry: 1 dessins, 0k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|CylinderGeometry: 2 dessins, 0k tri, 2 ombre"
+    ]
+   },
+   "name": "COURONNE D’ÉPINGLES / dégingandé · bouclettes",
+   "shellNormals": {
+    "withNormal": 10,
+    "withoutNormal": 0,
+    "meshes": 116,
+    "instancedMeshes": 0,
+    "castShadow": 26
+   },
+   "enterArena": {
+    "longtasks": [
+     19659
+    ],
+    "programsLinked": 2,
+    "linkMs": 0,
+    "texUploads": 5,
+    "texMB": 0.5,
+    "texMs": 0,
+    "bigTex": [
+     "texSubImage2D:256x256:0.0ms"
+    ]
+   },
+   "arenaIdle": {
+    "frames": 2,
+    "calls": 170,
+    "tris": 774248,
+    "shadow": {
+     "c": 52,
+     "t": 96200
+    },
+    "passes": [
+     {
+      "name": "scene→rt",
+      "c": 82,
+      "t": 387118,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "scene→rt",
+      "c": 83,
+      "t": 387120,
+      "cam": "PerspectiveCamera"
+     },
+     {
+      "name": "overlay",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     }
+    ],
+    "programs": 46,
+    "geometries": 84,
+    "textures": 27
+   },
+   "arenaBreakdown": {
+    "objects": 256,
+    "hidden": 62,
+    "meshes": 59,
+    "top": [
+     "MeshPhysicalMaterial|fuzz-joint|coques: 4 dessins, 110k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz-zip0.03480.3999-0.3096|coques: 1 dessins, 77k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz-holes|coques: 1 dessins, 47k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz|coques: 4 dessins, 46k tri, 0 ombre",
+     "MeshPhysicalMaterial|hairdo|BufferGeometry|cheveux: 1 dessins, 23k tri, 1 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|SphereGeometry: 14 dessins, 15k tri, 7 ombre",
+     "MeshPhysicalMaterial|wool-joint|CapsuleGeometry: 4 dessins, 8k tri, 4 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|BoxGeometry: 2 dessins, 6k tri, 0 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|BufferGeometry: 10 dessins, 3k tri, 10 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|BufferGeometry: 4 dessins, 2k tri, 2 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|TorusGeometry: 4 dessins, 1k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|ExtrudeGeometry: 1 dessins, 0k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|SphereGeometry: 1 dessins, 0k tri, 0 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|TorusGeometry: 1 dessins, 0k tri, 0 ombre"
+    ]
+   },
+   "arenaIdleCpu": {
+    "frames": 6,
+    "useFrameMsPerFrame": 5.383,
+    "glRenderJsMsPerFrame": 3.43,
+    "subs": {
+     "Controls": {
+      "perFrameMs": 0.033,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Rig": {
+      "perFrameMs": 0.083,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Doll": {
+      "perFrameMs": 1.367,
+      "maxMs": 6.8,
+      "calls": 6
+     },
+     "KeepPrograms": {
+      "perFrameMs": 0.017,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "other:() => { if (frames === Infinity || count < frames) { ": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 6
+     },
+     "Lights": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 6
+     },
+     "ContactShadows": {
+      "perFrameMs": 1.867,
+      "maxMs": 3.7,
+      "calls": 6
+     },
+     "other:(_2, dt) => { if (!spring.current) return; const hea": {
+      "perFrameMs": 0.017,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Hairdo": {
+      "perFrameMs": 0.067,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "WeaponTrail": {
+      "perFrameMs": 0.017,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Dust": {
+      "perFrameMs": 0.017,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Ghosts": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 6
+     },
+     "Outline": {
+      "perFrameMs": 1.9,
+      "maxMs": 3.4,
+      "calls": 6
+     }
+    }
+   },
+   "arenaRunCpu": {
+    "frames": 8,
+    "useFrameMsPerFrame": 4.813,
+    "glRenderJsMsPerFrame": 3.99,
+    "subs": {
+     "Controls": {
+      "perFrameMs": 0.025,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "Rig": {
+      "perFrameMs": 0.062,
+      "maxMs": 0.2,
+      "calls": 8
+     },
+     "Doll": {
+      "perFrameMs": 0.425,
+      "maxMs": 0.7,
+      "calls": 8
+     },
+     "KeepPrograms": {
+      "perFrameMs": 0.037,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "other:() => { if (frames === Infinity || count < frames) { ": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 8
+     },
+     "Lights": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 8
+     },
+     "ContactShadows": {
+      "perFrameMs": 1.638,
+      "maxMs": 4,
+      "calls": 8
+     },
+     "other:(_2, dt) => { if (!spring.current) return; const hea": {
+      "perFrameMs": 0.037,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "Hairdo": {
+      "perFrameMs": 0.075,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "WeaponTrail": {
+      "perFrameMs": 0.038,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "Dust": {
+      "perFrameMs": 0.013,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "Ghosts": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 8
+     },
+     "Outline": {
+      "perFrameMs": 2.463,
+      "maxMs": 6.8,
+      "calls": 8
+     }
+    }
+   },
+   "arenaRun": {
+    "frames": 1,
+    "calls": 172,
+    "tris": 775448,
+    "shadow": {
+     "c": 52,
+     "t": 96200
+    },
+    "passes": [
+     {
+      "name": "scene→rt",
+      "c": 83,
+      "t": 387518,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "scene→rt",
+      "c": 84,
+      "t": 387920,
+      "cam": "PerspectiveCamera"
+     },
+     {
+      "name": "overlay",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     }
+    ],
+    "programs": 46,
+    "geometries": 84,
+    "textures": 27
+   },
+   "exitArena": {
+    "longtasks": [],
+    "programsLinked": 0,
+    "linkMs": 0,
+    "texUploads": 5,
+    "texMB": 0.5,
+    "texMs": 0,
+    "bigTex": [
+     "texSubImage2D:256x256:0.0ms"
+    ]
+   },
+   "backToBoard": {
+    "longtasks": [
+     55780,
+     52
+    ],
+    "programsLinked": 0,
+    "linkMs": 0,
+    "texUploads": 84,
+    "texMB": 37.5,
+    "texMs": 1,
+    "bigTex": [
+     "texSubImage2D:512x512:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:384x384:0.0ms",
+     "texSubImage2D:384x384:0.0ms",
+     "texSubImage2D:384x384:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms"
+    ]
+   }
+  },
+  {
+   "i": 3,
+   "enterPresentation": {
+    "longtasks": [
+     89,
+     49309,
+     213
+    ],
+    "programsLinked": 0,
+    "linkMs": 0,
+    "texUploads": 15,
+    "texMB": 16.7,
+    "texMs": 0,
+    "bigTex": [
+     "512x512:0.1ms",
+     "512x512:0.1ms",
+     "texSubImage2D:1024x1024:0.0ms",
+     "texSubImage2D:1024x1024:0.0ms",
+     "texSubImage2D:1024x1024:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms"
+    ]
+   },
+   "presentation": {
+    "frames": 2,
+    "calls": 168,
+    "tris": 925612,
+    "shadow": {
+     "c": 58,
+     "t": 178728
+    },
+    "passes": [
+     {
+      "name": "scene→rt",
+      "c": 81,
+      "t": 462800,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "scene→rt",
+      "c": 82,
+      "t": 462802,
+      "cam": "PerspectiveCamera"
+     },
+     {
+      "name": "overlay",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     }
+    ],
+    "programs": 46,
+    "geometries": 82,
+    "textures": 28
+   },
+   "presentBreakdown": {
+    "objects": 250,
+    "hidden": 66,
+    "meshes": 53,
+    "top": [
+     "MeshPhysicalMaterial|fuzz-joint|coques: 4 dessins, 110k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz-zip0.03380.3849-0.2980|coques: 1 dessins, 77k tri, 0 ombre",
+     "MeshPhysicalMaterial|hairdo|BufferGeometry|cheveux: 1 dessins, 54k tri, 1 ombre",
+     "MeshPhysicalMaterial|fuzz-holes|coques: 1 dessins, 47k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz|coques: 4 dessins, 46k tri, 0 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|SphereGeometry: 8 dessins, 13k tri, 7 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|TorusGeometry: 6 dessins, 8k tri, 2 ombre",
+     "MeshPhysicalMaterial|wool-joint|CapsuleGeometry: 4 dessins, 8k tri, 4 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|BufferGeometry: 11 dessins, 6k tri, 10 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|BufferGeometry: 3 dessins, 1k tri, 1 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|SphereGeometry: 2 dessins, 1k tri, 1 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|ExtrudeGeometry: 1 dessins, 0k tri, 0 ombre",
+     "MeshBasicMaterial|onBeforeCompile() {\n  }|BufferGeometry: 1 dessins, 0k tri, 0 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|TorusGeometry: 1 dessins, 0k tri, 0 ombre"
+    ]
+   },
+   "name": "COLLIER / costaud · mèches",
+   "shellNormals": {
+    "withNormal": 10,
+    "withoutNormal": 0,
+    "meshes": 119,
+    "instancedMeshes": 1,
+    "castShadow": 29
+   },
+   "enterArena": {
+    "longtasks": [
+     27206
+    ],
+    "programsLinked": 2,
+    "linkMs": 0,
+    "texUploads": 0,
+    "texMB": 0,
+    "texMs": 0,
+    "bigTex": []
+   },
+   "arenaIdle": {
+    "frames": 2,
+    "calls": 174,
+    "tris": 937080,
+    "shadow": {
+     "c": 58,
+     "t": 178728
+    },
+    "passes": [
+     {
+      "name": "scene→rt",
+      "c": 84,
+      "t": 468534,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "scene→rt",
+      "c": 85,
+      "t": 468536,
+      "cam": "PerspectiveCamera"
+     },
+     {
+      "name": "overlay",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     }
+    ],
+    "programs": 48,
+    "geometries": 87,
+    "textures": 28
+   },
+   "arenaBreakdown": {
+    "objects": 256,
+    "hidden": 66,
+    "meshes": 58,
+    "top": [
+     "MeshPhysicalMaterial|fuzz-joint|coques: 4 dessins, 110k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz-zip0.03380.3849-0.2980|coques: 1 dessins, 77k tri, 0 ombre",
+     "MeshPhysicalMaterial|hairdo|BufferGeometry|cheveux: 1 dessins, 54k tri, 1 ombre",
+     "MeshPhysicalMaterial|fuzz-holes|coques: 1 dessins, 47k tri, 0 ombre",
+     "MeshPhysicalMaterial|fuzz|coques: 4 dessins, 46k tri, 0 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|SphereGeometry: 8 dessins, 13k tri, 7 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|TorusGeometry: 6 dessins, 8k tri, 2 ombre",
+     "MeshPhysicalMaterial|wool-joint|CapsuleGeometry: 4 dessins, 8k tri, 4 ombre",
+     "MeshPhysicalMaterial|onBeforeCompile() {\n  }|BufferGeometry: 11 dessins, 6k tri, 10 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|BoxGeometry: 2 dessins, 6k tri, 0 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|BufferGeometry: 3 dessins, 1k tri, 1 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|SphereGeometry: 2 dessins, 1k tri, 1 ombre",
+     "MeshStandardMaterial|onBeforeCompile() {\n  }|ExtrudeGeometry: 1 dessins, 0k tri, 0 ombre",
+     "MeshBasicMaterial|onBeforeCompile() {\n  }|BufferGeometry: 1 dessins, 0k tri, 0 ombre"
+    ]
+   },
+   "arenaIdleCpu": {
+    "frames": 6,
+    "useFrameMsPerFrame": 3.55,
+    "glRenderJsMsPerFrame": 2.85,
+    "subs": {
+     "Controls": {
+      "perFrameMs": 0.033,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Rig": {
+      "perFrameMs": 0.017,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Doll": {
+      "perFrameMs": 0.283,
+      "maxMs": 0.4,
+      "calls": 6
+     },
+     "KeepPrograms": {
+      "perFrameMs": 0.017,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "other:() => { if (frames === Infinity || count < frames) { ": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 6
+     },
+     "Lights": {
+      "perFrameMs": 0.017,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "ContactShadows": {
+      "perFrameMs": 1.533,
+      "maxMs": 2.3,
+      "calls": 6
+     },
+     "Necklace": {
+      "perFrameMs": 0.1,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "other:(_2, dt) => { if (!spring.current) return; const hea": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 6
+     },
+     "Hairdo": {
+      "perFrameMs": 0.1,
+      "maxMs": 0.2,
+      "calls": 6
+     },
+     "WeaponTrail": {
+      "perFrameMs": 0.05,
+      "maxMs": 0.1,
+      "calls": 6
+     },
+     "Dust": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 6
+     },
+     "Ghosts": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 6
+     },
+     "Outline": {
+      "perFrameMs": 1.4,
+      "maxMs": 1.5,
+      "calls": 6
+     }
+    }
+   },
+   "arenaRunCpu": {
+    "frames": 8,
+    "useFrameMsPerFrame": 4.463,
+    "glRenderJsMsPerFrame": 3.01,
+    "subs": {
+     "Controls": {
+      "perFrameMs": 0.1,
+      "maxMs": 0.6,
+      "calls": 8
+     },
+     "Rig": {
+      "perFrameMs": 0.05,
+      "maxMs": 0.2,
+      "calls": 8
+     },
+     "Doll": {
+      "perFrameMs": 0.95,
+      "maxMs": 5.1,
+      "calls": 8
+     },
+     "KeepPrograms": {
+      "perFrameMs": 0.012,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "other:() => { if (frames === Infinity || count < frames) { ": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 8
+     },
+     "Lights": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 8
+     },
+     "ContactShadows": {
+      "perFrameMs": 1.75,
+      "maxMs": 3.5,
+      "calls": 8
+     },
+     "Necklace": {
+      "perFrameMs": 0.1,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "other:(_2, dt) => { if (!spring.current) return; const hea": {
+      "perFrameMs": 0,
+      "maxMs": 0,
+      "calls": 8
+     },
+     "Hairdo": {
+      "perFrameMs": 0.05,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "WeaponTrail": {
+      "perFrameMs": 0.038,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "Dust": {
+      "perFrameMs": 0.025,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "Ghosts": {
+      "perFrameMs": 0.025,
+      "maxMs": 0.1,
+      "calls": 8
+     },
+     "Outline": {
+      "perFrameMs": 1.363,
+      "maxMs": 1.5,
+      "calls": 8
+     }
+    }
+   },
+   "arenaRun": {
+    "frames": 1,
+    "calls": 175,
+    "tris": 938240,
+    "shadow": {
+     "c": 58,
+     "t": 178728
+    },
+    "passes": [
+     {
+      "name": "scene→rt",
+      "c": 84,
+      "t": 468894,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "Mesh",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     },
+     {
+      "name": "scene→rt",
+      "c": 86,
+      "t": 469336,
+      "cam": "PerspectiveCamera"
+     },
+     {
+      "name": "overlay",
+      "c": 1,
+      "t": 2,
+      "cam": "OrthographicCamera"
+     }
+    ],
+    "programs": 48,
+    "geometries": 87,
+    "textures": 28
+   },
+   "exitArena": {
+    "longtasks": [],
+    "programsLinked": 0,
+    "linkMs": 0,
+    "texUploads": 0,
+    "texMB": 0,
+    "texMs": 0,
+    "bigTex": []
+   },
+   "backToBoard": {
+    "longtasks": [
+     51871,
+     80,
+     55
+    ],
+    "programsLinked": 0,
+    "linkMs": 0,
+    "texUploads": 84,
+    "texMB": 37.5,
+    "texMs": 1,
+    "bigTex": [
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:384x384:0.0ms",
+     "texSubImage2D:384x384:0.0ms",
+     "texSubImage2D:384x384:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:512x512:0.2ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.1ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms",
+     "texSubImage2D:256x256:0.0ms",
+     "texSubImage2D:512x512:0.0ms"
+    ]
+   }
+  }
+ ],
+ "boardLoad": {
+  "longtasks": [
+   95,
+   425,
+   33706,
+   3978,
+   25285
+  ],
+  "programsLinked": 35,
+  "linkMs": 14,
+  "texUploads": 102,
+  "texMB": 53.2,
+  "texMs": 1,
+  "bigTex": [
+   "256x256:0.0ms",
+   "256x256:0.0ms",
+   "256x256:0.0ms",
+   "256x256:0.0ms",
+   "256x256:0.0ms",
+   "256x256:0.0ms",
+   "1280x800:0.0ms",
+   "1024x1024:0.0ms",
+   "texSubImage2D:512x512:0.1ms",
+   "768x1024:0.0ms",
+   "768x1024:0.0ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.1ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:512x512:0.1ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:384x384:0.0ms",
+   "texSubImage2D:384x384:0.0ms",
+   "texSubImage2D:384x384:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.1ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.1ms",
+   "texSubImage2D:256x256:0.1ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:512x512:0.1ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.1ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.0ms",
+   "texSubImage2D:256x256:0.1ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:256x256:0.1ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:256x256:0.1ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:256x256:0.1ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:256x256:0.1ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:256x256:0.1ms",
+   "texSubImage2D:512x512:0.0ms",
+   "texSubImage2D:256x256:0.1ms"
+  ]
+ },
+ "boardBreakdown": {
+  "objects": 1688,
+  "hidden": 434,
+  "meshes": 345,
+  "top": [
+   "MeshPhysicalMaterial|fuzz-joint|coques: 24 dessins, 236k tri, 0 ombre",
+   "MeshPhysicalMaterial|hairdo|BufferGeometry|cheveux: 6 dessins, 186k tri, 6 ombre",
+   "MeshPhysicalMaterial|fuzz-holes|coques: 6 dessins, 101k tri, 0 ombre",
+   "MeshPhysicalMaterial|fuzz|coques: 24 dessins, 98k tri, 0 ombre",
+   "MeshPhysicalMaterial|onBeforeCompile() {\n  }|SphereGeometry: 48 dessins, 77k tri, 36 ombre",
+   "MeshPhysicalMaterial|scarf-shell|coques: 1 dessins, 67k tri, 0 ombre",
+   "MeshPhysicalMaterial|onBeforeCompile() {\n  }|BufferGeometry: 64 dessins, 55k tri, 59 ombre",
+   "MeshPhysicalMaterial|wool-joint|CapsuleGeometry: 24 dessins, 47k tri, 24 ombre",
+   "MeshPhysicalMaterial|fuzz-zip0.03730.4245-0.3287|coques: 1 dessins, 28k tri, 0 ombre",
+   "MeshPhysicalMaterial|fuzz-zip0.04010.4564-0.3533|coques: 1 dessins, 28k tri, 0 ombre",
+   "MeshPhysicalMaterial|fuzz-zip0.03480.3999-0.3096|coques: 1 dessins, 28k tri, 0 ombre",
+   "MeshPhysicalMaterial|fuzz-zip0.03380.3849-0.2980|coques: 1 dessins, 28k tri, 0 ombre",
+   "MeshPhysicalMaterial|fuzz-zip0.03910.4467-0.3458|coques: 1 dessins, 28k tri, 0 ombre",
+   "MeshPhysicalMaterial|fuzz-zip0.03200.3722-0.2881|coques: 1 dessins, 28k tri, 0 ombre"
+  ]
+ },
+ "boardCpu": {
+  "frames": 8,
+  "useFrameMsPerFrame": 45.387,
+  "glRenderJsMsPerFrame": 30.31,
+  "subs": {
+   "Rig": {
+    "perFrameMs": 0.138,
+    "maxMs": 0.5,
+    "calls": 8
+   },
+   "Doll": {
+    "perFrameMs": 1,
+    "maxMs": 0.5,
+    "calls": 48
+   },
+   "KeepPrograms": {
+    "perFrameMs": 0.012,
+    "maxMs": 0.1,
+    "calls": 8
+   },
+   "other:() => { if (frames === Infinity || count < frames) { ": {
+    "perFrameMs": 0,
+    "maxMs": 0,
+    "calls": 8
+   },
+   "Lights": {
+    "perFrameMs": 0,
+    "maxMs": 0,
+    "calls": 8
+   },
+   "other:(_2, dt) => { if (!spring.current) return; const hea": {
+    "perFrameMs": 0.125,
+    "maxMs": 0.1,
+    "calls": 48
+   },
+   "other:(_2, dt) => { if (!springs.current || lastKey.current !=": {
+    "perFrameMs": 1.063,
+    "maxMs": 3.2,
+    "calls": 8
+   },
+   "other:(gl2) => { if (group.current) { camera.updateMatri": {
+    "perFrameMs": 0.075,
+    "maxMs": 0.1,
+    "calls": 48
+   },
+   "Scarf": {
+    "perFrameMs": 11.475,
+    "maxMs": 31.5,
+    "calls": 8
+   },
+   "Hairdo": {
+    "perFrameMs": 0.875,
+    "maxMs": 2.3,
+    "calls": 40
+   },
+   "Necklace": {
+    "perFrameMs": 0.15,
+    "maxMs": 0.2,
+    "calls": 8
+   },
+   "Outline": {
+    "perFrameMs": 30.475,
+    "maxMs": 141.1,
+    "calls": 8
+   }
+  }
+ }
+}

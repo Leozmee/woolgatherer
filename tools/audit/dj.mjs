@@ -1,0 +1,18 @@
+import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs'
+const b = await chromium.launch({ args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist'] })
+const pg = await b.newPage({ viewport: { width: 300, height: 260 } })
+pg.on('pageerror', e => console.log('PAGEERR', e.message))
+await pg.goto('http://127.0.0.1:5173/')
+await pg.waitForSelector('button.choose', { timeout: 120000 })
+await pg.evaluate(() => document.querySelectorAll('button.choose')[1].click())
+await pg.waitForSelector('#play', { timeout: 90000 }); await pg.evaluate(() => document.querySelector('#play').click())
+await pg.waitForTimeout(4000)
+// Trace des états, image par image, côté page.
+await pg.evaluate(() => { const f = window.__fighter; window.__trace = []; const tick = () => { const c = f.current; const t = window.__trace; if (t[t.length - 1] !== c) t.push(c); requestAnimationFrame(tick) }; tick() })
+const game = async (s) => pg.evaluate(async (s) => { const f = window.__fighter; const t0 = f.time; await new Promise(r => { const tick = () => { if (f.time - t0 >= s) r(); else requestAnimationFrame(tick) }; tick() }) }, s)
+await pg.keyboard.down(' '); await game(0.12); await pg.keyboard.up(' ')
+await game(0.2)
+await pg.keyboard.down(' '); await game(0.1); await pg.keyboard.up(' ')
+await game(1.2)
+console.log(await pg.evaluate(() => window.__trace.join(' → ')))
+await b.close()

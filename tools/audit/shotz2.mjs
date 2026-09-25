@@ -1,0 +1,12 @@
+import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs'
+const b = await chromium.launch({ args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist'] })
+const pg = await b.newPage({ viewport: { width: 440, height: 440 } })
+pg.on('pageerror', e => console.log('PAGEERR', e.message))
+await pg.goto('http://127.0.0.1:5173/')
+await pg.waitForSelector('button.choose', { timeout: 120000 })
+await pg.evaluate(() => document.querySelectorAll('button.choose')[0].click())
+await pg.waitForTimeout(7000)
+await pg.evaluate(() => { const t = window.__turntable; t.yaw = Math.PI; t.pitch = 0.2; t.distance = 1.5; t.panY = 0.55 })
+await pg.waitForTimeout(7000)
+await pg.screenshot({ path: 'z_close.png', timeout: 180000 })
+await b.close()

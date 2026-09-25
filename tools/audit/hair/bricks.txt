@@ -1,0 +1,298 @@
+// ---------------------------------------------------------------- briques anime
+
+/**
+ * Ressort qui pivote au centre du crâne, bout vers l'azimut `az` — en bas et
+ * vers l'extérieur : à l'aplomb du centre, il serait sur l'axe de rotation de
+ * la poupée et ne ressentirait rien. Pour ce qui est posé contre le crâne :
+ * une rotation autour du centre le fait glisser dessus sans l'y enfoncer.
+ */
+function centerMover(R: number, az: number, cfg: SpringConfig, maxAngle: number): Mover {
+  return {
+    pivot: new THREE.Vector3(),
+    dir: new THREE.Vector3(Math.sin(az) * 0.75, -0.66, Math.cos(az) * 0.75).normalize(),
+    length: R,
+    cfg,
+    maxAngle,
+  }
+}
+
+type SideLockOpts = {
+  /** Azimut de la mèche, signé : son signe est le côté. */
+  az: number
+  /** Hauteur de la racine (sur la lisière des cheveux tirés) et de la pointe. */
+  from: number
+  end: number
+  /** Relèvement de base : au-dessus de la couche tirée qu'elle recouvre. */
+  over: number
+  /** Largeur de la mèche, en azimut. */
+  span: number
+  /** Brins par couche (deux couches). */
+  n: number
+}
+
+/**
+ * Mèche latérale : elle encadre le visage.
+ *
+ * De la lisière, elle passe sur la tempe **par-dessus** les cheveux tirés,
+ * descend devant l'oreille jusqu'à la mâchoire, se referme en pointe sur son
+ * dernier tiers et rentre la pointe vers la joue. Sous l'équateur elle ne peut
+ * plus se rapprocher de l'axe : elle passe par-dessus les bajoues au lieu d'y
+ * entrer. C'est elle qui dit « personnage » : sans elle, le visage d'une
+ * coupe tirée est un œuf.
+ *
+ * Un ressort pivotant au centre du crâne, sans gravité ; racine tenue — elle
+ * sort de cheveux immobiles, une racine qui glisse lirait comme une perruque.
+ */
+function sideLock(p: DollParams, rnd: () => number, r: number, out: Parts, o: SideLockOpts) {
+  const R = p.shape.headRadius
+  const sx = Math.sign(o.az) || 1
+  const m = out.movers.length
+  out.movers.push(
+    centerMover(R, o.az, { stiffness: 0.03 + rnd() * 0.015, drag: 0.08 + rnd() * 0.04, gravity: 0 }, 0.22),
+  )
+  // Pointe rentrée vers la joue — signée par le côté : une rotation ne
+  // reflète pas, et sans le signe les deux mèches tourneraient du même côté.
+  const curl = sx * (0.1 + rnd() * 0.06)
+  const count = o.n * 2
+  const M = 18
+  for (let i = 0; i < count; i++) {
+    const u = ((Math.floor(i / 2) + 0.5) / o.n) * 2 - 1
+    const a0 = o.az + u * o.span * 0.5
+    // Bords plus courts : la pointe.
+    const tipSy = clamp(o.end + Math.abs(u) ** 1.4 * 0.12 + rnd() * 0.02, -0.9, 0.9)
+    const layer = o.over + r * ((i % 2) * 0.9 + rnd() * 0.4)
+    const phase = rnd() * 6
+    let rMax = 0
+    const pts: THREE.Vector3[] = []
+    for (let k = 0; k <= M; k++) {
+      const t = k / M
+      const close = 0.8 * smooth(0.55, 1, t)
+      const a = a0 + (o.az - a0) * close - curl * smooth(0.7, 1, t) ** 2
+      const sy = o.from + (tipSy - o.from) * t
+      // Ventre : la mèche gonfle un peu à mi-hauteur, comme une mèche peignée.
+      const s = onHeadPolar(p, a, sy, k === 0 ? -r * 2 : layer + R * 0.03 * Math.sin(Math.PI * t))
+      const h = Math.hypot(s.pos.x, s.pos.z)
+      if (sy < 0 && h < rMax) {
+        s.pos.x *= rMax / h
+        s.pos.z *= rMax / h
+      }
+      rMax = Math.max(rMax, Math.hypot(s.pos.x, s.pos.z))
+      pts.push(s.pos)
+    }
+    out.yarn.push(yarn(pts, r, { mover: m, free: after(0.15), fling: (t) => 0.9 * after(0.3)(t), phase }))
+  }
+}
+
+/**
+ * Épi rebelle (ahoge) : une mèche dressée sur le dessus, qui monte puis ploie
+ * vers l'avant en crochet. Tirages faits dans tous les cas — présence
+ * comprise —, pour que la suite de la graine n'en dépende pas.
+ *
+ * Son ressort est raide et peu amorti : il vibre. Il pointe **vers la pointe
+ * réelle**, pas selon la normale : à la verticale du sommet, le bout du
+ * ressort serait sur l'axe de rotation de la poupée et ne ressentirait rien.
+ * Hors de la sphère du crâne, il a le collider.
+ */
+function ahoge(p: DollParams, rnd: () => number, r: number, out: Parts, chance: number, at?: THREE.Vector3) {
+  const R = p.shape.headRadius
+  const has = rnd() < chance
+  const root = onDir(p, at ?? dirOf((rnd() - 0.5) * 0.6, 0.955), 0, POLE)
+  const n = root.normal
+  const fwd = new THREE.Vector3(0, 0, 1).addScaledVector(n, -n.z).normalize()
+  const lean = (rnd() - 0.5) * 0.5
+  const side = new THREE.Vector3().crossVectors(n, fwd)
+  fwd.applyAxisAngle(n, lean)
+  side.applyAxisAngle(n, lean)
+  const L = R * (0.42 + rnd() * 0.22)
+  const bend = 2 + rnd() * 0.6
+  const strands = 4 + Math.floor(rnd() * 2)
+  const phases = Array.from({ length: 5 }, () => rnd() * 6)
+  if (!has) return
+  const rad = L / bend
+  const at2 = (ang: number) => root.pos.clone().addScaledVector(n, rad * Math.sin(ang)).addScaledVector(fwd, rad * (1 - Math.cos(ang)))
+  const toTip = at2(bend).sub(root.pos)
+  const m = out.movers.length
+  out.movers.push({
+    pivot: root.pos.clone(),
+    dir: toTip.clone().normalize(),
+    length: toTip.length(),
+    cfg: { stiffness: 0.14, drag: 0.06, gravity: 0 },
+    maxAngle: 0.5,
+  })
+  for (let s = 0; s < strands; s++) {
+    const off = (s / (strands - 1) - 0.5) * 2
+    const pts = [root.pos.clone().addScaledVector(n, -r * 2).addScaledVector(side, off * r * 1.6)]
+    for (let k = 1; k <= 12; k++) {
+      const t = k / 12
+      // Les brins se rejoignent en une seule pointe.
+      pts.push(at2(bend * t).addScaledVector(side, off * r * 1.6 * (1 - t) ** 1.3))
+    }
+    out.yarn.push(yarn(pts, r * 1.1, { mover: m, free: (t) => t ** 1.1, fling: (t) => 0.5 * t, phase: phases[s], taper: 0.35 }))
+  }
+}
+
+type TailOpts = {
+  /** Axe de la queue, de t = 0 (nœud) à 1 (pointe du cœur). */
+  axisAt: (t: number) => THREE.Vector3
+  /** Horizontale « vers le dehors » au nœud : repère de la section. */
+  outH: THREE.Vector3
+  /** Demi-largeur et demi-profondeur de la section pleine. */
+  W: number
+  D: number
+  /** Rayon de sortie du lien : les brins sortent serrés. */
+  rim: number
+  /** Mèches autour du cœur. */
+  K: number
+  /** Vrille totale sur la longueur, signée — chiralité. */
+  twist: number
+  /** Point du tracé où la queue enfouit ses racines (sous le lien). */
+  root: THREE.Vector3
+}
+
+/**
+ * Queue en mèches : couettes et queue de cheval.
+ *
+ * Un cylindre de brins tirés dans un disque faisait une **queue de rat** —
+ * 7 à 10 % de la largeur de la tête vue de face, sans pointes. Ici la section
+ * est une ellipse pleine (couronne extérieure, couronne intérieure, cœur),
+ * qui sort serrée du lien, gonfle aussitôt, puis se divise en `K` mèches et
+ * un cœur, plus long. Chaque mèche a sa longueur — les latérales plus
+ * courtes, d'où une pointe en V vue de dos —, ses brins se referment vers sa
+ * pointe sur la seconde moitié, et creusent dès le haut un **sillon** entre
+ * deux mèches, que le trait d'encre dessine. Une mèche sur deux retrousse sa
+ * pointe vers l'extérieur.
+ *
+ * **Physique chaînée** : un ressort racine au nœud, et sous lui un ressort par
+ * mèche (et le cœur), pivot là où la queue commence à tomber. La racine
+ * balance, les mèches suivent avec leur propre retard et se séparent au
+ * geste : le fouetté. Tous sans gravité, bout vers la masse réelle : repos =
+ * géométrie, aucun mouvement sans geste — et un bout qui n'est pas à la
+ * verticale du pivot ressent aussi les bonds de la course, qu'un ressort
+ * pendant tout droit absorbait entièrement.
+ */
+function clumpTail(p: DollParams, rnd: () => number, r: number, out: Parts, o: TailOpts) {
+  const K = o.K
+  const span = (Math.PI * 2) / K
+  const side0 = new THREE.Vector3().crossVectors(UP, o.outH).normalize()
+  const tan = new THREE.Vector3()
+  /** Section en t : point de l'ellipse d'angle a, fraction s du rayon. */
+  const ell = (t: number, a: number, s: number, target = new THREE.Vector3()) => {
+    tan.copy(o.axisAt(Math.min(1.05, t + 0.01))).sub(o.axisAt(Math.max(0, t - 0.01))).normalize()
+    const bl = side0.clone().addScaledVector(tan, -side0.dot(tan)).normalize()
+    const bd = new THREE.Vector3().crossVectors(tan, bl)
+    const tw = o.twist * t
+    return target.copy(bl).multiplyScalar(Math.cos(a + tw) * o.W * s).addScaledVector(bd, Math.sin(a + tw) * o.D * s)
+  }
+  // Gonfle juste après le lien, s'affine d'un quart vers le bas.
+  const grow = (t: number) => smooth(0, 0.22, t) * (1 - 0.25 * smooth(0.6, 1, t))
+  // Mèches latérales plus courtes : pointe en V ; le cœur est le plus long.
+  const clumpLen = Array.from({ length: K + 1 }, (_, c) =>
+    c === K ? 1 : 1 - 0.2 * Math.abs(Math.sin((c + 0.5) * span)) ** 1.5 - rnd() * 0.08,
+  )
+  const flick = Array.from({ length: K }, () => rnd())
+
+  const tp = 0.4
+  const root = out.movers.length
+  const cen = o.axisAt(0.6)
+  const knot = o.axisAt(0)
+  out.movers.push({
+    pivot: knot.clone(),
+    dir: cen.clone().sub(knot).normalize(),
+    length: cen.distanceTo(knot),
+    cfg: { stiffness: 0.06, drag: 0.14, gravity: 0 },
+    maxAngle: 0.35,
+  })
+  const low = o.axisAt(tp)
+  const clump0 = out.movers.length
+  for (let c = 0; c <= K; c++) {
+    const tl = clumpLen[c]
+    const tip = o.axisAt(tl).add(c === K ? new THREE.Vector3() : ell(tl, (c + 0.5) * span, 0.62 * grow(tl)))
+    out.movers.push({
+      pivot: low.clone(),
+      dir: tip.clone().sub(low).normalize(),
+      length: tip.distanceTo(low),
+      cfg: { stiffness: 0.035 + rnd() * 0.02, drag: 0.1 + rnd() * 0.06, gravity: 0 },
+      maxAngle: 0.4,
+      parent: root,
+    })
+  }
+
+  // Brins : couronne extérieure au pas d'1,7 r, couronne intérieure, cœur.
+  const perim = Math.PI * (3 * (o.W + o.D) - Math.sqrt((3 * o.W + o.D) * (o.W + 3 * o.D)))
+  const nO = Math.ceil(perim / (1.7 * r))
+  const nI = Math.ceil(nO * 0.55)
+  const strands = [
+    ...Array.from({ length: nO }, (_, i) => ({ s: 0.88 + rnd() * 0.12, a: ((i + rnd() * 0.4) / nO) * Math.PI * 2, core: false })),
+    ...Array.from({ length: nI }, (_, i) => ({ s: 0.5 + rnd() * 0.2, a: ((i + 0.5 + rnd() * 0.4) / nI) * Math.PI * 2, core: false })),
+    ...Array.from({ length: 5 }, () => ({ s: 0.25 * Math.sqrt(rnd()), a: rnd() * Math.PI * 2, core: true })),
+  ]
+  const N = 22
+  const own = new THREE.Vector3()
+  const mid = new THREE.Vector3()
+  const dir = new THREE.Vector3()
+  for (const st of strands) {
+    const c = st.core ? K : Math.floor(st.a / span) % K
+    const ac = (c + 0.5) * span
+    const tEnd = clumpLen[c] * (0.93 + rnd() * 0.07)
+    const pts = [o.root.clone()]
+    for (let k = 1; k <= N; k++) {
+      const u = k / N
+      const t = u * tEnd
+      // Sillon entre les mèches dès le haut, puis fermeture sur la pointe.
+      const close = 0.15 * smooth(0.1, 0.35, u) + 0.7 * smooth(0.55, 1, u) ** 1.2
+      ell(t, st.a, st.s, own)
+      if (st.core) mid.set(0, 0, 0)
+      else ell(t, ac, 0.62, mid)
+      const off = own.lerp(mid, close).multiplyScalar(grow(t))
+      // Sortie du lien : les brins partent d'un anneau du rayon du lien.
+      off.addScaledVector(ell(t, st.a, 1, dir).normalize(), (o.rim - r) * st.s * (1 - smooth(0, 0.22, t)))
+      if (!st.core && flick[c] < 0.5) off.addScaledVector(ell(t, ac, 1, dir).normalize(), r * 5 * Math.max(0, (u - 0.78) / 0.22) ** 2)
+      pts.push(clearHead(p, o.axisAt(t).add(off), r * 2.5))
+    }
+    out.yarn.push(
+      yarn(pts, r, {
+        step: 3.5,
+        mover: root,
+        free: (x) => smooth(0.02, 0.2, x * tEnd),
+        mover2: clump0 + c,
+        free2: (x) => smooth(tp, 1, x * tEnd) ** 1.1,
+        fling: (x) => 0.9 * (x * tEnd) ** 1.2,
+        phase: rnd() * 6,
+      }),
+    )
+  }
+  return { root, knot }
+}
+
+/**
+ * Nœud de ruban : deux boucles en goutte et deux pans.
+ *
+ * Un lien fait de deux anneaux de fil ne dit pas « coiffé » à la taille d'une
+ * planche. Les boucles sont dans le plan tangent au crâne, relevées de ±30°,
+ * et le tube est **aplati** trois fois selon la normale : de face on voit la
+ * boucle, de profil une bande — un ruban, pas une ficelle. Tenu : aucun
+ * ressort, ou celui de la racine d'une queue pour les pans.
+ */
+function bowKnot(out: Parts, at: THREE.Vector3, n: THREE.Vector3, size: number, thread: number, tilt: number, tails?: YarnOpts) {
+  const nn = n.clone().normalize()
+  const S = new THREE.Vector3().crossVectors(UP, nn)
+  if (S.lengthSq() < 1e-6) S.set(1, 0, 0)
+  S.normalize().applyAxisAngle(nn, tilt)
+  const U = new THREE.Vector3().crossVectors(nn, S).normalize()
+  const place = new THREE.Matrix4().makeBasis(S, U, nn).setPosition(at).multiply(new THREE.Matrix4().makeScale(1, 1, 2.4))
+  for (const sx of [-1, 1]) {
+    const loop = Array.from({ length: 16 }, (_, k) => {
+      const f = (k / 16) * Math.PI * 2
+      // Goutte : pointue au nœud, ronde au bout, relevée de 30°.
+      const x = size * 0.5 * (1 - Math.cos(f))
+      const y = size * 0.42 * Math.sin(f) * Math.sqrt(Math.max(0, x / size))
+      const a = sx * 0.52
+      return new THREE.Vector3(sx * (x * Math.cos(a) - y * Math.sin(a) * sx), x * Math.sin(Math.abs(a)) + y * Math.cos(a), 0)
+    })
+    out.ribbon.push(yarn(loop, thread, { closed: true }).applyMatrix4(place))
+    const tail = [0, 0.5, 1].map((t) => new THREE.Vector3(sx * size * (0.12 + 0.3 * t), -size * 0.95 * t, 0))
+    out.ribbon.push(yarn(tail, thread, { ...tails, taper: 0.05 }).applyMatrix4(place))
+  }
+  out.ribbon.push(still(new THREE.SphereGeometry(thread * 1.6, 10, 8).applyMatrix4(place)))
+}
+
