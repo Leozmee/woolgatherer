@@ -231,6 +231,8 @@ export class Stepper {
        * partir quand ils sont trop loin. Sa phase peut être recalée à l'entrée.
        */
       cycle?: Cycle
+      /** Glissade : les deux pieds au sol, l'un devant l'autre, qui glissent. */
+      glide?: boolean
     },
   ) {
     this.weight += ((o.grounded ? 1 : 0) - this.weight) * Math.min(1, dt * 14)
@@ -248,6 +250,24 @@ export class Stepper {
       return _ideal.set(o.root.x + r.x * cf + r.z * sf, o.root.y + r.y, o.root.z - r.x * sf + r.z * cf)
     }
 
+    if (o.glide && o.grounded && this.ready) {
+      // Le pied du côté tourné vers l'avant (−1, le bassin étant tourné) mène.
+      const fx = Math.sin(o.facing)
+      const fz = Math.cos(o.facing)
+      for (const side of [-1, 1] as const) {
+        const f = this.feet[side]
+        _prev.copy(f.pos)
+        const lead = side === -1 ? 0.5 : -0.45
+        f.pos.copy(ideal(side))
+        f.pos.x += fx * lead * o.legLength
+        f.pos.z += fz * lead * o.legLength
+        f.plant.copy(f.pos)
+        f.swinging = false
+        f.vel.subVectors(f.pos, _prev).divideScalar(Math.max(dt, 1e-4))
+      }
+      this.cycling = false
+      return
+    }
     const cyc = !!o.cycle?.active && o.grounded && this.ready
     if (cyc && !this.cycling) this.enterCycle(o.cycle!, ideal)
     if (!cyc && this.cycling) this.leaveCycle()

@@ -680,6 +680,7 @@ export function Doll({
     }
 
     if (weaponRef.current) aimWeapon(weaponRef.current)
+    if (fighter.ghostRequest) writeSilhouette()
     // Atelier : de quoi mesurer le ressenti (voir les audits de CLAUDE.md).
     if (import.meta.env.DEV && fighter.drive)
       Object.assign(window, { __doll: { head: headBone.current, hips: hips.current, joints, squash: squash.current } })
@@ -710,6 +711,7 @@ export function Doll({
       legLength: lb.legLength,
       onLand: (side, speed, dur) => fighter.land(speed, side, dur, stepper.feet[side].pos),
       cycle: fighter.cycle,
+      glide: fighter.gliding,
     })
     const w = stepper.weight
     if (import.meta.env.DEV) Object.assign(window, { __stepper: stepper, __legK: _legK })
@@ -737,6 +739,45 @@ export function Doll({
       joints.leg[side].uStretch.value = 1 + (st - 1) * w
     }
     return w
+  }
+
+  /**
+   * Silhouette pour les images rémanentes (`Ghosts`) : quatorze ellipsoïdes
+   * en repère monde — tête, torse, et pour chaque membre ses deux segments et
+   * son bout. Écrite seulement quand le combattant la demande (dash,
+   * glissade) : c'est la poupée entière en quatorze matrices, lisible en
+   * ombre, pour le prix d'un seul dessin instancié.
+   */
+  const writeSilhouette = () => {
+    const out = fighter.silhouette
+    let k = 0
+    const put = (obj: THREE.Object3D, y: number, sx: number, sy: number, sz: number) => {
+      _sm.makeTranslation(0, y, 0)
+      _ss.makeScale(sx, sy, sz)
+      _sm.multiply(_ss).premultiply(obj.matrixWorld)
+      _sm.toArray(out, k * 16)
+      k++
+    }
+    headBone.current.updateWorldMatrix(true, false)
+    put(headBone.current, L.headY, s.headRadius * 1.05, s.headRadius * s.headSquash, s.headRadius)
+    put(body.current, 0, s.torsoRadius, s.torsoHeight * 0.5, s.torsoRadius * 0.86)
+    for (const side of [-1, 1] as const) {
+      for (const kind of ['arm', 'leg'] as const) {
+        const upper = kind === 'arm' ? (side === -1 ? armL.current : armR.current) : side === -1 ? legL.current : legR.current
+        const lowerObj = lowerSpring.current[`${kind}${side}`]
+        if (!lowerObj) continue
+        const len = kind === 'arm' ? lb.armLength : lb.legLength
+        const r = kind === 'arm' ? lb.armRadius : lb.legRadius
+        const st = kind === 'leg' ? joints.leg[side].uStretch.value : 1
+        const a = len * JOINT * st
+        const b = len * (1 - JOINT) * st
+        lowerObj.updateWorldMatrix(true, false)
+        put(upper, -a * 0.5, r, a * 0.5 + r * 0.5, r)
+        put(lowerObj, -b * 0.5, r, b * 0.5 + r * 0.5, r)
+        const tip = kind === 'arm' ? r * 1.35 : r * 1.3
+        put(lowerObj, -b - (kind === 'arm' ? r * 0.35 : r * 0.3), tip, tip, tip)
+      }
+    }
   }
 
   /**
@@ -1019,6 +1060,8 @@ function isInside(o: THREE.Object3D, parent: THREE.Object3D) {
 
 const _v = new THREE.Vector3()
 const _n = new THREE.Vector3()
+const _sm = new THREE.Matrix4()
+const _ss = new THREE.Matrix4()
 
 /**
  * Écarte une lame (de `from`, direction unitaire `dir`, longueur `len`) d'une

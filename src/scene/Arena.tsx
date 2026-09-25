@@ -221,7 +221,8 @@ export function ArenaFloor({ y, radius }: { y: number; radius: number }) {
     // Croix : deux points croisés, semés au hasard (graine fixe) sur le disque.
     let seed = 7
     const rnd = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646
-    const count = 90
+    // Même densité quel que soit le rayon : 90 croix pour un tapis de 6.
+    const count = Math.round(90 * (radius / 6) ** 2)
     const crosses = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.008, 0.022), matX, count * 2)
     for (let i = 0; i < count; i++) {
       const r = Math.sqrt(rnd()) * radius
@@ -254,3 +255,96 @@ export function ArenaFloor({ y, radius }: { y: number; radius: number }) {
     </group>
   )
 }
+
+// ---------------------------------------------------------------- images rémanentes
+
+/** Images rémanentes gardées au plus, volumes par image, durée de vie. */
+const GHOSTS = 10
+const PARTS = 14
+const GHOST_LIFE = 0.28
+
+/**
+ * Images rémanentes du dash et de la glissade : la silhouette de la poupée
+ * (`Fighter.silhouette`, quatorze ellipsoïdes) figée à intervalles, qui
+ * s'efface en un quart de seconde. C'est ce qui fait lire un dash comme une
+ * esquive — l'œil voit d'où elle est partie — et pas comme un pas.
+ *
+ * Tout en **un seul dessin** instancié ; translucide, hors de la profondeur
+ * (le trait d'encre ne les cerne pas, elles ne masquent rien), plus dense
+ * sur les bords qu'au centre : un contour de lumière plutôt qu'une nappe.
+ */
+export function Ghosts({ fighter }: { fighter: Fighter }) {
+  const g = useMemo(() => {
+    const geo = new THREE.IcosahedronGeometry(1, 2)
+    const alpha = new THREE.InstancedBufferAttribute(new Float32Array(GHOSTS * PARTS), 1)
+    geo.setAttribute('aAlpha', alpha)
+    const mat = new THREE.ShaderMaterial({
+      // Bleu ardoise soutenu : un bleu pâle disparaissait sur l'arène blanche.
+      uniforms: { uColor: { value: new THREE.Color('#4f6299') } },
+      vertexShader: /* glsl */ `
+        attribute float aAlpha;
+        varying float vAlpha;
+        varying float vRim;
+        void main() {
+          vAlpha = aAlpha;
+          vec4 world = modelMatrix * instanceMatrix * vec4(position, 1.0);
+          vec3 n = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
+          vec3 toCam = normalize(cameraPosition - world.xyz);
+          vRim = 1.0 - abs(dot(n, toCam));
+          gl_Position = projectionMatrix * viewMatrix * world;
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uColor;
+        varying float vAlpha;
+        varying float vRim;
+        void main() {
+          gl_FragColor = vec4(uColor, vAlpha * (0.3 + 0.7 * vRim * vRim));
+        }`,
+      transparent: true,
+      depthWrite: false,
+      toneMapped: false,
+    })
+    const mesh = new THREE.InstancedMesh(geo, mat, GHOSTS * PARTS)
+    mesh.frustumCulled = false
+    mesh.renderOrder = 9
+    mesh.count = 0
+    return { mesh, alpha, age: new Float32Array(GHOSTS).fill(GHOST_LIFE), next: 0 }
+  }, [])
+  useEffect(
+    () => () => {
+      g.mesh.geometry.dispose()
+      ;(g.mesh.material as THREE.Material).dispose()
+    },
+    [g],
+  )
+
+  useFrame((_, realDt) => {
+    const dt = Math.min(realDt, 1 / 20)
+    if (fighter.ghostRequest) {
+      fighter.ghostRequest = false
+      const slot = g.next
+      g.next = (g.next + 1) % GHOSTS
+      g.age[slot] = 0
+      for (let p = 0; p < PARTS; p++) {
+        _gm.fromArray(fighter.silhouette, p * 16)
+        g.mesh.setMatrixAt(slot * PARTS + p, _gm)
+      }
+      g.mesh.instanceMatrix.needsUpdate = true
+    }
+    let live = 0
+    for (let i = 0; i < GHOSTS; i++) {
+      g.age[i] += dt
+      const u = Math.min(1, g.age[i] / GHOST_LIFE)
+      const a = u >= 1 ? 0 : 0.75 * (1 - u) ** 1.3
+      if (a > 0) live = i + 1
+      for (let p = 0; p < PARTS; p++) g.alpha.setX(i * PARTS + p, a)
+    }
+    g.alpha.needsUpdate = true
+    // On ne dessine que jusqu'au dernier emplacement vivant.
+    g.mesh.count = live * PARTS
+  })
+
+  return <primitive object={g.mesh} />
+}
+
+const _gm = new THREE.Matrix4()

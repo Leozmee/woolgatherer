@@ -172,7 +172,7 @@ type Phase = {
 
 type ActionName =
   | 'attack1' | 'attack2' | 'attack3' | 'dodge' | 'parry' | 'hit' | 'ko'
-  | 'jump' | 'plunge' | 'slam' | 'rise'
+  | 'jump' | 'plunge' | 'slam' | 'rise' | 'flip'
 
 type Action = {
   phases: Phase[]
@@ -467,31 +467,69 @@ const ACTIONS: Record<ActionName, Action> = {
   },
 
   /**
-   * Esquive : **un pas de côté**, pas une roulade. La poupée garde son cap —
-   * elle reste face à ce qu'elle esquive — et bondit bas dans la direction du
-   * stick (en arrière sans direction). Le corps penche dans le mouvement, la
-   * jambe de tête s'écarte pour recevoir le poids, l'autre se replie, les bras
-   * partent à l'opposé pour l'équilibre, la tête compense. Petit vol
-   * physique : la gravité la repose, et c'est l'atterrissage qui la tasse.
+   * Esquive : **un dash de côté**, pas une roulade ni un simple pas. La
+   * poupée garde son cap — elle reste face à ce qu'elle esquive — et fuse
+   * bas dans la direction du stick (en arrière sans direction), laissant des
+   * images rémanentes derrière elle (`ghost`). Le corps se couche dans le
+   * mouvement, écrasé, la jambe de tête tendue pour recevoir le poids,
+   * l'autre repliée, les bras partent à l'opposé, la tête compense. Petit vol
+   * physique : la gravité la repose, puis elle freine en glissant sur ses
+   * pieds. Tenue, la touche enchaîne sur la glissade (`gliding`).
    */
   dodge: {
     cancelFrom: 1,
     phases: [
       {
-        dur: 0.17,
-        tune: { hips: [7, 0.7, 0.4], hipsPos: [7, 0.7, 0], squash: [7, 0.6, 0], neck: [4, 0.55, 0] },
+        dur: 0.15,
+        tune: { hips: [9, 0.7, 0.6], hipsPos: [8, 0.7, 0], squash: [9, 0.6, 0], neck: [4, 0.55, 0] },
         firm: 0.45,
-        trail: 0.25,
+        trail: 0.35,
         steer: 0,
         enter: (f) => f.sidestep(),
-        pose: (t, u, m, f) => stepPose(t, m, f, Math.sin(Math.PI * Math.min(1, 0.35 + u * 0.8))),
+        pose: (t, u, m, f) => stepPose(t, m, f, Math.sin(Math.PI * Math.min(1, 0.4 + u * 0.8))),
       },
       {
-        dur: 0.18,
+        dur: 0.2,
         firm: 0.3,
         steer: 0,
-        brake: 13,
-        pose: (t, u, m, f) => stepPose(t, m, f, 0.45 * (1 - u)),
+        brake: 11,
+        pose: (t, u, m, f) => stepPose(t, m, f, 0.6 * (1 - u)),
+      },
+    ],
+  },
+
+  /**
+   * Double saut : un salto avant groupé. Le bassin fait un tour complet, les
+   * genoux ramenés, les bras qui les serrent ; il se déplie avant de retomber.
+   * Le tour est ramené à zéro à la fin (`unwind`), sinon les ressorts le
+   * dérouleraient à l'envers.
+   */
+  flip: {
+    cancelFrom: 99,
+    exit: (f) => f.unwind(),
+    phases: [
+      {
+        dur: 0.42,
+        tune: { hips: [6.5, 0.85, 0], squash: [7, 0.6, 0], neck: [5, 0.6, 0] },
+        firm: 0.5,
+        enter: (f) => f.doubleJump(),
+        pose: (t, u) => {
+          const e = 1 - (1 - Math.min(1, u * 1.15)) ** 2
+          // Groupé au milieu du tour, déplié au bout.
+          const tuck = Math.sin(Math.PI * Math.min(1, u * 1.1))
+          set(t.hips, Math.PI * 2 * e, 0, 0)
+          set(t['leg-1'], -1.3 * tuck, 0, -0.1)
+          set(t.leg1, -1.2 * tuck, 0, 0.1)
+          bend(t['knee-1'], 2.1 * tuck + 0.2)
+          bend(t.knee1, 2 * tuck + 0.2)
+          set(t['arm-1'], -1 * tuck - 0.3, 0, 0.3)
+          set(t.arm1, -1.1 * tuck - 0.3, 0, -0.3)
+          bend(t['elbow-1'], -1.5 * tuck - 0.2)
+          bend(t.elbow1, -1.6 * tuck - 0.2)
+          set(t.neck, 0.45 * tuck, 0, 0)
+          t.squash = 1 - 0.1 * tuck
+          set(t.weapon, -0.4, -0.2 + 0.6 * tuck, -0.6)
+        },
       },
     ],
   },
@@ -742,8 +780,8 @@ function stepPose(t: Target, m: RigMetrics, f: Fighter, e: number) {
   const lead: -1 | 1 = dx >= 0 ? 1 : -1
   // Le haut penche dans le mouvement (`z` < 0 vers +x) ; en arrière, le buste
   // reste au-dessus des pieds qui fuient.
-  set(t.hips, (0.22 * back - 0.12 * fwd + 0.04) * e, -0.18 * dx * e, -0.34 * dx * e)
-  set(t.hipsPos, 0, -m.legLength * 0.14 * e, 0)
+  set(t.hips, (0.28 * back - 0.15 * fwd + 0.05) * e, -0.22 * dx * e, -0.5 * dx * e)
+  set(t.hipsPos, 0, -m.legLength * 0.2 * e, 0)
   for (const side of [-1, 1] as const) {
     const isLead = side === lead
     const legX = ((isLead ? -0.12 : 0.08) * lat + (side === 1 ? 0.55 : -0.25) * back + (side === 1 ? -0.55 : 0.25) * fwd) * e
@@ -754,8 +792,9 @@ function stepPose(t: Target, m: RigMetrics, f: Fighter, e: number) {
     set(t[ARM[side]], armX, 0, side * (isLead ? -0.15 : 0.95) * lat * e)
     bend(t[ELBOW[side]], ((isLead ? -1.2 : -0.35) * lat - 0.6 * (back + fwd)) * e - 0.25)
   }
-  set(t.neck, 0.15 * back * e, 0.1 * dx * e, 0.26 * dx * e)
-  t.squash = 1 - 0.06 * e
+  set(t.neck, 0.18 * back * e, 0.12 * dx * e, 0.36 * dx * e)
+  // Écrasée par la vitesse : basse et large pendant le dash.
+  t.squash = 1 - 0.13 * e
   set(t.weapon, -0.6 + 0.35 * dx * e, -0.35, 0.25 - 0.5 * back * e)
 }
 
@@ -786,7 +825,7 @@ const RUN_SPEED = 2.4
 /** Course (touche tenue) : plus du double de la marche. */
 const SPRINT_SPEED = 5.4
 /** Rayon de l'arène : on ne sort pas du tapis. Assez grand pour y sprinter. */
-export const ARENA = 6
+export const ARENA = 8
 /** Temps pendant lequel un appui reste en file. */
 const BUFFER = 0.28
 /**
@@ -801,9 +840,20 @@ const G_DOWN = 34
 const KO_REST = 1.5
 /** Sommet du grand saut, en fraction de la hauteur de la poupée. */
 const JUMP_APEX = 0.38
-/** Pas de côté : vitesse et petit bond (≈ 0,16 s de vol). */
-const DODGE_SPEED = 5.4
-const DODGE_HOP = 2.7
+/** Dash d'esquive : vitesse et bond bas (≈ 0,13 s de vol). */
+const DODGE_SPEED = 7
+const DODGE_HOP = 2.2
+/**
+ * Glissade (touche d'esquive tenue) : bien plus vite que la course, mais on
+ * ne braque presque plus — le cap tourne d'au plus `GLIDE_TURN` rad/s et la
+ * vitesse le rejoint lentement. On gagne en vitesse ce qu'on perd en contrôle.
+ */
+const GLIDE_SPEED = 8.5
+const GLIDE_TURN = 2.2
+/** Double saut : part de l'impulsion du premier. */
+const DOUBLE_JUMP = 0.85
+/** Intervalle des images rémanentes, s de jeu. */
+const GHOST_EVERY = 0.03
 
 export type Press = 'attack' | 'dodge' | 'parry' | 'hit' | 'ko' | 'jump'
 
@@ -827,6 +877,17 @@ export class Fighter {
   sprint = false
   /** Saut tenu : la montée garde sa gravité douce tant qu'il l'est. */
   jumpHeld = false
+  /** Esquive tenue : après le dash, la glissade. */
+  dodgeHeld = false
+  /** En glissade. */
+  gliding = false
+  /**
+   * Demande d'image rémanente : la poupée écrit alors sa silhouette
+   * (`silhouette`) dans l'image, et `Ghosts` la copie. Remis à zéro par `Ghosts`.
+   */
+  ghostRequest = false
+  /** Silhouette de la poupée, 14 matrices monde (voir `Doll`). */
+  readonly silhouette = new Float32Array(14 * 16)
   /** Cap de la caméra, publié par le rig : l'entrée est relative à l'écran. */
   camYaw = 0
 
@@ -893,6 +954,11 @@ export class Fighter {
   /** Vitesse au sol à l'appel : l'élan d'un sprint se garde en l'air. */
   private airSpeed = 0
   private skid = 0
+  /** La glissade peut suivre ce dash si la touche reste tenue. */
+  private glideArmed = false
+  /** Double saut déjà utilisé depuis le dernier appui au sol. */
+  private usedDouble = false
+  private ghostT = 0
   /** Regard d'attente : cible, temps restant, part (0 en mouvement). */
   private glance = { yaw: 0, pitch: 0, shift: 0, t: 1, w: 0, idle: 0 }
   private rnd: () => number
@@ -940,6 +1006,10 @@ export class Fighter {
       return
     }
     if (p === 'jump') this.jumpHeld = true
+    if (p === 'dodge') {
+      this.dodgeHeld = true
+      this.glideArmed = true
+    }
     if (this.action?.name === 'ko') return
     if (p === 'hit') {
       this.hp = Math.max(0, this.hp - 0.18)
@@ -951,6 +1021,7 @@ export class Fighter {
   /** Relâchement : seul le saut s'en sert (hauteur variable). */
   release(p: Press) {
     if (p === 'jump') this.jumpHeld = false
+    if (p === 'dodge') this.dodgeHeld = false
   }
 
   // --- effets appelés par les phases
@@ -981,7 +1052,10 @@ export class Fighter {
     this.dodgeDir.z = wx * s + wz * c
     this.vel.set(wx * DODGE_SPEED, 0, wz * DODGE_SPEED)
     this.takeoff(DODGE_HOP, false)
-    this.dyn.squash.kick(0, -0.7)
+    this.dyn.squash.kick(0, -1.1)
+    // Poussée : la laine part dans l'autre sens.
+    this.puff(this.pos.x - wx * 0.15, this.pos.z - wz * 0.15, 0.4)
+    this.ghostT = 0
   }
 
   /** Poussée du saut, à la fin de l'appel. */
@@ -1014,6 +1088,24 @@ export class Fighter {
     this.vel.multiplyScalar(0.5)
   }
 
+  /** Seconde impulsion, en l'air : repart vers le haut quoi qu'on fasse. */
+  doubleJump() {
+    this.usedDouble = true
+    const v0 = Math.sqrt(2 * G_UP * (this.m?.height ?? 2) * JUMP_APEX)
+    this.vy = Math.max(this.vy, 0) * 0.3 + v0 * DOUBLE_JUMP
+    this.jumping = true
+    this.airSpeed = Math.max(this.airSpeed, Math.hypot(this.vel.x, this.vel.z))
+    this.dyn.squash.kick(0, 1.6)
+    // Bouffée d'air sous les pieds, à la hauteur où l'on prend appui.
+    this.puff(this.pos.x, this.pos.z, 0.45, this.floorY + this.pos.y)
+  }
+
+  /** Ramène un tour complet du bassin à zéro (salto), état et cible ensemble. */
+  unwind() {
+    const h = this.dyn.hips.y[0]
+    if (h > Math.PI) this.dyn.hips.shift(0, -Math.PI * 2)
+  }
+
   /**
    * Retour au sol. La réception dépend de la vitesse de chute : écrasement,
    * bassin qui descend — les genoux plient —, tête qui pique.
@@ -1024,6 +1116,12 @@ export class Fighter {
     this.vy = 0
     this.airborne = false
     this.jumping = false
+    this.usedDouble = false
+    if (this.action?.name === 'flip') {
+      // Atterrie en plein salto : il s'arrête là.
+      this.unwind()
+      this.action = null
+    }
     if (this.action?.name === 'plunge') {
       this.start('slam')
       return
@@ -1050,10 +1148,10 @@ export class Fighter {
     if (at && dash > 0.4) this.puff(at.x, at.z, 0.14 + 0.14 * dash)
   }
 
-  puff(x: number, z: number, size: number) {
+  puff(x: number, z: number, size: number, y = this.floorY) {
     if (!this.drive) return
     if (this.puffs.length > 24) this.puffs.shift()
-    this.puffs.push({ x, y: this.floorY, z, size })
+    this.puffs.push({ x, y, z, size })
   }
 
   /** Au sol et libre d'y marcher : ni en l'air, ni K.O., ni soulevée par un geste. */
@@ -1169,8 +1267,12 @@ export class Fighter {
     }
     // En l'air : seule l'attaque part (en plongeon) ; le reste attend le sol.
     if (this.airborne) {
-      if (p === 'attack' && (!a || a.name === 'dodge')) {
+      if (p === 'attack' && (!a || a.name === 'dodge' || a.name === 'flip')) {
         this.start('plunge')
+        return true
+      }
+      if (p === 'jump' && !this.usedDouble && (!a || a.name === 'dodge')) {
+        this.start('flip')
         return true
       }
       return false
@@ -1196,6 +1298,7 @@ export class Fighter {
   }
 
   private start(name: ActionName) {
+    if (this.action?.name === 'flip') this.unwind()
     // Une attaque part dans la direction du stick : on vise en frappant.
     const w = this.wish()
     if (name.startsWith('attack') && w.lengthSq() > 0.04) this.facing = Math.atan2(w.x, w.z)
@@ -1270,6 +1373,27 @@ export class Fighter {
       firm = cur.firm ?? 0
       trail = cur.trail ?? 0
     }
+    // Glissade : la touche d'esquive, tenue depuis le dash, au sol et hors geste.
+    if (!this.dodgeHeld) this.glideArmed = false
+    const wasGliding = this.gliding
+    this.gliding = this.drive && this.glideArmed && !this.airborne && !this.action
+    if (this.gliding && !wasGliding) {
+      // La glissade file dans l'axe du regard : on se tourne vers là où le
+      // dash nous emporte (il garde le cap, il peut partir de côté).
+      const sp = Math.hypot(this.vel.x, this.vel.z)
+      const ww = this.wish()
+      if (sp > 0.8) this.facing = Math.atan2(this.vel.x, this.vel.z)
+      else if (ww.lengthSq() > 0.02) this.facing = Math.atan2(ww.x, ww.z)
+    }
+    // Images rémanentes : pendant le dash, serrées ; en glissade, espacées.
+    const dashing = this.action?.name === 'dodge'
+    if (dashing || this.gliding) {
+      this.ghostT -= dt
+      if (this.ghostT <= 0) {
+        this.ghostRequest = true
+        this.ghostT = dashing ? GHOST_EVERY : GHOST_EVERY * 3
+      }
+    }
     const free = !this.action || !!ph?.free
     const steer = !this.action ? 1 : (ph?.steer ?? 0)
 
@@ -1282,6 +1406,7 @@ export class Fighter {
     let locoTune: Phase['tune'] | undefined
     if (!this.action) {
       if (this.airborne) this.airPose(t, m)
+      else if (this.gliding) this.glidePose(t, m)
       else locoTune = this.locomotion(t, m, dt)
     }
 
@@ -1335,7 +1460,7 @@ export class Fighter {
      * chaque pas — « elle remue trop ». Ramené à 0,35 d'un dandinement lui-même
      * divisé par trois.
      */
-    if (this.drive && !this.airborne) {
+    if (this.drive && (!this.airborne || this.action?.name === 'dodge')) {
       const cf = Math.cos(this.facing)
       const sf = Math.sin(this.facing)
       const aFwd = this.accel.x * sf + this.accel.z * cf
@@ -1373,6 +1498,25 @@ export class Fighter {
       this.vy -= g * dt
       this.pos.y += this.vy * dt
       if (this.pos.y <= 0) this.touchdown()
+    } else if (free && this.gliding) {
+      // Glissade : le cap ne tourne que lentement vers le stick, la vitesse le
+      // rejoint avec inertie — lancée, la poupée file droit.
+      if (wl > 0.15) {
+        let d = Math.atan2(w.x, w.z) - this.facing
+        d = Math.atan2(Math.sin(d), Math.cos(d))
+        const turn = GLIDE_TURN * dt
+        this.facing += Math.max(-turn, Math.min(turn, d))
+      }
+      _tv.set(Math.sin(this.facing), 0, Math.cos(this.facing)).multiplyScalar(GLIDE_SPEED)
+      this.vel.lerp(_tv, Math.min(1, dt * 2.2))
+      this.skid -= dt
+      if (this.skid <= 0) {
+        this.skid = 0.05
+        const sx = Math.cos(this.facing) * 0.12
+        const sz = -Math.sin(this.facing) * 0.12
+        this.puff(this.pos.x + sx, this.pos.z + sz, 0.2)
+        this.puff(this.pos.x - sx, this.pos.z - sz, 0.2)
+      }
     } else if (free) {
       const cap = this.sprint ? SPRINT_SPEED : RUN_SPEED
       _tv.copy(w).multiplyScalar((cap * wl) / wLen)
@@ -1388,8 +1532,10 @@ export class Fighter {
       else if (speed0 > RUN_SPEED + 0.5) rate = tl < speed0 - 0.5 ? 5.5 : 7
       this.vel.lerp(_tv, Math.min(1, dt * rate))
     } else {
-      // Pendant un geste l'élan s'amortit, et le stick corrige un peu.
-      this.vel.multiplyScalar(Math.exp(-dt * (ph?.brake ?? 6)))
+      // Pendant un geste l'élan s'amortit, et le stick corrige un peu. Un dash
+      // dont la touche reste tenue ne freine pas : son élan passe à la glissade.
+      const keep = this.action?.name === 'dodge' && this.glideArmed
+      this.vel.multiplyScalar(Math.exp(-dt * (keep ? 0.5 : (ph?.brake ?? 6))))
       this.vel.addScaledVector(w, RUN_SPEED * steer * dt * 4)
     }
     this.accel.subVectors(this.vel, _prev).divideScalar(Math.max(dt, 1e-4))
@@ -1418,7 +1564,7 @@ export class Fighter {
     // Cap : vers la direction voulue, vite mais pas instantanément. Au
     // sprint il tourne plus large ; en l'air, à peine.
     const prevFacing = this.facing
-    if (wl > 0.15 && steer > 0) {
+    if (wl > 0.15 && steer > 0 && !this.gliding) {
       const want = Math.atan2(w.x, w.z)
       let d = want - this.facing
       d = Math.atan2(Math.sin(d), Math.cos(d))
@@ -1452,7 +1598,7 @@ export class Fighter {
     c.duty = Math.max(0.28, Math.min(0.66, (half * steps) / Math.max(speed, 0.1)))
     c.lift = L * (0.26 + 0.26 * dash)
     c.kick = L * 0.4 * dash
-    c.active = !this.airborne && !this.action && speed > 0.35
+    c.active = !this.airborne && !this.action && !this.gliding && speed > 0.35
     if (c.active) c.phase = (c.phase + dt / c.period) % 1
     this.cycW += ((c.active ? 1 : 0) - this.cycW) * Math.min(1, dt * (c.active ? 10 : 6))
 
@@ -1584,6 +1730,25 @@ export class Fighter {
       0.42 - 1.3 * run - 0.1 * dash,
     )
     return undefined
+  }
+
+  /**
+   * Glissade : basse, de trois-quarts, un pied devant l'autre, les deux au
+   * sol (`Stepper`, mode glissade) ; buste couché, bras rejetés derrière,
+   * tête qui regarde droit devant, arme couchée qui traîne. Elle se penche
+   * fort dans les virages — le seul moyen qu'elle a de tourner.
+   */
+  private glidePose(t: Target, m: RigMetrics) {
+    const bank = Math.max(-0.6, Math.min(0.6, -this.turnRate * 0.35))
+    set(t.hips, 0.32, 0.45, bank)
+    set(t.hipsPos, 0, -m.legLength * 0.26, 0)
+    set(t['arm-1'], 0.9, 0, -0.35)
+    set(t.arm1, 1.05, 0, 0.45)
+    bend(t['elbow-1'], -0.25)
+    bend(t.elbow1, -0.2)
+    set(t.neck, -0.3, -0.4, -bank * 0.5)
+    t.squash = 0.95
+    set(t.weapon, -0.2, 0.12, -1)
   }
 
   /**

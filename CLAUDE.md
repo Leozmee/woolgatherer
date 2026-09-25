@@ -499,12 +499,12 @@ Choisir une peluche → **Jouer**. Arène :
 | Geste | Clavier | Manette |
 |---|---|---|
 | Se déplacer | ZQSD / WASD / flèches | stick gauche |
-| Sprinter | Maj (tenue) | gâchettes basses LT/RT, ou stick cliqué |
-| Sauter (tenir = plus haut) | Espace | A |
+| Courir | Maj (tenue) | gâchettes basses LT/RT, ou stick cliqué |
+| Sauter (tenir = plus haut) · en l'air : double saut | Espace | A |
 | Attaquer (×3) · en l'air : plongeon | J / clic | X |
-| Pas de côté | L | B |
+| Esquive (dash) · tenir : glissade | L | B |
 | Parer | K | LB / RB |
-| Tester : coup reçu / K.O. | H / X | Y / Select |
+| Tester : coup reçu / K.O. (X à nouveau : se relever) | H / X | Y / Select |
 
 Atelier (dev) : `window.__fighter` (état du combattant : `current`, `pos`, `vel`,
 `speed` pour un ralenti), `window.__stepper`, `window.__legK`, `window.__doll`.
@@ -518,6 +518,46 @@ qui importe `Fighter`, `SpringBone`, `solveLeg`, bundlé par esbuild
 puis supprimé. Mesures de référence ci-dessous.
 
 ### Journal
+
+#### 2026-09-25 — physique et animations des personnages (3)
+
+- **Vrai cycle de marche et de course** (`Fighter.advanceCycle`, `Stepper`
+  mode cycle) : phase continue, 5,2 pas/s à la marche (2,4 u/s), 6,7 à la
+  course (5,4 u/s) — avant 8 et 13 micro-pas qui grésillaient (« deux
+  bâtons »). Part d'appui tirée de la portée de jambe (`duty = portée ·
+  cadence / vitesse`) : appuis chevauchés à la marche, 38 % de vol à la
+  course. Pied fixe au sol pendant l'appui (glissement mesuré : 0), vol en arc
+  vers l'appui suivant recalculé à chaque image, talon relevé à la course.
+  Jambe ≤ 1,09 × portée à la marche, 1,14 à la course. Le mode réactif ne
+  sert plus qu'à l'arrêt et aux demi-tours sur place.
+- **Rythme après les ressorts** (`rhythm`) : rebond du bassin, bascule,
+  torsion des épaules, balancier des bras, ajoutés à la pose *après* les
+  ressorts de pose. À 5–6 Hz, passés par des ressorts à ~3 Hz, ils étaient
+  écrasés et décalés : le corps restait raide pendant que les jambes
+  moulinaient. Plus aucun à-coup par appui (`land` ne fait plus que la
+  poussière).
+- **Esquive = dash** (7 u/s, bond bas de 0,13 s, ~1,9 u) : garde le cap,
+  couchée et écrasée dans le mouvement, **images rémanentes** (`Ghosts` :
+  silhouette de 14 ellipsoïdes écrite par la poupée à la demande, un seul
+  dessin instancié, liseré plus dense sur les bords).
+- **Glissade** (touche d'esquive tenue) : le dash enchaîne sans freiner,
+  la poupée se tourne vers sa direction de glissade, file à 8,5 u/s ; cap
+  limité à 2,2 rad/s (contrôle rigide), grosse inertie, pieds au sol l'un
+  devant l'autre (`Stepper` mode glissade), penchée dans les virages,
+  poussière continue, fantômes espacés. Relâchée : ~0,7 u de freinage.
+- **Double saut** : second appui en l'air, impulsion 0,85 × celle du saut
+  (sommet 0,70 → 1,23 u), salto avant groupé, tour ramené à zéro (`unwind`)
+  à la fin, à l'atterrissage ou si un plongeon l'interrompt.
+- **Silhouettes** : écharpe à pan arrière ×2,7, collier ×1,75 instancié avec
+  chaîne pendante et cadenas ; inertie « monde » des tissus et chaînes
+  (`FrameCarry`, rotations comprises) et sol dans la simulation.
+- Arène 6 → 8 u de rayon (croix du tapis à densité constante).
+
+**Piège d'outillage** : des worktrees d'agents qui lient `node_modules` par
+symlink partagent `node_modules/.vite` ; leurs serveurs Vite réécrivent le
+cache de dépendances du serveur principal → « Invalid hook call » (deux
+React). Chaque serveur doit avoir son `cacheDir`, via une config **dans** le
+dépôt (non commitée) — hors du dépôt, `react-refresh` ne se résout plus.
 
 #### 2026-09-25 — physique et animations des personnages (2)
 
