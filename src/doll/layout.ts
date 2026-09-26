@@ -37,7 +37,7 @@ export function dollLayout(p: DollParams) {
   const shoulderY = torsoH * 0.28
   const shoulderX = shoulderAt(p.shape)
   const hipY = -torsoH * 0.36
-  const hipX = hipAt(p.shape)
+  const hipX = hipAt(p)
 
   const top = neckY + headY + headH
   // Pied : centre 0,3 rayon sous le bout de la jambe, rayon 1,3 × galbe ×

@@ -222,6 +222,8 @@ function resetView() {
 
 export default function App() {
   const { params: p, regenerate } = useDollParams()
+  // Atelier : réglages du panneau, pour les audits de morphologie.
+  if (import.meta.env.DEV) Object.assign(window, { __params: p })
   const stage = useRef<HTMLDivElement>(null)
   /** Rang de la poupée choisie ; `null` sur l'écran de sélection. */
   const [picked, setPicked] = useState<number | null>(null)

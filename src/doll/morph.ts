@@ -1,5 +1,6 @@
 import { mulberry32, clamp } from '../core/rand'
-import { dollLayout } from './layout'
+import { dollLayout, legDrop, tipScale } from './layout'
+import { hipX } from './surface'
 import type { DollParams } from './params'
 
 /**
@@ -238,7 +239,7 @@ export const ARCHETYPES: readonly Archetype[] = [
     id: 'crapaud', name: 'crapaud',
     build: 0.9, youth: 0.3,
     bias: {
-      stature: -1.2, girth: 0.9, legSplay: 1.2, stance: -0.6, reach: 0.5, limbThick: 0.3, limbGirth: -0.9,
+      stature: -1.2, girth: 0.9, legSplay: 1.2, stance: 0.8, reach: 0.5, limbThick: 0.3, limbGirth: -0.9,
       footScale: 0.9, head: 0.3, cheeks: 0.5,
       // Ventre qui tombe entre les cuisses, hanches larges, accroupi.
       belly: 1.5, hips: 1.1, chest: -0.5, depth: 0.7, legUpper: 0.5, elbow: 0.8, knee: 3.2, kneeOut: 1.2,
@@ -250,10 +251,12 @@ export const ARCHETYPES: readonly Archetype[] = [
     id: 'ballerine', name: 'ballerine',
     build: -0.8, youth: -0.4,
     bias: {
-      stature: 0.3, reach: 1, limbBias: -0.7, girth: -0.7, limbGirth: -0.5, shoulders: -0.6,
-      footScale: -0.4, handScale: -0.3, legTaper: -0.35, stance: -0.8, head: -0.1,
-      // Taille marquée, hanches rondes, mollets de danseuse, bras arrondis.
-      waist: 1.5, hips: 1.1, chest: 0.3, depth: -0.5, legLower: 0.9, legUpper: 0.2, elbow: 0.7,
+      stature: 0.3, reach: 1, limbBias: -0.7, girth: -0.35, limbGirth: -0.6, shoulders: -0.1,
+      footScale: -0.4, handScale: -0.3, legTaper: -0.35, stance: -0.8, head: -0.1, legSplay: 0.6,
+      // Sablier : taille très marquée entre une poitrine et des hanches rondes,
+      // mollets de danseuse, bras arrondis. Tronc moins fluet que les membres :
+      // sur un tube trop mince, la taille ne se voyait plus.
+      waist: 2.2, hips: 1.9, chest: 1.1, depth: -0.4, legLower: 0.9, legUpper: 0.2, elbow: 0.7,
     },
   },
   {
@@ -369,7 +372,7 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
   const minGap = Math.max(0, f.eyeHeight - f.mouthHeight) * rh * 0.8
   if (eyeHeight - mouthHeight < minGap) mouthHeight = eyeHeight - minGap
 
-  return {
+  const out: DollParams = {
     ...p,
     shape: {
       ...s,
@@ -411,6 +414,20 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
       mouthHeight,
     },
   }
+  return spreadFeet(out)
+}
+
+/**
+ * Pieds qui ne se chevauchent pas : de grands pieds sous des jambes serrées
+ * (poupon, kangourou, échalas) se recouvraient au milieu. On écarte les jambes
+ * juste assez — le patron du panneau n'est pas concerné, il n'y passe pas.
+ */
+function spreadFeet(q: DollParams): DollParams {
+  const lb = q.limbs
+  const half = lb.legRadius * 1.3 * tipScale(lb.legTaper, lb.footScale) * 0.78 * 1.18
+  const need = (half + 0.012 - hipX(q)) / legDrop(lb)
+  if (need <= Math.sin(lb.legSpread)) return q
+  return { ...q, limbs: { ...lb, legSpread: Math.min(0.8, Math.asin(Math.min(0.99, need))) } }
 }
 
 /**

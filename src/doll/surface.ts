@@ -151,8 +151,13 @@ export function onTorso(p: DollParams, azimuth: number, y: number, lift: number)
 export function shoulderX(s: Shape) {
   return s.torsoRadius * s.torsoTaper * 0.88 * torsoSculpt(s, 0.56, Math.PI / 2)
 }
-export function hipX(s: Shape) {
-  return s.torsoRadius * 0.44 * Math.sqrt(torsoSculpt(s, -0.72, Math.PI / 2))
+export function hipX(p: DollParams) {
+  const s = p.shape
+  const lb = p.limbs
+  // Au moins l'épaisseur d'une cuisse, renflement compris : sinon deux cuisses
+  // de kangourou ou de poupon s'interpénètrent au milieu (mesuré : −0,12).
+  const thigh = lb.legRadius * (1 - (lb.legTaper ?? 0) * 0.25) * (1 + (lb.legUpper ?? 0))
+  return Math.max(s.torsoRadius * 0.44 * Math.sqrt(torsoSculpt(s, -0.72, Math.PI / 2)), thigh * 0.95)
 }
 
 /**
@@ -240,7 +245,7 @@ export function legSpheres(p: DollParams, skin: number, shift = 0): Collider[] {
   const s = p.shape
   const lb = p.limbs
   const hipY = -s.torsoHeight * 0.8 + shift
-  const hx = hipX(s)
+  const hx = hipX(p)
   const ax = Math.sin(lb.legSpread)
   const ay = Math.cos(lb.legSpread)
 
