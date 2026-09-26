@@ -41,7 +41,7 @@ src/
 │   ├── morph.ts        morphologie par poupée : facteurs latents autour du panneau, planche à écart maximal
 │   ├── fuzz.ts         duvet volumétrique par shell texturing + trous sous les pièces
 │   ├── hair.tsx        locks tressés articulés (chaînes de spring bones)
-│   ├── hairstyles.tsx  huit autres coupes en laine, fusionnées, physique au vertex shader
+│   ├── hairstyles.tsx  neuf autres coupes en laine, fusionnées, physique au vertex shader
 │   ├── face.tsx        visage : humeur, point de bouche, boutons, détail — planche sans répétition
 │   ├── patch.ts        pièces de tissu cousues + poche
 │   ├── ribbon.ts       bande de tissu balayée le long d'un tracé
@@ -315,9 +315,9 @@ src/
 
 **L'écharpe a un duvet, plus court que celui du corps.** Nue, elle lisait comme du plastique côtelé à côté d'une peluche au contour pelucheux. La nappe étant réécrite à chaque frame, les coques partagent sa géométrie et se repoussent au **vertex shader** (un seul programme, `customProgramCacheKey`). Seuil relevé et teinte rabattue : au seuil du corps, le halo noyait les côtes, qui sont ce qui dit « écharpe ».
 
-**Neuf coupes, une par poupée ; les locks ne se touchent pas.** Les locks restent tels quels, regroupés au sommet — choix explicite. Les huit autres (`hairstyles.tsx`) : bouclettes, mèches (coupe au bol), chignon, houppette, couettes, queue de cheval, nattes, grande frange. Tous les brins d'une coupe sont fusionnés en une géométrie par matière (fil retors, tresse, ruban). Sur une planche : six coupes différentes.
+**Dix coupes, une par poupée ; les locks ne se touchent pas.** Les locks restent tels quels, regroupés au sommet — choix explicite. Les neuf autres (`hairstyles.tsx`) : bouclettes, mèches (coupe au bol), chignon, houppette, trois poils, couettes, queue de cheval, nattes, grande frange. Tous les brins d'une coupe sont fusionnés en une géométrie par matière (fil retors, tresse, ruban). Sur une planche : six coupes différentes.
 
-**Aucune poupée n'est chauve** (Leo, 26 sept. : « trois poils », la seule qui en avait le droit, a été retirée). Toute coupe couvre le crâne **par elle-même** — une base couchée sous les locks ou le plumet a été essayée et rejetée (deux coiffures superposées, ça se voit). D'où : une houppette qui retombe en fontaine sur le crâne, une coupe au bol qui descend au moins aux oreilles, une lisière de nuque basse pour les cheveux tirés (la peluche n'a pas de cou : sa nuque est le bas du crâne), et une **raie au milieu** dès que deux attaches sont de part et d'autre — sinon aucun brin ne passe par le sommet.
+**Seule « trois poils » a le droit d'être chauve.** Toute autre coupe couvre le crâne **par elle-même** — une base couchée sous les locks ou le plumet a été essayée et rejetée (deux coiffures superposées, ça se voit). D'où : une houppette qui retombe en fontaine sur le crâne, une coupe au bol qui descend au moins aux oreilles, une lisière de nuque basse pour les cheveux tirés (la peluche n'a pas de cou : sa nuque est le bas du crâne), et une **raie au milieu** dès que deux attaches sont de part et d'autre — sinon aucun brin ne passe par le sommet.
 
 **Une queue attachée est un faisceau, pas un éventail.** Chaque brin couché depuis l'attache faisait une queue plate contre la tête. Les brins sortent serrés du ruban, le faisceau se **détache** de la tête avant de tomber, et ne s'évase qu'en bas.
 
@@ -748,7 +748,7 @@ arrive ; sinon, reprendre depuis ces branches.
   lames aplaties en palmier, un ressort par lame. **Couettes** : queues en
   mèches pointues (`bunch` `clumps`) et deux mèches latérales.
 - **Nattes** : frange balayée en mèches pointues (`sweptFringe`), tresses plus
-  épaisses et longues. **Trois poils** retirée : Leo ne veut aucune poupée chauve.
+  épaisses et longues. **Trois poils** : toujours trois, crosse / ressort / pic.
 - Non fait, volontairement : refonte « anglaises » des bouclettes (Leo les a
   validées, il a seulement demandé plus de densité).
 
