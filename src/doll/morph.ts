@@ -39,6 +39,7 @@ const KEYS = [
   'cheekY',
   'limbBias', // bras plus longs que les jambes, ou l'inverse
   'limbThick', // bras plus épais que les jambes, ou l'inverse
+  'limbGirth', // membres épais ou fins, indépendamment du tronc
   'stance', //   bras et jambes écartés ou serrés
   'lumps',
   'eyeY',
@@ -75,7 +76,7 @@ function sample(rnd: () => number, type: Archetype): Morph {
   // Résidu en cloche : il décore le type, il ne doit pas le brouiller.
   const r = (span: number) => (rnd() + rnd() - 1) * span
   const b = (key: keyof Morph) => type.bias?.[key] ?? 0
-  const c = (key: keyof Morph, v: number) => clamp(v + b(key), -1.8, 1.8)
+  const c = (key: keyof Morph, v: number) => clamp(v + b(key), -2.4, 2.4)
 
   return {
     build,
@@ -91,6 +92,7 @@ function sample(rnd: () => number, type: Archetype): Morph {
     cheekY: c('cheekY', r(0.4)),
     limbBias: c('limbBias', r(0.3)),
     limbThick: c('limbThick', r(0.3)),
+    limbGirth: c('limbGirth', r(0.15)),
     stance: c('stance', 0.4 * build + r(0.3)),
     lumps: c('lumps', r(0.5)),
     eyeY: c('eyeY', r(0.4)),
@@ -101,19 +103,20 @@ function sample(rnd: () => number, type: Archetype): Morph {
 }
 
 /**
- * Archétypes de morphologie : six patrons nommés, un par poupée d'une planche.
+ * Archétypes de morphologie : des **silhouettes-types**, une par poupée d'une
+ * planche.
  *
- * Choisies à l'écart maximal dans le plan corpulence × âge, deux poupées
- * pouvaient encore tomber dans la même région — deux poupons dodus, par
- * exemple — et la planche perdait sa lecture de « six personnages ». Ici chaque
- * archétype occupe sa propre zone du plan, à peu près en hexagone autour du
- * patron, et une planche les distribue **tous**, dans un ordre tiré au sort.
+ * Première version : six points du plan corpulence × âge, plus une petite
+ * signature chacun. Même poussés, ils ne différaient que par des proportions
+ * — plus gros, plus petit — et Leo les trouvait trop proches. Une silhouette
+ * se reconnaît à **ce qui la rend singulière** : la boule qui n'a presque pas
+ * de membres, le têtard qui n'est qu'une tête, le gorille aux bras qui
+ * traînent, l'araignée aux membres écartés, le haricot sans épaules… Chaque
+ * archétype garde un point du plan (pour que toutes ses cotes restent liées)
+ * mais porte surtout une **signature forte** sur les cotes qui le définissent.
  *
- * Deux voisins de l'hexagone ne diffèrent que d'un cran sur chaque axe, ce qui
- * ne suffit pas toujours à l'œil : chacun porte donc en plus une **signature**
- * sur les cotes secondaires — épaules carrées du costaud, bas lourd de la
- * poire, bras ballants du dégingandé. Elle s'ajoute au type, elle ne le
- * contredit pas : toutes vont dans le sens de leur corpulence.
+ * Neuf archétypes ; une planche en tire six, tous différents, dans un ordre
+ * mélangé : deux générations ne ramènent pas la même distribution.
  */
 export type Archetype = {
   id: string
@@ -125,34 +128,58 @@ export type Archetype = {
 
 export const ARCHETYPES: readonly Archetype[] = [
   {
+    // Une boule : tronc énorme et court, membres réduits à des moignons.
     id: 'bouboule', name: 'bouboule',
-    build: 1, youth: 0.85,
-    bias: { cheeks: 0.5, stance: 0.4, girth: 0.25, stature: -0.45 },
+    build: 1, youth: 0.3,
+    bias: { girth: 1.6, stature: -0.8, reach: -1.4, limbGirth: -1.6, cheeks: 0.6, stance: 0.9, head: -1.3 },
   },
   {
-    id: 'crevette', name: 'crevette',
-    build: -0.9, youth: 1,
-    bias: { head: 0.3, eyeGap: 0.4, reach: -0.25, stature: -0.35 },
+    // Rien qu'une tête : crâne immense sur un petit corps, membres de poupon.
+    id: 'tetard', name: 'têtard',
+    build: -0.3, youth: 1,
+    bias: { head: 1.1, stature: -1, girth: -0.5, reach: -0.9, eyeGap: 0.6 },
   },
   {
-    id: 'costaud', name: 'costaud',
-    build: 0.85, youth: -0.8,
-    bias: { shoulders: 1.2, limbThick: 0.6, head: -0.2 },
-  },
-  {
+    // Un bâton : petite tête, tronc et membres longs et minces.
     id: 'echalas', name: 'échalas',
     build: -1, youth: -1,
-    bias: { stature: 1, reach: 0.5, head: -0.15 },
+    bias: { head: -0.6, stature: 1.3, reach: 0.9, girth: -0.3, limbGirth: 0.5, stance: -0.4 },
   },
   {
+    // Épaules massives, bras longs et épais qui traînent, jambes courtes.
+    id: 'gorille', name: 'gorille',
+    build: 0.7, youth: -0.8,
+    bias: { shoulders: 1.9, limbBias: 1.8, limbThick: 1.4, head: -0.6, stance: -0.9, reach: 0.2 },
+  },
+  {
+    // Tout dans le bas : épaules étroites, hanches larges, crâne en poire.
     id: 'poire', name: 'poire',
-    build: 0.6, youth: 0.05,
-    bias: { shoulders: -1.2, egg: 1, limbBias: -0.55, girth: 0.2 },
+    build: 0.6, youth: 0,
+    bias: { shoulders: -1.9, egg: 1.2, girth: 0.8, limbBias: -1, limbThick: -0.8, limbGirth: -0.7, reach: -0.3 },
   },
   {
+    // Petit corps, membres interminables et très écartés.
+    id: 'araignee', name: 'araignée',
+    build: -0.8, youth: -0.2,
+    bias: { reach: 1.9, girth: 0, stature: -1.1, stance: 2.2, limbGirth: -0.4, head: 0.2 },
+  },
+  {
+    // Un haricot : tronc long et rond sans épaules, membres courts.
+    id: 'haricot', name: 'haricot',
+    build: 0, youth: 0.2,
+    bias: { stature: 1.9, shoulders: -0.9, reach: -1.8, limbGirth: -0.3, head: -0.3, stance: -0.3 },
+  },
+  {
+    // Un pavé : large, carré, tassé, tout en épaules et en cou de taureau.
+    id: 'pave', name: 'pavé',
+    build: 1, youth: -0.6,
+    bias: { stature: -1.1, girth: 1.1, shoulders: 1.4, reach: -0.4, limbThick: 0.6, limbGirth: 0.8, head: -0.2 },
+  },
+  {
+    // Bras qui pendent jusqu'aux genoux, épaules tombantes, corps maigre.
     id: 'degingande', name: 'dégingandé',
-    build: -0.4, youth: -0.3,
-    bias: { limbBias: 1.2, shoulders: -0.4, stance: -0.35, reach: 0.4, stature: 0.5 },
+    build: -0.3, youth: 0,
+    bias: { limbBias: 2.4, shoulders: -1.2, stance: -1, reach: 0.8, head: 0.1 },
   },
 ]
 
@@ -163,7 +190,9 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
   const lb = p.limbs
   const f = p.face
   const a = amount
-  const k = (v: number, span: number) => 1 + v * span * a
+  // Borné : aux signatures fortes, un facteur libre pouvait tomber sous la
+  // moitié (torse d'un têtard) ou dépasser le double.
+  const k = (v: number, span: number) => clamp(1 + v * span * a, 0.5, 1.9)
 
   // --- tête ---
   const headRadius = s.headRadius * k(m.head, 0.2)
@@ -193,7 +222,7 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
 
   // --- torse ---
   const torsoHeight = s.torsoHeight * k(m.stature, 0.3)
-  const torsoRadius = s.torsoRadius * k(m.girth, 0.26)
+  const torsoRadius = s.torsoRadius * k(m.girth, 0.35)
   const torsoTaper = clamp(s.torsoTaper + m.shoulders * 0.15 * a, 0.4, 1.25)
   // Une peluche dodue est bourrée plus serré qu'une maigre : moins de bosses.
   const lumps = clamp(s.lumps * k(m.lumps * 0.7 - m.girth * 0.3, 0.45), 0, 0.25)
@@ -202,13 +231,16 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
   // L'épaisseur suit l'embonpoint, un peu moins vite que le torse : les
   // membres restent attachés dans l'écart des hanches (`hipX` ∝ torsoRadius).
   // Et un membre long s'affine — sinon l'allonge fabrique des bras de lutteur.
-  const thick = k(m.girth, 0.2) * k(-m.reach, 0.08)
-  const armLength = lb.armLength * k(m.reach + m.limbBias * 0.5, 0.32)
+  // Les membres épaississent avec le tronc, mais une signature peut les en
+  // détacher (`limbGirth`) : une boule à gros membres cache son tronc derrière
+  // eux et ne lit plus comme une boule.
+  const thick = k(m.girth, 0.2) * k(-m.reach, 0.08) * k(m.limbGirth, 0.3)
+  const armLength = lb.armLength * k(m.reach + m.limbBias * 0.7, 0.32)
   const legLength = lb.legLength * k(m.reach - m.limbBias * 0.5 + m.stature * 0.3, 0.3)
   const armRadius = lb.armRadius * thick * k(m.limbThick, 0.09)
   const legRadius = lb.legRadius * thick * k(-m.limbThick, 0.09)
   const armSpread = clamp(lb.armSpread + m.stance * 0.2 * a, 0, 1.4)
-  const legSpread = clamp(lb.legSpread + m.stance * 0.08 * a, 0.02, 0.8)
+  const legSpread = clamp(lb.legSpread + m.stance * 0.12 * a, 0.02, 0.8)
 
   // --- visage : il suit le crâne ---
   // Les cotes du visage sont absolues : sans mise à l'échelle, une grosse tête
@@ -255,7 +287,7 @@ function coherent(base: DollParams, q: DollParams) {
   const h = dollLayout(q).height / dollLayout(base).height
   const ratio =
     q.shape.headRadius / q.shape.torsoRadius / (base.shape.headRadius / base.shape.torsoRadius)
-  return h > 0.8 && h < 1.24 && ratio > 0.7 && ratio < 1.45
+  return h > 0.62 && h < 1.32 && ratio > 0.35 && ratio < 2.4
 }
 
 export type MorphPick = { morph: Morph; archetype: Archetype }
@@ -270,10 +302,11 @@ function draw(base: DollParams, rnd: () => number, type: Archetype): MorphPick {
   return { morph: flat, archetype: type }
 }
 
-/** Morphologie d'une poupée seule : un archétype au hasard. */
-export function dollMorph(base: DollParams): MorphPick {
+/** Morphologie d'une poupée seule : un archétype au hasard, ou celui imposé. */
+export function dollMorph(base: DollParams, forced?: string): MorphPick {
   const rnd = mulberry32(base.seed + 9127)
-  return draw(base, rnd, ARCHETYPES[Math.floor(rnd() * ARCHETYPES.length)])
+  const pick = ARCHETYPES[Math.floor(rnd() * ARCHETYPES.length)]
+  return draw(base, rnd, ARCHETYPES.find((a) => a.id === forced) ?? pick)
 }
 
 /**

@@ -135,7 +135,8 @@ function Controls({ fighter }: { fighter: Fighter }) {
 
 const COLS = 3
 const SPACING_X = 2.6
-const ROW_GAP = 2.9
+// Assez pour qu'un échalas ne touche pas les boutons de la rangée du dessus.
+const ROW_GAP = 3.15
 
 /**
  * Version allégée pour la planche : six poupées au réglage plein tiennent
@@ -305,7 +306,7 @@ export default function App() {
   const bench = useMemo<Entry | null>(() => {
     if (gallery) return null
     const trait = TRAITS.find((t) => t.id === single) ?? TRAITS[0]
-    const params = applyMorph(p, dollMorph(p).morph)
+    const params = applyMorph(p, dollMorph(p, p.board.archetype).morph)
     return {
       trait,
       tone: undefined,
@@ -484,7 +485,13 @@ export default function App() {
           )}
 
           {shown.map((d, i) => (
-            <group key={solo ? `solo-${d.trait.id}` : d.trait.id} position={[d.x, d.y, 0]}>
+            <group
+              // Seule, la poupée se remonte quand sa morphologie change :
+              // ressorts et plis des membres gardaient sinon les longueurs de
+              // la précédente, et un bras allongé perdait son avant-bras.
+              key={solo ? `solo-${d.trait.id}-${d.params.limbs.armLength.toFixed(4)}-${d.params.shape.headRadius.toFixed(4)}` : d.trait.id}
+              position={[d.x, d.y, 0]}
+            >
               <Doll
                 p={d.params}
                 trait={d.trait.id}

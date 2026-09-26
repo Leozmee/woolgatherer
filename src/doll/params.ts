@@ -124,7 +124,7 @@ export type DollParams = {
   shell: { count: number; height: number; density: number }
   spring: { stiffness: number; drag: number; gravity: number; headStiffness: number }
   motion: { spin: number; breathe: number }
-  board: { gallery: boolean; light: boolean; single: string; morph: number; hairStyle: string }
+  board: { gallery: boolean; light: boolean; single: string; morph: number; hairStyle: string; archetype: string }
 }
 
 export function useDollParams(): { params: DollParams; regenerate: () => void } {
@@ -324,6 +324,12 @@ export function useDollParams(): { params: DollParams; regenerate: () => void } 
       value: 'couture',
       options: ['couture', 'echarpe', 'nu', 'collier', 'ceinture', 'noeudPap'],
       label: 'variante (seule)',
+    },
+    // Archétype de la poupée seule (atelier) ; liste littérale, même raison.
+    archetype: {
+      value: 'auto',
+      options: ['auto', 'bouboule', 'tetard', 'echalas', 'gorille', 'poire', 'araignee', 'haricot', 'pave', 'degingande'],
+      label: 'archétype (seule)',
     },
     // Liste littérale pour la même raison : `hairstyles` dépend de ce module.
     hairStyle: {

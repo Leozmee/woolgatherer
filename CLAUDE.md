@@ -759,6 +759,15 @@ arrive ; sinon, reprendre depuis ces branches.
 - **Trois poils** gardée (Leo ne veut pas de poupée *sans rien*) : plus
   courts, trois formes distinctes tirées parmi six (ressort, crosse, pic,
   vague, zigzag, boucle), longueur, épaisseur, écart et inclinaison propres.
+- **Archétypes refaits (en cours)** : neuf silhouettes-types (bouboule,
+  têtard, échalas, gorille, poire, araignée, haricot, pavé, dégingandé), six
+  par planche ; nouvelle cote `limbGirth` (épaisseur des membres détachée du
+  tronc) ; sélecteur « archétype (seule) » au panneau. **Bug ouvert** : bras
+  très longs (dégingandé, échalas) → sur la planche, le haut du bras paraît à
+  l'horizontale et la main flotte sous lui. Mesuré : l'écart (0,73–1,02 rad)
+  et l'os à ressort (≤ 0,24 rad) sont normaux — chercher du côté du pli du
+  coude (`jointShader`, `makeJoint` : longueur du membre au montage) ou des
+  colliders des mains (`bodyColliders.hands`).
 - Non fait, volontairement : refonte « anglaises » des bouclettes (Leo les a
   validées, il a seulement demandé plus de densité).
 
