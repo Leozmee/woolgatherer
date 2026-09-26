@@ -47,6 +47,19 @@ export function makeJoint(length: number): Joint {
   }
 }
 
+/**
+ * Reporte une nouvelle longueur de membre sur un pli **existant**.
+ *
+ * Les uniformes d'un pli sont liés au shader à sa compilation : remplacer
+ * l'objet quand la longueur change laisse le shader lire l'ancien, figé —
+ * sur la planche, une poupée aux bras bien plus longs que la précédente
+ * dessinait son avant-bras à l'ancien pli, détaché, la main flottant dessous.
+ */
+export function setJointLength(j: Joint, length: number) {
+  j.uJointY.value = -length * JOINT
+  j.uBlend.value = length * BLEND
+}
+
 const _m = new THREE.Matrix4()
 
 /**

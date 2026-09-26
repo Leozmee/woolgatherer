@@ -183,6 +183,27 @@ export const ARCHETYPES: readonly Archetype[] = [
   },
 ]
 
+/**
+ * **Bornes de la série** : ce qui garde un air de famille aux neuf silhouettes.
+ *
+ * Chaque archétype pousse sa singularité, mais une peluche reste une peluche :
+ * grosse tête bouffie, membres de boudin rembourrés. Poussées sans limite, les
+ * signatures fabriquaient des baguettes (bras de l'araignée à 0,58 du patron),
+ * une tête d'épingle sur une tige (échalas à 0,63) — plus des poupées d'une
+ * même série, mais des objets d'une autre fabrique. Facteurs relatifs au
+ * panneau, appliqués après les signatures : une silhouette y garde son sens
+ * (l'échalas reste le plus long, la bouboule la plus ronde), seuls les
+ * extrêmes qui sortaient de la famille sont ramenés.
+ */
+const SERIES = {
+  head: [0.8, 1.38],
+  torsoHeight: [0.6, 1.65],
+  torsoRadius: [0.66, 1.85],
+  limbLength: [0.5, 1.75],
+  limbRadius: [0.72, 1.7],
+} as const
+const series = (v: number, [lo, hi]: readonly [number, number]) => clamp(v, lo, hi)
+
 /** Paramètres de la poupée une fois sa morphologie appliquée. */
 export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): DollParams {
   if (amount <= 0) return p
@@ -195,7 +216,7 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
   const k = (v: number, span: number) => clamp(1 + v * span * a, 0.5, 1.9)
 
   // --- tête ---
-  const headRadius = s.headRadius * k(m.head, 0.2)
+  const headRadius = s.headRadius * series(k(m.head, 0.2), SERIES.head)
   // La tête reste **bouffie** quel que soit l'archétype — pas seulement ronde :
   // c'est la signature de la série. Bouffi, c'est des bajoues **basses et
   // latérales** plus un bas de crâne plein ; un crâne simplement agrandi ou
@@ -221,8 +242,8 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
   const headSquash = clamp(s.headSquash * k(clamp(m.squash, 0, 0.3), 0.07), 0.7, 1.4)
 
   // --- torse ---
-  const torsoHeight = s.torsoHeight * k(m.stature, 0.3)
-  const torsoRadius = s.torsoRadius * k(m.girth, 0.35)
+  const torsoHeight = s.torsoHeight * series(k(m.stature, 0.3), SERIES.torsoHeight)
+  const torsoRadius = s.torsoRadius * series(k(m.girth, 0.35), SERIES.torsoRadius)
   const torsoTaper = clamp(s.torsoTaper + m.shoulders * 0.15 * a, 0.4, 1.25)
   // Une peluche dodue est bourrée plus serré qu'une maigre : moins de bosses.
   const lumps = clamp(s.lumps * k(m.lumps * 0.7 - m.girth * 0.3, 0.45), 0, 0.25)
@@ -235,10 +256,10 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
   // détacher (`limbGirth`) : une boule à gros membres cache son tronc derrière
   // eux et ne lit plus comme une boule.
   const thick = k(m.girth, 0.2) * k(-m.reach, 0.08) * k(m.limbGirth, 0.3)
-  const armLength = lb.armLength * k(m.reach + m.limbBias * 0.7, 0.32)
-  const legLength = lb.legLength * k(m.reach - m.limbBias * 0.5 + m.stature * 0.3, 0.3)
-  const armRadius = lb.armRadius * thick * k(m.limbThick, 0.09)
-  const legRadius = lb.legRadius * thick * k(-m.limbThick, 0.09)
+  const armLength = lb.armLength * series(k(m.reach + m.limbBias * 0.7, 0.32), SERIES.limbLength)
+  const legLength = lb.legLength * series(k(m.reach - m.limbBias * 0.5 + m.stature * 0.3, 0.3), SERIES.limbLength)
+  const armRadius = lb.armRadius * series(thick * k(m.limbThick, 0.09), SERIES.limbRadius)
+  const legRadius = lb.legRadius * series(thick * k(-m.limbThick, 0.09), SERIES.limbRadius)
   const armSpread = clamp(lb.armSpread + m.stance * 0.2 * a, 0, 1.4)
   const legSpread = clamp(lb.legSpread + m.stance * 0.12 * a, 0.02, 0.8)
 

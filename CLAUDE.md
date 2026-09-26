@@ -299,7 +299,11 @@ src/
 
 **La morphologie se tire en types de corps, pas cote par cote.** Tirées indépendamment, les cotes donnent une grosse tête sur un corps long et maigre, des membres de lutteur sur un torse fluet. Et la sélection de planche à écart maximal aggrave tout : les combinaisons les plus contradictoires sont aussi les plus éloignées des autres, c'est donc elles qu'elle retient — première version, jugée « proportions pas cohérentes ». `morph.ts` ne tire librement que **deux axes** : corpulence (dodu = torse large, membres courts et épais, joues pleines, crâne en poire, bras écartés ; fluet = l'inverse) et âge (poupon = grosse tête, torse et membres courts, yeux écartés ; adulte = petite tête sur corps allongé). Toutes les cotes en dérivent ensemble, avec un résidu individuel en cloche nettement plus petit que la part commune. L'écart de planche se mesure **sur ces deux axes seulement** — mesuré sur toutes les cotes, il récompensait les résidus qui contredisent le type. Les cotes du visage, absolues, suivent le crâne. Tout reste relatif au panneau. Grosse tête et membres courts se compensent : aux premières amplitudes la hauteur restait à ±2 %, et Leo a jugé les morphologies trop proches (26 sept.). Amplitudes relevées (tête ±20 %, torse ±26–30 %, membres ±30 %, épaules et écart des membres presque doublés), signatures d'archétype renforcées, garde-fous élargis (hauteur 0,8–1,24, tête/torse 0,7–1,45) ; la **stature** entre aussi dans la longueur des jambes, sinon la petite tête de l'échalas annulait son torse long et il était plus petit que la bouboule. Replis au patron : 8 sur 900. Chaque poupée étant recentrée sur sa hauteur, `App` recale la rangée sur une ligne de sol commune.
 
-**Une planche distribue six archétypes, un par poupée.** L'écart maximal dans le plan corpulence × âge laissait encore deux poupées tomber dans la même région — deux poupons dodus — et la planche perdait sa lecture de « six personnages ». `ARCHETYPES` pose six patrons nommés, à peu près en hexagone autour du patron du panneau : bouboule (poupon dodu), crevette (poupon fluet), costaud (épaules carrées), échalas (grand et maigre), poire (tout dans le bas), dégingandé (bras ballants). Deux voisins de l'hexagone ne diffèrent que d'un cran par axe, ce qui ne suffit pas toujours à l'œil : chacun porte une **signature** sur les cotes secondaires, toujours dans le sens de sa corpulence. Chaque génération retire le type **dans** la zone de l'archétype (±0,2 par axe, plus le résidu) : il varie légèrement sans déborder sur son voisin. L'ordre est mélangé à chaque graine, sinon la couture intégrale serait toujours la bouboule. Le nom s'affiche sous le libellé de la poupée.
+**Une planche distribue six archétypes, tirés parmi neuf silhouettes-types.** Six points d'un plan corpulence × âge, même poussés, ne différaient que par des proportions — plus gros, plus petit — et Leo les trouvait trop proches (26 sept.). Une silhouette se reconnaît à **ce qui la rend singulière** : bouboule (tronc en boule, moignons), têtard (tête immense, petit corps), échalas (longue tige), gorille (épaules et bras massifs qui pendent, jambes courtes), poire (épaules étroites, bas lourd), araignée (petit corps, membres longs très écartés), haricot (long tronc rond, moignons), pavé (bloc large et tassé), dégingandé (bras jusqu'aux genoux). Chacun garde un point du plan, pour que ses cotes restent liées, mais porte surtout une **signature forte** sur les cotes qui le définissent. Une cote a dû être ajoutée : `limbGirth`, l'épaisseur des membres **détachée** du tronc — des membres qui grossissent avec la corpulence cachaient le tronc de la bouboule, qui ne lisait plus comme une boule. Et le tronc du patron est bien plus étroit que sa tête (0,25 contre 0,40) : pour qu'une boule soit plus large que sa tête, il a fallu réduire sa tête **et** élargir l'amplitude de la corpulence. Ordre mélangé à chaque graine ; sélecteur « archétype (seule) » en atelier.
+
+**Singulières, mais d'une même série.** Poussées sans limite, les signatures fabriquaient des baguettes (bras de l'araignée à 0,58 du patron) et une tête d'épingle sur une tige (échalas à 0,63) : plus des poupées d'une même famille. `SERIES` borne, **après** les signatures, tête (0,8–1,38), tronc (0,6–1,65 en hauteur, 0,66–1,85 en largeur), membres (0,5–1,75 en longueur, 0,72–1,7 en épaisseur) : grosse tête bouffie et membres de boudin pour tous, chaque silhouette garde son sens (l'échalas reste le plus long, la bouboule la plus ronde).
+
+**Les uniformes d'un pli sont liés au shader à sa compilation.** Recréer l'objet du pli quand la longueur d'un membre change laisse le shader lire l'ancien, figé : sur la planche — où chaque emplacement garde son composant d'une génération à l'autre — une poupée aux bras bien plus longs que la précédente dessinait son avant-bras à l'ancien pli, détaché, la main flottant dessous. Les plis sont créés une fois ; `setJointLength` reporte la longueur.
 
 **La tête reste bouffie sur tous les archétypes, et bouffi n'est pas rond.** Bouffi, ce sont des bajoues **basses et latérales** plus un bas de crâne plein ; une tête simplement agrandie ou arrondie ne le dit pas. Dérivées librement de la corpulence, les bajoues des fluets retombaient sous le 0,09 du patron et leur tête se lisait comme une boule ; l'ovale négatif du costaud et le crâne allongé du dégingandé la dégonflaient aussi. Bajoues et ovale ne peuvent donc que **gagner** sur le panneau, avec un plancher visible (+0,05 de bajoues, +0,04 d'ovale ; les dodus jusqu'à +0,13 / +0,12), elles restent basses et se resserrent en gonflant, et le crâne ne s'allonge que d'un cran.
 
@@ -470,7 +474,7 @@ src/
 | Laine du corps | tirée dans une palette de 15 laines, **sans répétition sur une planche** et en maximisant l'écart perçu ; micro-décalage |
 | Locks | laine (15 fils, **sans répétition sur une planche**), longueur, grosseur de fil dont l'épaisseur et la densité dérivent en sens inverse (9 à 30 mèches), bouts décolorés sur 0, 1, 2, 4, 5 ou toutes les mèches |
 | Épingles | côté du crâne, teinte tirée dans la roue HSL |
-| Morphologie | type de corps sur deux axes — corpulence (fluet ↔ dodu) et âge (adulte ↔ poupon) — dont dérivent tête, torse, membres, crâne, écartement et visage, plus un petit résidu individuel. **Six archétypes nommés, un par poupée** (bouboule, crevette, costaud, échalas, poire, dégingandé), ordre mélangé, chacun retiré légèrement à chaque génération. Curseur *variation morpho* (0 = patron du panneau) |
+| Morphologie | **neuf silhouettes-types**, six par planche (bouboule, têtard, échalas, gorille, poire, araignée, haricot, pavé, dégingandé), chacune avec sa signature forte, retirée légèrement à chaque génération, dans les bornes de la série. Curseur *variation morpho* (0 = patron du panneau) |
 | Couture intégrale | orientation et inclinaison de l'anneau |
 | Visage | humeur (6), point de bouche (4), boutons (2/4 trous, 4 fils, dépareillés), détail (7) — **sans répétition sur une planche** |
 | Coiffure | 10 coupes, **toutes différentes sur une planche** ; taille, densité, grosseur de fil, ondulation, rubans ; physique pour mèches, frange, houppette, tire-bouchons, couettes, queue, nattes |
@@ -759,15 +763,12 @@ arrive ; sinon, reprendre depuis ces branches.
 - **Trois poils** gardée (Leo ne veut pas de poupée *sans rien*) : plus
   courts, trois formes distinctes tirées parmi six (ressort, crosse, pic,
   vague, zigzag, boucle), longueur, épaisseur, écart et inclinaison propres.
-- **Archétypes refaits (en cours)** : neuf silhouettes-types (bouboule,
-  têtard, échalas, gorille, poire, araignée, haricot, pavé, dégingandé), six
-  par planche ; nouvelle cote `limbGirth` (épaisseur des membres détachée du
-  tronc) ; sélecteur « archétype (seule) » au panneau. **Bug ouvert** : bras
-  très longs (dégingandé, échalas) → sur la planche, le haut du bras paraît à
-  l'horizontale et la main flotte sous lui. Mesuré : l'écart (0,73–1,02 rad)
-  et l'os à ressort (≤ 0,24 rad) sont normaux — chercher du côté du pli du
-  coude (`jointShader`, `makeJoint` : longueur du membre au montage) ou des
-  colliders des mains (`bodyColliders.hands`).
+- **Archétypes refaits** : neuf silhouettes-types, six par planche, bornes de
+  série (`SERIES`) pour l'air de famille, `limbGirth`. Bug des bras longs
+  (avant-bras détaché) corrigé : uniformes du pli gardés, longueur reportée
+  (`setJointLength`). Arène : 0 valeur invalide sur les extrêmes. **À voir à
+  part** : étirement des jambes jusqu'à ×3,2 au double saut et ×1,5 en course
+  et au 3e coup — **déjà présent sur le patron nu**, pas dû aux morphologies.
 - Non fait, volontairement : refonte « anglaises » des bouclettes (Leo les a
   validées, il a seulement demandé plus de densité).
 

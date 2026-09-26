@@ -30,7 +30,7 @@ import { headWidth, onHeadPolar, onTorso } from './surface'
 import type { DollParams } from './params'
 import { RigContext, rigMetrics, type RigBones } from './rig'
 import { Dyn, Fighter } from './fighter'
-import { JOINT, Stepper, jointShader, makeJoint, solveLeg, updateJoint, type Joint } from './limbs'
+import { JOINT, Stepper, jointShader, makeJoint, setJointLength, solveLeg, updateJoint, type Joint } from './limbs'
 
 const UP = new THREE.Vector3(0, 1, 0)
 const DOWN = new THREE.Vector3(0, -1, 0)
@@ -531,13 +531,22 @@ export function Doll({
   /** Pointe de l'arme en repère monde, avec son inertie : elle est lourde. */
   const weaponTip = useMemo(() => ({ dyn: new Dyn(3, 4.2, 0.55, 0.2), ready: false }), [])
   /** Pli de chaque membre (voir `limbs.ts`). */
+  // Créés une fois pour toute la vie de la poupée, longueurs reportées ensuite
+  // (voir `setJointLength`) : leurs uniformes sont liés aux shaders compilés.
   const joints = useMemo(
     () => ({
       arm: { [-1]: makeJoint(lb.armLength), 1: makeJoint(lb.armLength) } as Record<number, Joint>,
       leg: { [-1]: makeJoint(lb.legLength), 1: makeJoint(lb.legLength) } as Record<number, Joint>,
     }),
-    [lb.armLength, lb.legLength],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   )
+  useMemo(() => {
+    for (const side of [-1, 1]) {
+      setJointLength(joints.arm[side], lb.armLength)
+      setJointLength(joints.leg[side], lb.legLength)
+    }
+  }, [joints, lb.armLength, lb.legLength])
   const stepper = useMemo(() => new Stepper(), [])
   const hipW = useMemo(() => ({ [-1]: new THREE.Vector3(), 1: new THREE.Vector3() }) as Record<-1 | 1, THREE.Vector3>, [])
   /** Pied au repos, repère de la racine : hanche, puis l'axe écarté de la jambe. */
