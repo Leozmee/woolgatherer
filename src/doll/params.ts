@@ -36,6 +36,19 @@ export type DollParams = {
     torsoHeight: number
     torsoRadius: number
     torsoTaper: number
+    /** Profil du tronc : 0 ovale, 1 bloc aux épaules et aux hanches franches. */
+    torsoSquare: number
+    /**
+     * Sculpture du tronc (voir `torsoSculpt`) : écarts relatifs du rayon,
+     * localisés. 0 partout = le patron.
+     */
+    chest: number
+    waist: number
+    belly: number
+    hips: number
+    hunch: number
+    /** Épaisseur d'avant en arrière, relative à la largeur (0,86 : le patron). */
+    torsoDepth: number
     lumps: number
     lumpScale: number
   }
@@ -46,6 +59,22 @@ export type DollParams = {
     legLength: number
     legRadius: number
     legSpread: number
+    /** Taille des mains et des pieds, en multiples du patron. */
+    handScale: number
+    footScale: number
+    /** Galbe : > 0 le membre s'épaissit vers son bout (massue), < 0 il s'effile. */
+    armTaper: number
+    legTaper: number
+    /** Galbe musculaire : renflement du haut (biceps, cuisse) et du bas (avant-bras, mollet). */
+    armUpper: number
+    armLower: number
+    legUpper: number
+    legLower: number
+    /** Pli de repos des articulations, en radians (coude vers l'avant, genou fléchi). */
+    elbowRest: number
+    kneeRest: number
+    /** Genou vers l'avant (0) ou vers l'extérieur (1), en grenouille. */
+    kneeOut: number
   }
   face: {
     eyeSpacing: number
@@ -159,6 +188,13 @@ export function useDollParams(): { params: DollParams; regenerate: () => void } 
       torsoHeight: { value: 0.78, min: 0.25, max: 1.2, step: 0.01 },
       torsoRadius: { value: 0.26, min: 0.12, max: 0.6, step: 0.01 },
       torsoTaper: { value: 0.64, min: 0.4, max: 1.2, step: 0.01, label: 'épaules' },
+      torsoSquare: { value: 0, min: 0, max: 1, step: 0.01, label: 'tronc carré' },
+      chest: { value: 0, min: -0.3, max: 0.5, step: 0.01, label: 'poitrine' },
+      waist: { value: 0, min: -0.3, max: 0.5, step: 0.01, label: 'taille fine' },
+      belly: { value: 0, min: -0.3, max: 0.6, step: 0.01, label: 'ventre' },
+      hips: { value: 0, min: -0.3, max: 0.6, step: 0.01, label: 'hanches' },
+      hunch: { value: 0, min: 0, max: 0.6, step: 0.01, label: 'dos voûté' },
+      torsoDepth: { value: 0.86, min: 0.6, max: 1.15, step: 0.01, label: 'épaisseur' },
     }),
     Rembourrage: folder({
       lumps: { value: 0.03, min: 0, max: 0.25, step: 0.005, label: 'bosses' },
@@ -173,6 +209,17 @@ export function useDollParams(): { params: DollParams; regenerate: () => void } 
     legLength: { value: 0.38, min: 0.15, max: 1, step: 0.01 },
     legRadius: { value: 0.12, min: 0.03, max: 0.2, step: 0.002 },
     legSpread: { value: 0.14, min: 0, max: 0.8, step: 0.01 },
+    handScale: { value: 1, min: 0.5, max: 2, step: 0.01, label: 'mains' },
+    footScale: { value: 1, min: 0.5, max: 2, step: 0.01, label: 'pieds' },
+    armTaper: { value: 0, min: -0.6, max: 0.8, step: 0.01, label: 'galbe bras' },
+    legTaper: { value: 0, min: -0.6, max: 0.8, step: 0.01, label: 'galbe jambes' },
+    armUpper: { value: 0, min: -0.3, max: 0.6, step: 0.01, label: 'biceps' },
+    armLower: { value: 0, min: -0.3, max: 0.6, step: 0.01, label: 'avant-bras' },
+    legUpper: { value: 0, min: -0.3, max: 0.6, step: 0.01, label: 'cuisses' },
+    legLower: { value: 0, min: -0.3, max: 0.6, step: 0.01, label: 'mollets' },
+    elbowRest: { value: 0, min: 0, max: 1.2, step: 0.01, label: 'coudes pliés' },
+    kneeRest: { value: 0, min: 0, max: 1.3, step: 0.01, label: 'genoux fléchis' },
+    kneeOut: { value: 0, min: 0, max: 1, step: 0.01, label: 'genoux en dehors' },
   })
 
   const face = useControls('Visage', {
@@ -328,7 +375,7 @@ export function useDollParams(): { params: DollParams; regenerate: () => void } 
     // Archétype de la poupée seule (atelier) ; liste littérale, même raison.
     archetype: {
       value: 'auto',
-      options: ['auto', 'bouboule', 'tetard', 'echalas', 'gorille', 'poire', 'araignee', 'haricot', 'pave', 'degingande'],
+      options: ['auto', 'echalas', 'gorille', 'araignee', 'degingande', 'poupon', 'hercule', 'crapaud', 'kangourou', 'ballerine'],
       label: 'archétype (seule)',
     },
     // Liste littérale pour la même raison : `hairstyles` dépend de ce module.

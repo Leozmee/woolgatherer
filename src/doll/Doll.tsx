@@ -7,7 +7,7 @@ import { turntable } from '../core/turntable'
 import { mulberry32 } from '../core/rand'
 import { useDisposable } from '../core/useDisposable'
 import { Batched } from '../core/batch'
-import { headGeometry, torsoGeometry, limbGeometry, tipGeometry } from './geometry'
+import { footGeometry, headGeometry, limbGeometry, mittenGeometry, torsoGeometry } from './geometry'
 import { Pin, jitterColor, pinColor } from './parts'
 import { EYE_SCALE, Face, faceLook, type FaceLook } from './face'
 import { makeWoodTexture } from './wood'
@@ -23,10 +23,10 @@ import {
   shellInstances,
   shellShader,
 } from './fuzz'
-import { dollLayout } from './layout'
+import { dollLayout, legDrop, tipScale } from './layout'
 import { Zip, zipFuzzShader, zipHole } from './zip'
 import type { PatchHoles } from './patch'
-import { headWidth, onHeadPolar, onTorso } from './surface'
+import { headWidth, onHeadPolar, onTorso, torsoSculpt } from './surface'
 import type { DollParams } from './params'
 import { RigContext, rigMetrics, type RigBones } from './rig'
 import { Dyn, Fighter } from './fighter'
@@ -229,6 +229,8 @@ export function Doll({
   const lowerPose = useRef<Record<string, THREE.Group | null>>({})
   const lowerSpring = useRef<Record<string, THREE.Group | null>>({})
   const legFoot = useRef<Record<number, THREE.Group | null>>({})
+  /** Part « à plat » des pieds (1 au sol, moins en l'air), lissée. */
+  const footFlat = useRef(1)
   /** Arme, orientée chaque image depuis la main. */
   const weaponRef = useRef<THREE.Group>(null)
   const headBone = useRef<THREE.Group>(null!)
@@ -318,24 +320,28 @@ export function Doll({
     ],
   )
   const torsoGeo = useDisposable(
-    () => torsoGeometry(s.torsoRadius, s.torsoHeight, s.torsoTaper, s.lumps, s.lumpScale, p.seed),
-    [s.torsoRadius, s.torsoHeight, s.torsoTaper, s.lumps, s.lumpScale, p.seed],
+    () => torsoGeometry(s, p.seed),
+    // prettier-ignore
+    [s.torsoRadius, s.torsoHeight, s.torsoTaper, s.lumps, s.lumpScale, p.seed, s.torsoSquare,
+      s.chest, s.waist, s.belly, s.hips, s.hunch, s.torsoDepth],
   )
   const armGeo = useDisposable(
-    () => limbGeometry(lb.armRadius, lb.armLength, s.lumps, s.lumpScale, p.seed),
-    [lb.armRadius, lb.armLength, s.lumps, s.lumpScale, p.seed],
+    () => limbGeometry(lb.armRadius, lb.armLength, s.lumps, s.lumpScale, p.seed, lb.armTaper ?? 0, lb.armUpper ?? 0, lb.armLower ?? 0),
+    [lb.armRadius, lb.armLength, s.lumps, s.lumpScale, p.seed, lb.armTaper, lb.armUpper, lb.armLower],
   )
   const legGeo = useDisposable(
-    () => limbGeometry(lb.legRadius, lb.legLength, s.lumps, s.lumpScale, p.seed + 3),
-    [lb.legRadius, lb.legLength, s.lumps, s.lumpScale, p.seed],
+    () => limbGeometry(lb.legRadius, lb.legLength, s.lumps, s.lumpScale, p.seed + 3, lb.legTaper ?? 0, lb.legUpper ?? 0, lb.legLower ?? 0),
+    [lb.legRadius, lb.legLength, s.lumps, s.lumpScale, p.seed, lb.legTaper, lb.legUpper, lb.legLower],
   )
   const handGeo = useDisposable(
-    () => tipGeometry(lb.armRadius * 1.35, s.lumps, s.lumpScale, p.seed),
-    [lb.armRadius, s.lumps, s.lumpScale, p.seed],
+    // Main et pied suivent le galbe du membre (le bout d'une massue est plus
+    // gros) et leur propre échelle (`handScale`, `footScale`).
+    () => mittenGeometry(lb.armRadius * 1.35 * tipScale(lb.armTaper, lb.handScale), s.lumps, s.lumpScale, p.seed),
+    [lb.armRadius, lb.armTaper, lb.handScale, s.lumps, s.lumpScale, p.seed],
   )
   const footGeo = useDisposable(
-    () => tipGeometry(lb.legRadius * 1.3, s.lumps, s.lumpScale, p.seed + 5),
-    [lb.legRadius, s.lumps, s.lumpScale, p.seed],
+    () => footGeometry(lb.legRadius * 1.3 * tipScale(lb.legTaper, lb.footScale), s.lumps, s.lumpScale, p.seed + 5),
+    [lb.legRadius, lb.legTaper, lb.footScale, s.lumps, s.lumpScale, p.seed],
   )
 
   // --- locks en ficelle ---
@@ -551,7 +557,8 @@ export function Doll({
   const hipW = useMemo(() => ({ [-1]: new THREE.Vector3(), 1: new THREE.Vector3() }) as Record<-1 | 1, THREE.Vector3>, [])
   /** Pied au repos, repère de la racine : hanche, puis l'axe écarté de la jambe. */
   const footRest = useMemo(() => {
-    const reach = lb.legLength + lb.legRadius * 0.3
+    // Genou fléchi au repos (`kneeRest`) : la jambe est moins haute.
+    const reach = legDrop(lb) + lb.legRadius * 0.3
     const out = {} as Record<-1 | 1, THREE.Vector3>
     for (const side of [-1, 1] as const)
       out[side] = new THREE.Vector3(
@@ -560,7 +567,7 @@ export function Doll({
         0,
       )
     return out
-  }, [L, lb.legLength, lb.legRadius, lb.legSpread])
+  }, [L, lb.legLength, lb.legRadius, lb.legSpread, lb.kneeRest])
   const bones = useMemo<RigBones>(
     () => ({
       arm: { [-1]: null, 1: null },
@@ -607,10 +614,22 @@ export function Doll({
     poseArmR.current.rotation.fromArray(pose.arm1)
     poseLegL.current.rotation.fromArray(pose['leg-1'])
     poseLegR.current.rotation.fromArray(pose.leg1)
+    // Pli de repos de la morpho (`elbowRest`, `kneeRest`), ajouté à celui du
+    // geste : un gorille se bat bras arqués, un crapaud reste accroupi. Genou
+    // fléchi de θ : cuisse en avant de θ/2, pied sous la hanche (`legDrop`).
+    // Genou en dehors (`kneeOut`) : le pli passe dans le plan d'écartement,
+    // cuisse vers l'extérieur et tibia ramené dessous — la grenouille.
+    const elbowRest = lb.elbowRest ?? 0
+    const kneeFwd = (lb.kneeRest ?? 0) * (1 - (lb.kneeOut ?? 0))
+    const kneeSide = (lb.kneeRest ?? 0) * (lb.kneeOut ?? 0)
+    poseLegL.current.rotation.x -= kneeFwd * 0.5
+    poseLegR.current.rotation.x -= kneeFwd * 0.5
+    poseLegL.current.rotation.z -= kneeSide * 0.5
+    poseLegR.current.rotation.z += kneeSide * 0.5
     // Plis : coude et genou du geste. Au sol, l'IK reprend les genoux.
     for (const side of [-1, 1] as const) {
-      lowerPose.current[`arm${side}`]?.rotation.set(pose[side === -1 ? 'elbow-1' : 'elbow1'][0], 0, 0)
-      lowerPose.current[`leg${side}`]?.rotation.set(pose[side === -1 ? 'knee-1' : 'knee1'][0], 0, 0)
+      lowerPose.current[`arm${side}`]?.rotation.set(pose[side === -1 ? 'elbow-1' : 'elbow1'][0] - elbowRest, 0, 0)
+      lowerPose.current[`leg${side}`]?.rotation.set(pose[side === -1 ? 'knee-1' : 'knee1'][0] + kneeFwd, 0, -side * kneeSide)
       joints.leg[side].uStretch.value = 1
       bones.forearm[side] = lowerSpring.current[`arm${side}`]
       bones.shin[side] = lowerSpring.current[`leg${side}`]
@@ -702,6 +721,18 @@ export function Doll({
         updateJoint(j, lp, ls)
       }
     }
+    // Pieds à plat : la semelle suit la racine (le sol), pas le tibia —
+    // sinon l'écartement et le pli du genou les couchent sur la tranche. En
+    // l'air ils reprennent l'axe de la jambe (salto, K.O.).
+    footFlat.current += ((fighter.drive && !fighter.grounded ? 0.25 : 1) - footFlat.current) * Math.min(1, dt * 10)
+    root.current.getWorldQuaternion(_qc)
+    for (const side of [-1, 1] as const) {
+      const f = legFoot.current[side]
+      if (!f) continue
+      f.parent!.updateWorldMatrix(true, false)
+      f.parent!.getWorldQuaternion(_qd).invert().multiply(_qc)
+      f.quaternion.identity().slerp(_qd, footFlat.current)
+    }
 
     if (weaponRef.current) aimWeapon(weaponRef.current)
     if (fighter.ghostRequest) writeSilhouette()
@@ -753,13 +784,16 @@ export function Doll({
       const st = THREE.MathUtils.clamp((D - foot) / lb.legLength, 1, 1.15)
       const a = lb.legLength * JOINT * st
       const b = lb.legLength * (1 - JOINT) * st + foot
-      const bendK = solveLeg(_dir, a, b, FWD, _qb)
+      // Le genou part vers l'avant, ou en dehors chez la grenouille.
+      _kneeDir.set(side * (lb.kneeOut ?? 0), 0, 1 - (lb.kneeOut ?? 0)).normalize()
+      const bendK = solveLeg(_dir, a, b, _kneeDir, _qb)
       if (import.meta.env.DEV) _legK[side] = +(D / (lb.legLength + foot)).toFixed(2)
       // Fémur voulu, moins l'écartement porté par le groupe du dessous.
       _qa.setFromAxisAngle(FWD, side * lb.legSpread).invert()
       _qb.multiply(_qa)
       pose.quaternion.slerp(_qb, w)
       knee.rotation.x += (bendK - knee.rotation.x) * w
+      knee.rotation.z *= 1 - w
       joints.leg[side].uStretch.value = 1 + (st - 1) * w
     }
     return w
@@ -821,7 +855,10 @@ export function Doll({
     body.current.updateWorldMatrix(true, false)
     // Le torse est un ellipsoïde effilé vers le haut et aplati d'avant en
     // arrière (0,86) : rayon pris à la hauteur de chaque sphère, un peu rentré.
-    const at = (y: number) => s.torsoRadius * (1 + (s.torsoTaper - 1) * (y + 0.5)) * 0.88
+    // Sculpture comprise (moyenne face/flanc, comme `bodyRadius`).
+    const at = (y: number) =>
+      s.torsoRadius * (1 + (s.torsoTaper - 1) * (y + 0.5)) * 0.88 *
+      0.5 * (torsoSculpt(s, 2 * y, Math.PI / 2) + torsoSculpt(s, 2 * y, 0))
     chest.center.set(0, s.torsoHeight * 0.12, 0).applyMatrix4(body.current.matrixWorld)
     chest.radius = at(0.12)
     belly.center.set(0, -s.torsoHeight * 0.18, 0).applyMatrix4(body.current.matrixWorld)
@@ -1119,6 +1156,9 @@ const _tip = new THREE.Vector3()
 const _rootW = new THREE.Vector3()
 const _qId = new THREE.Quaternion()
 const _legK: Record<number, number> = {}
+const _kneeDir = new THREE.Vector3()
+const _qc = new THREE.Quaternion()
+const _qd = new THREE.Quaternion()
 const _qa = new THREE.Quaternion()
 const _qb = new THREE.Quaternion()
 const _arr3: number[] = [0, 0, 0]

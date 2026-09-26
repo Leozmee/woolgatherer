@@ -65,21 +65,94 @@ export function onHeadPolar(p: DollParams, azimuth: number, sy: number, lift: nu
   return place(new THREE.Vector3(dx * rx, sy * ry, dz * rz), rx, ry, rz, lift)
 }
 
-export function onTorso(p: DollParams, azimuth: number, y: number, lift: number): SurfacePoint {
-  const ry = p.shape.torsoHeight * 0.5
-  const sy = clamp(y / ry, -0.92, 0.92)
-  const t = (sy + 1) * 0.5
-  const w = 1 + (p.shape.torsoTaper - 1) * t
-  const rx = w * p.shape.torsoRadius
-  const rz = w * p.shape.torsoRadius * 0.86
-  const ring = Math.sqrt(Math.max(0, 1 - sy * sy))
-  return place(
-    new THREE.Vector3(Math.sin(azimuth) * ring * rx, sy * ry, Math.cos(azimuth) * ring * rz),
-    rx,
-    ry,
-    rz,
-    lift,
+/**
+ * Profil du tronc : rayon de l'anneau à la hauteur normalisée `sy`.
+ *
+ * Source unique pour la géométrie (`torsoGeometry`), la surface (`onTorso`)
+ * et le corps de révolution (`bodyRadius`). À `torsoSquare` 0, un ellipsoïde ;
+ * vers 1, une superellipse : épaules et hanches franches, flancs droits — le
+ * bloc du pavé, sans arêtes (exposant plafonné à 3,6, un coussin et non une
+ * boîte). Une copie de cette formule dériverait, et tout ce qui est posé sur
+ * le tronc flotterait ou s'enfoncerait.
+ */
+export function torsoRing(square: number | undefined, sy: number) {
+  const n = 2 + 1.6 * clamp(square ?? 0, 0, 1)
+  return Math.pow(Math.max(0, 1 - Math.pow(Math.min(1, Math.abs(sy)), n)), 1 / n)
+}
+
+type Shape = DollParams['shape']
+
+/**
+ * Sculpture du tronc : facteur du rayon à la hauteur `sy` et à l'azimut `az`
+ * (0 devant, π/2 sur le flanc).
+ *
+ * Un tronc qui ne varie qu'en largeur et en hauteur reste un œuf plus ou moins
+ * gros : l'hercule, la ballerine et le crapaud avaient le même buste à
+ * l'échelle près, et c'étaient les membres seuls qui faisaient la morpho. Une
+ * silhouette se lit d'abord au **profil du tronc** — le V d'un buste de
+ * lutteur, la taille marquée d'une danseuse, le ventre qui tombe d'un crapaud,
+ * le dos rond d'un gorille. Chaque terme est une bosse localisée (gaussienne
+ * en hauteur, pondérée en azimut) : la poitrine gonfle surtout devant, le
+ * ventre seulement devant, le dos voûté seulement derrière, les hanches
+ * surtout sur les flancs. Symétrique gauche-droite par construction (cos az).
+ */
+export function torsoSculpt(s: Shape, sy: number, az: number) {
+  const f = Math.cos(az)
+  const front = Math.max(0, f)
+  const back = Math.max(0, -f)
+  const lat = 1 - f * f
+  const g = (c: number, w: number) => Math.exp(-(((sy - c) / w) ** 2))
+  return Math.max(
+    0.4,
+    1 +
+      (s.chest ?? 0) * g(0.38, 0.36) * (0.5 + 0.5 * front) -
+      (s.waist ?? 0) * g(-0.22, 0.26) +
+      (s.belly ?? 0) * g(-0.3, 0.38) * front * front +
+      (s.hips ?? 0) * g(-0.62, 0.3) * (0.3 + 0.7 * lat) +
+      (s.hunch ?? 0) * g(0.48, 0.38) * back * back,
   )
+}
+
+/**
+ * Point du tronc **idéal** (avant bosselage), repère du torse. Source unique
+ * de la géométrie (`torsoGeometry`) et de la surface (`onTorso`) : toute copie
+ * dériverait, et les pièces cousues flotteraient ou s'enfonceraient.
+ */
+export function torsoPoint(s: Shape, sy: number, az: number, out = new THREE.Vector3()) {
+  const t = (sy + 1) * 0.5
+  const w = (1 + (s.torsoTaper - 1) * t) * s.torsoRadius * torsoRing(s.torsoSquare, sy) * torsoSculpt(s, sy, az)
+  return out.set(Math.sin(az) * w, sy * s.torsoHeight * 0.5, Math.cos(az) * w * (s.torsoDepth ?? 0.86))
+}
+
+const _ta = new THREE.Vector3()
+const _tb = new THREE.Vector3()
+const _tc = new THREE.Vector3()
+
+export function onTorso(p: DollParams, azimuth: number, y: number, lift: number): SurfacePoint {
+  const s = p.shape
+  const sy = clamp(y / (s.torsoHeight * 0.5), -0.92, 0.92)
+  const pos = torsoPoint(s, sy, azimuth)
+  // Normale par différences finies : la sculpture n'a pas de gradient simple,
+  // et celle de l'ellipsoïde ferait pencher ce qu'on coud sur un ventre ou un
+  // pectoral.
+  const e = 1e-3
+  torsoPoint(s, sy, azimuth + e, _ta).sub(torsoPoint(s, sy, azimuth - e, _tc))
+  torsoPoint(s, sy + e, azimuth, _tb).sub(torsoPoint(s, sy - e, azimuth, _tc))
+  const normal = new THREE.Vector3().crossVectors(_ta, _tb).normalize()
+  pos.addScaledVector(normal, lift)
+  return { pos, normal, quat: new THREE.Quaternion().setFromUnitVectors(FORWARD, normal) }
+}
+
+/**
+ * Attaches des membres, sculpture comprise : un buste en V porte ses bras plus
+ * loin, des hanches larges écartent les jambes. Partagé par le rendu
+ * (`dollLayout`) et les colliders — sinon les sphères ratent les membres.
+ */
+export function shoulderX(s: Shape) {
+  return s.torsoRadius * s.torsoTaper * 0.88 * torsoSculpt(s, 0.56, Math.PI / 2)
+}
+export function hipX(s: Shape) {
+  return s.torsoRadius * 0.44 * Math.sqrt(torsoSculpt(s, -0.72, Math.PI / 2))
 }
 
 /**
@@ -105,7 +178,9 @@ export function bodyRadius(p: DollParams, y: number) {
   const ts = (y + s.torsoHeight * 0.44) / (s.torsoHeight * 0.5)
   const torso =
     Math.abs(ts) < 1
-      ? (1 + (s.torsoTaper - 1) * (ts + 1) * 0.5) * s.torsoRadius * Math.sqrt(1 - ts * ts) * 0.9
+      ? (1 + (s.torsoTaper - 1) * (ts + 1) * 0.5) * s.torsoRadius * torsoRing(s.torsoSquare, ts) *
+        // Moyenne du flanc et de la face (celle-ci aplatie par l'épaisseur).
+        0.5 * (torsoSculpt(s, ts, Math.PI / 2) + (s.torsoDepth ?? 0.86) * torsoSculpt(s, ts, 0)) * 0.97
       : 0
 
   return Math.max(head, torso)
@@ -131,7 +206,7 @@ export function armSpheres(p: DollParams, skin: number, shift = 0): Collider[] {
   const s = p.shape
   const lb = p.limbs
   const shoulderY = -s.torsoHeight * 0.16 + shift
-  const shoulderX = s.torsoRadius * s.torsoTaper * 0.88
+  const sx = shoulderX(s)
   const ax = Math.sin(lb.armSpread)
   const ay = Math.cos(lb.armSpread)
 
@@ -140,7 +215,7 @@ export function armSpheres(p: DollParams, skin: number, shift = 0): Collider[] {
     for (const [t, k] of ARM_T) {
       out.push({
         center: new THREE.Vector3(
-          side * (shoulderX + t * lb.armLength * ax),
+          side * (sx + t * lb.armLength * ax),
           shoulderY - t * lb.armLength * ay,
           0,
         ),
@@ -165,7 +240,7 @@ export function legSpheres(p: DollParams, skin: number, shift = 0): Collider[] {
   const s = p.shape
   const lb = p.limbs
   const hipY = -s.torsoHeight * 0.8 + shift
-  const hipX = s.torsoRadius * 0.44
+  const hx = hipX(s)
   const ax = Math.sin(lb.legSpread)
   const ay = Math.cos(lb.legSpread)
 
@@ -174,7 +249,7 @@ export function legSpheres(p: DollParams, skin: number, shift = 0): Collider[] {
     for (const [t, k] of LEG_T) {
       out.push({
         center: new THREE.Vector3(
-          side * (hipX + t * lb.legLength * ax),
+          side * (hx + t * lb.legLength * ax),
           hipY - t * lb.legLength * ay,
           0,
         ),

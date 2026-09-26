@@ -1,5 +1,8 @@
 import * as THREE from 'three'
-import { fbm3 } from '../core/rand'
+import { torsoPoint } from './surface'
+import type { DollParams } from './params'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { clamp, fbm3 } from '../core/rand'
 
 /**
  * Bosselle une géométrie le long de ses normales.
@@ -68,17 +71,20 @@ export function headGeometry(
   return stuff(geo, lumps * radius, lumpScale / radius, seed)
 }
 
-/** Torse en poire : épaules resserrées, base élargie. */
-export function torsoGeometry(radius: number, height: number, taper: number, lumps: number, lumpScale: number, seed: number) {
+/**
+ * Torse : profil partagé avec `onTorso` (voir `torsoPoint`) — effilement,
+ * superellipse et sculpture (poitrine, taille, ventre, hanches, dos).
+ */
+export function torsoGeometry(s: DollParams['shape'], seed: number) {
   const geo = new THREE.SphereGeometry(1, 48, 36)
   const pos = geo.attributes.position as THREE.BufferAttribute
   const v = new THREE.Vector3()
 
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i)
-    const t = (v.y + 1) * 0.5
-    const w = 1 + (taper - 1) * t
-    pos.setXYZ(i, v.x * w * radius, v.y * height * 0.5, v.z * w * radius * 0.86)
+    // Azimut de la sphère : 0 devant (+z), comme `onTorso`.
+    torsoPoint(s, v.y, Math.atan2(v.x, v.z), v)
+    pos.setXYZ(i, v.x, v.y, v.z)
   }
   pos.needsUpdate = true
 
@@ -89,7 +95,7 @@ export function torsoGeometry(radius: number, height: number, taper: number, lum
   geo.setAttribute('aSmooth', new THREE.Float32BufferAttribute(Float32Array.from(pos.array), 3))
 
   geo.computeVertexNormals()
-  return stuff(geo, lumps * radius, lumpScale / radius, seed + 7)
+  return stuff(geo, s.lumps * s.torsoRadius, s.lumpScale / s.torsoRadius, seed + 7)
 }
 
 /**
@@ -103,9 +109,38 @@ export function torsoGeometry(radius: number, height: number, taper: number, lum
  * partir de la hauteur réelle du sommet — l'interpolation redevient linéaire et
  * la maille garde sa taille sur toute la longueur.
  */
-export function limbGeometry(radius: number, length: number, lumps: number, lumpScale: number, seed: number) {
+export function limbGeometry(
+  radius: number,
+  length: number,
+  lumps: number,
+  lumpScale: number,
+  seed: number,
+  taper = 0,
+  upper = 0,
+  lower = 0,
+) {
   const geo = new THREE.CapsuleGeometry(radius, length, 10, 24)
   geo.translate(0, -length * 0.5, 0)
+  // Galbe : l'épaisseur varie le long du membre, de l'attache (y = 0) au bout
+  // (y = −length). > 0 une massue — le bras d'un gorille —, < 0 un fuseau.
+  // Moyenne conservée : le membre ne grossit ni ne maigrit, il change de forme.
+  //
+  // Galbe musculaire : un renflement sur chaque segment — biceps et avant-bras,
+  // cuisse et mollet —, centré de part et d'autre du pli (`JOINT`, 0,5). Il
+  // laisse l'articulation plus mince que ses voisins : c'est ce creux qui dit
+  // « coude » ou « genou » sur un boudin de laine, bien plus que le pli seul.
+  if (taper !== 0 || upper !== 0 || lower !== 0) {
+    const p = geo.attributes.position as THREE.BufferAttribute
+    const g = (u: number, c: number) => Math.exp(-(((u - c) / 0.16) ** 2))
+    for (let i = 0; i < p.count; i++) {
+      const u = clamp(-p.getY(i) / length, 0, 1)
+      const k = Math.max(0.4, (1 + taper * (u - 0.5)) * (1 + upper * g(u, 0.25) + lower * g(u, 0.74)))
+      p.setX(i, p.getX(i) * k)
+      p.setZ(i, p.getZ(i) * k)
+    }
+    p.needsUpdate = true
+    geo.computeVertexNormals()
+  }
   remapVerticalUV(geo)
   return stuff(geo, lumps * radius * 0.8, lumpScale / Math.max(radius, 0.05), seed + 19)
 }
@@ -130,6 +165,76 @@ function remapVerticalUV(geo: THREE.BufferGeometry) {
 export function tipGeometry(radius: number, lumps: number, lumpScale: number, seed: number) {
   const geo = new THREE.SphereGeometry(radius, 24, 18)
   return stuff(geo, lumps * radius, lumpScale / Math.max(radius, 0.05), seed + 31)
+}
+
+/**
+ * Coussin déformable : superellipsoïde d'exposant `n` (2 = ellipsoïde, 3 =
+ * boîte aux arêtes rondes) mise aux rayons, puis `warp` sur chaque sommet.
+ */
+function blob(
+  rx: number, ry: number, rz: number,
+  at: [number, number, number],
+  warp?: (v: THREE.Vector3) => void,
+  tilt = 0,
+  n = 2,
+) {
+  const geo = new THREE.SphereGeometry(1, 28, 20)
+  const pos = geo.attributes.position as THREE.BufferAttribute
+  const v = new THREE.Vector3()
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i)
+    const k = Math.pow(Math.abs(v.x) ** n + Math.abs(v.y) ** n + Math.abs(v.z) ** n, -1 / n)
+    v.set(v.x * k * rx, v.y * k * ry, v.z * k * rz)
+    warp?.(v)
+    pos.setXYZ(i, v.x, v.y, v.z)
+  }
+  if (tilt) geo.rotateX(tilt)
+  geo.translate(...at)
+  return geo
+}
+
+/**
+ * Main en **moufle** : une paume aplatie qui pend dans l'axe de l'avant-bras,
+ * plus un pouce devant, écarté vers le bas. Une boule ne disait ni « main » ni
+ * « tient quelque chose » ; la moufle a un sens (paume côté corps, pouce
+ * devant) et le creux entre pouce et paume est l'endroit où se referme une
+ * arme. Le pouce est dans le plan médian : la même moufle sert aux deux mains.
+ * `r` : rayon de l'ancienne boule, pour garder l'échelle et la mise en page.
+ */
+export function mittenGeometry(r: number, lumps: number, lumpScale: number, seed: number) {
+  // Paume : un coussin plat (aux arêtes rondes, pas un œuf), plus large au
+  // bout des doigts qu'au poignet.
+  const palm = blob(r * 0.5, r * 1.1, r * 0.8, [0, -r * 0.4, 0], (v) => {
+    const t = clamp(-v.y / (r * 1.1), -1, 1)
+    v.z *= 1 + 0.1 * t
+  }, 0, 3)
+  // Pouce attaché haut sur la paume, bien détaché, pointe en bas et vers
+  // l'avant : la main pend dans l'axe du bras.
+  const thumb = blob(r * 0.3, r * 0.55, r * 0.3, [0, -r * 0.2, r * 0.86], undefined, -0.8)
+  const geo = mergeGeometries([palm, thumb])!
+  palm.dispose()
+  thumb.dispose()
+  geo.computeVertexNormals()
+  return stuff(geo, lumps * r, lumpScale / Math.max(r, 0.05), seed + 31)
+}
+
+/**
+ * Pied de peluche : semelle plate, talon sous la cheville, pointe arrondie et
+ * un peu plus large devant. Même bas que l'ancienne boule (`−r`) : la mise en
+ * page du sol ne change pas.
+ */
+export function footGeometry(r: number, lumps: number, lumpScale: number, seed: number) {
+  const h = r * 0.62
+  const geo = blob(r * 0.8, h, r * 1.4, [0, -r + h * 0.5, r * 0.45], (v) => {
+    // Semelle : la moitié basse écrasée, presque à plat.
+    if (v.y < 0) v.y *= 0.5
+    // Avant-pied plus large que le talon, cou-de-pied qui descend vers la pointe.
+    const f = v.z / (r * 1.4)
+    v.x *= 1 + 0.16 * f
+    if (v.y > 0) v.y *= 1 - 0.3 * Math.max(0, f)
+  }, 0, 2.6)
+  geo.computeVertexNormals()
+  return stuff(geo, lumps * r * 0.7, lumpScale / Math.max(r, 0.05), seed + 37)
 }
 
 /** Une mèche de laine : tube le long d'une courbe qui part du crâne et retombe. */

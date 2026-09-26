@@ -37,7 +37,8 @@ import type { DollParams } from './params'
  *   barre ou par l'arrière — parfois dépareillés ;
  * - un **détail**, le seul élément qui ne soit pas sur toutes les poupées :
  *   bouton arraché, œil cousu en croix, cicatrice, joues brodées, taches de
- *   rousseur, bouton-nez, larme.
+ *   rousseur, larme. (Pas de bouton-nez : les poupées n'ont pas de nez —
+ *   choix de Leo, 26 sept.)
  *
  * Ce qui exprime — bouche, sourcils, paupières — est animé (`expression.tsx`)
  * : dans l'arène le visage répond au combattant. Le reste est fixe et fusionné.
@@ -54,7 +55,7 @@ export const EYE_SCALE = 1.2
 
 export type Mood = 'joyeux' | 'triste' | 'fache' | 'surpris' | 'espiegle' | 'placide' | 'endormi' | 'inquiet'
 export type MouthStitch = 'croix' | 'avant' | 'suture' | 'zigzag'
-export type Accent = 'arrache' | 'croix' | 'cicatrice' | 'joues' | 'rousseur' | 'nez' | 'larme'
+export type Accent = 'arrache' | 'croix' | 'cicatrice' | 'joues' | 'rousseur' | 'larme'
 
 /**
  * Huit humeurs pour six poupées : la planche en tire six différentes, et
@@ -64,7 +65,7 @@ export type Accent = 'arrache' | 'croix' | 'cicatrice' | 'joues' | 'rousseur' | 
  */
 export const MOODS: readonly Mood[] = ['joyeux', 'triste', 'fache', 'surpris', 'espiegle', 'placide', 'endormi', 'inquiet']
 const STITCHES: readonly MouthStitch[] = ['croix', 'avant', 'suture', 'zigzag']
-const ACCENTS: readonly Accent[] = ['arrache', 'croix', 'cicatrice', 'joues', 'rousseur', 'nez', 'larme']
+const ACCENTS: readonly Accent[] = ['arrache', 'croix', 'cicatrice', 'joues', 'rousseur', 'larme']
 
 type EyeLook = { holes: ButtonHoles; pattern: ButtonThread }
 
@@ -669,11 +670,7 @@ function poseSlots(ctx: FaceCtx, pose: FacePose): { slots: LiveSlot[]; colors: s
   // Fil de bouche un peu plus gros que celui des boutons : à 1 px sur une
   // planche, la bouche disparaissait.
   const mouthBase = { dip: stitchDip, radius: tr * 1.2, color: p.thread.mouthColor }
-  // Sous un bouton-nez, la bouche s'ouvre vers le bas : un « o » centré sur
-  // la ligne montait jusqu'à chevaucher le bouton (mesuré : 0,14 bouton de
-  // recouvrement sur la surprise).
-  const mouth = look.accent === 'nez' ? { ...pose.mouth, round: 0 } : pose.mouth
-  const { upper, lower } = lips(mouth, look.side, f.mouthWidth, f.mouthHeight)
+  const { upper, lower } = lips(pose.mouth, look.side, f.mouthWidth, f.mouthHeight)
   const open = pose.mouth.open > 0.02
   // La taille d'un point suit la longueur à coudre : les croix d'un petit « o »
   // se chevauchaient à la taille prévue pour une bouche entière.
@@ -1078,13 +1075,6 @@ export function Face({
     })
   }, [p, accent, look.seed, side, eyeX, f.eyeHeight, size, tr, stitchDip, mouthLift])
 
-  const nose = useMemo(() => {
-    if (accent !== 'nez') return null
-    const gap = f.eyeHeight - f.mouthHeight
-    const r = Math.min(size * 0.42, gap * 0.2)
-    return { at: onHead(p, 0, f.mouthHeight + gap * 0.55, lift - (r * r) / (4 * p.shape.headRadius)), r }
-  }, [p, accent, f.eyeHeight, f.mouthHeight, size, lift])
-
   const eye = (s: -1 | 1, at: ReturnType<typeof onHead>) =>
     missing === s ? null : (
       <group position={at.pos} quaternion={at.quat}>
@@ -1141,19 +1131,6 @@ export function Face({
         </mesh>
       ))}
 
-      {nose && (
-        <group position={nose.at.pos} quaternion={nose.at.quat}>
-          <ButtonEye
-            radius={nose.r}
-            color={jitterColor(eyes.leftColor, mulberry32(look.seed + 3), 0.5)}
-            threadColor={p.thread.color}
-            threadRadius={tr * 0.5}
-            wood={wood}
-            holes={2}
-            pattern="bar"
-          />
-        </group>
-      )}
     </group>
   )
 }

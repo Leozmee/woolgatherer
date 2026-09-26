@@ -40,6 +40,27 @@ const KEYS = [
   'limbBias', // bras plus longs que les jambes, ou l'inverse
   'limbThick', // bras plus épais que les jambes, ou l'inverse
   'limbGirth', // membres épais ou fins, indépendamment du tronc
+  'legSplay', //  jambes écartées, sans toucher aux bras
+  'handScale', // mains plus grosses ou plus petites
+  'footScale', // pieds plus grands ou plus petits
+  'armTaper', //  galbe des bras : > 0 massue, < 0 fuseau
+  'legTaper', //  galbe des jambes
+  'torsoSquare', // tronc en bloc
+  // sculpture du tronc (voir `torsoSculpt`) : ce qui fait la silhouette
+  'chest', //    poitrine, pectoraux
+  'waist', //    taille marquée
+  'belly', //    ventre
+  'hips', //     hanches
+  'hunch', //    dos voûté
+  'depth', //    tronc épais ou plat d'avant en arrière
+  // galbe musculaire et articulations
+  'armUpper', // biceps
+  'armLower', // avant-bras
+  'legUpper', // cuisses
+  'legLower', // mollets
+  'elbow', //    coudes pliés au repos
+  'knee', //     genoux fléchis au repos
+  'kneeOut', //  genoux en dehors (grenouille)
   'stance', //   bras et jambes écartés ou serrés
   'lumps',
   'eyeY',
@@ -75,8 +96,8 @@ function sample(rnd: () => number, type: Archetype): Morph {
   const youth = type.youth + (rnd() * 2 - 1) * 0.2
   // Résidu en cloche : il décore le type, il ne doit pas le brouiller.
   const r = (span: number) => (rnd() + rnd() - 1) * span
-  const b = (key: keyof Morph) => type.bias?.[key] ?? 0
-  const c = (key: keyof Morph, v: number) => clamp(v + b(key), -2.4, 2.4)
+  const b = (key: keyof Morph) => (type.bias?.[key] ?? 0) * CHARGE
+  const c = (key: keyof Morph, v: number) => clamp(v + b(key), -3, 3)
 
   return {
     build,
@@ -93,6 +114,25 @@ function sample(rnd: () => number, type: Archetype): Morph {
     limbBias: c('limbBias', r(0.3)),
     limbThick: c('limbThick', r(0.3)),
     limbGirth: c('limbGirth', r(0.15)),
+    legSplay: c('legSplay', r(0.1)),
+    handScale: c('handScale', r(0.05)),
+    footScale: c('footScale', r(0.05)),
+    armTaper: c('armTaper', r(0.05)),
+    legTaper: c('legTaper', r(0.05)),
+    torsoSquare: c('torsoSquare', 0),
+    chest: c('chest', r(0.15)),
+    waist: c('waist', r(0.15)),
+    belly: c('belly', 0.4 * build + r(0.15)),
+    hips: c('hips', r(0.15)),
+    hunch: c('hunch', r(0.1)),
+    depth: c('depth', 0.3 * build + r(0.15)),
+    armUpper: c('armUpper', r(0.1)),
+    armLower: c('armLower', r(0.1)),
+    legUpper: c('legUpper', 0.2 * build + r(0.1)),
+    legLower: c('legLower', r(0.1)),
+    elbow: c('elbow', r(0.1)),
+    knee: c('knee', 0),
+    kneeOut: c('kneeOut', 0),
     stance: c('stance', 0.4 * build + r(0.3)),
     lumps: c('lumps', r(0.5)),
     eyeY: c('eyeY', r(0.4)),
@@ -115,8 +155,9 @@ function sample(rnd: () => number, type: Archetype): Morph {
  * archétype garde un point du plan (pour que toutes ses cotes restent liées)
  * mais porte surtout une **signature forte** sur les cotes qui le définissent.
  *
- * Neuf archétypes ; une planche en tire six, tous différents, dans un ordre
- * mélangé : deux générations ne ramènent pas la même distribution.
+ * Neuf archétypes, validés avec Leo sur croquis (26 sept.) ; une planche en
+ * tire six, tous différents, dans un ordre mélangé : deux générations ne
+ * ramènent pas la même distribution.
  */
 export type Archetype = {
   id: string
@@ -128,58 +169,104 @@ export type Archetype = {
 
 export const ARCHETYPES: readonly Archetype[] = [
   {
-    // Une boule : tronc énorme et court, membres réduits à des moignons.
-    id: 'bouboule', name: 'bouboule',
-    build: 1, youth: 0.3,
-    bias: { girth: 1.6, stature: -0.8, reach: -1.4, limbGirth: -1.6, cheeks: 0.6, stance: 0.9, head: -1.3 },
-  },
-  {
-    // Rien qu'une tête : crâne immense sur un petit corps, membres de poupon.
-    id: 'tetard', name: 'têtard',
-    build: -0.3, youth: 1,
-    bias: { head: 1.1, stature: -1, girth: -0.5, reach: -0.9, eyeGap: 0.6 },
-  },
-  {
-    // Un bâton : petite tête, tronc et membres longs et minces.
+    // Un bâton : petite tête, tronc long, plat et droit, membres longs et
+    // minces aux articulations saillantes.
     id: 'echalas', name: 'échalas',
     build: -1, youth: -1,
-    bias: { head: -0.6, stature: 1.3, reach: 0.9, girth: -0.3, limbGirth: 0.5, stance: -0.4 },
+    bias: {
+      head: -0.6, stature: 1.3, reach: 0.9, girth: -0.3, limbGirth: 0.5, stance: -0.4,
+      depth: -1, chest: -0.4, waist: 0.3, hips: -0.3, armUpper: -0.4, legUpper: -0.4,
+    },
   },
   {
-    // Épaules massives, bras longs et épais qui traînent, jambes courtes.
+    // Thorax en tonneau et dos voûté, bassin étroit ; avant-bras énormes,
+    // bras arqués qui pendent, jambes courtes fléchies.
     id: 'gorille', name: 'gorille',
     build: 0.7, youth: -0.8,
-    bias: { shoulders: 1.9, limbBias: 1.8, limbThick: 1.4, head: -0.6, stance: -0.9, reach: 0.2 },
+    bias: {
+      shoulders: 1.6, limbBias: 1.8, limbThick: 1.1, head: -0.6, stance: -0.9, reach: 0.2,
+      armTaper: 0.1, handScale: 0,
+      chest: 1.3, hunch: 1.6, belly: 0.4, hips: -0.8, depth: 0.8,
+      armUpper: 0.3, armLower: 1, legUpper: 0.3, elbow: 0.8, knee: 1, kneeOut: 0.5,
+    },
   },
   {
-    // Tout dans le bas : épaules étroites, hanches larges, crâne en poire.
-    id: 'poire', name: 'poire',
-    build: 0.6, youth: 0,
-    bias: { shoulders: -1.9, egg: 1.2, girth: 0.8, limbBias: -1, limbThick: -0.8, limbGirth: -0.7, reach: -0.3 },
-  },
-  {
-    // Petit corps, membres interminables et très écartés.
+    // Petit corps, membres interminables, effilés et très écartés.
     id: 'araignee', name: 'araignée',
     build: -0.8, youth: -0.2,
-    bias: { reach: 1.9, girth: 0, stature: -1.1, stance: 2.2, limbGirth: -0.4, head: 0.2 },
+    bias: {
+      reach: 1.9, girth: 0, stature: -1.1, stance: 2.2, limbGirth: -0.4, head: 0.2,
+      armTaper: -0.35, legTaper: -0.35, handScale: -0.2, footScale: -0.2,
+      // Taille de guêpe et abdomen rond, genoux et coudes cassés haut.
+      waist: 1.3, belly: 0.9, chest: 0.4, elbow: 0.9, knee: 3, kneeOut: 1,
+    },
   },
   {
-    // Un haricot : tronc long et rond sans épaules, membres courts.
-    id: 'haricot', name: 'haricot',
-    build: 0, youth: 0.2,
-    bias: { stature: 1.9, shoulders: -0.9, reach: -1.8, limbGirth: -0.3, head: -0.3, stance: -0.3 },
-  },
-  {
-    // Un pavé : large, carré, tassé, tout en épaules et en cou de taureau.
-    id: 'pave', name: 'pavé',
-    build: 1, youth: -0.6,
-    bias: { stature: -1.1, girth: 1.1, shoulders: 1.4, reach: -0.4, limbThick: 0.6, limbGirth: 0.8, head: -0.2 },
-  },
-  {
-    // Bras qui pendent jusqu'aux genoux, épaules tombantes, corps maigre.
+    // Bras qui pendent jusqu'aux genoux, épaules tombantes, poitrine creuse
+    // et dos rond, petite bedaine, genoux mous.
     id: 'degingande', name: 'dégingandé',
     build: -0.3, youth: 0,
-    bias: { limbBias: 2.4, shoulders: -1.2, stance: -1, reach: 0.8, head: 0.1 },
+    bias: {
+      limbBias: 2.4, shoulders: -1.2, stance: -1, reach: 0.8, head: 0.1, handScale: 0.2,
+      chest: -0.9, hunch: 1.1, belly: 0.7, depth: -0.3, knee: 0.6, elbow: 0.2,
+    },
+  },
+  {
+    // Grosse tête de bébé, petit corps, bras et jambes courts mais bien là.
+    id: 'poupon', name: 'poupon',
+    build: -0.1, youth: 1,
+    bias: {
+      head: 1.1, stature: -0.9, girth: -0.2, reach: -0.6, eyeGap: 0.6,
+      // Ventre rond de bébé, tronc épais, cuisses et bras potelés.
+      belly: 1.2, hips: 0.4, depth: 1, chest: -0.3, armUpper: 0.6, legUpper: 0.8, legLower: 0.3,
+    },
+  },
+  {
+    // Torse en V : épaules très larges, taille fine, gros bras, petite tête.
+    id: 'hercule', name: 'hercule',
+    build: 0.5, youth: -0.8,
+    bias: {
+      shoulders: 2.6, girth: 0.3, stature: 0.3, limbThick: 0.7, head: -0.7, handScale: -0.1,
+      torsoSquare: 0.2, legSplay: 0.3,
+      // Le V : pectoraux, taille et bassin serrés ; biceps, mollets.
+      chest: 1.4, waist: 1.3, hips: -1, belly: -0.6, depth: 0.3,
+      armUpper: 1.2, armLower: 0.5, legUpper: 0.9, legLower: 0.9, elbow: 0.5, knee: 0.2,
+    },
+  },
+  {
+    // Accroupi : tronc large et bas, jambes courtes très écartées, grands pieds.
+    id: 'crapaud', name: 'crapaud',
+    build: 0.9, youth: 0.3,
+    bias: {
+      stature: -1.2, girth: 0.9, legSplay: 1.2, stance: -0.6, reach: 0.5, limbThick: 0.3, limbGirth: -0.9,
+      footScale: 0.9, head: 0.3, cheeks: 0.5,
+      // Ventre qui tombe entre les cuisses, hanches larges, accroupi.
+      belly: 1.5, hips: 1.1, chest: -0.5, depth: 0.7, legUpper: 0.5, elbow: 0.8, knee: 3.2, kneeOut: 1.2,
+    },
+  },
+  {
+    // Fine et élancée : longues jambes serrées, petits pieds, bras fins,
+    // épaules étroites.
+    id: 'ballerine', name: 'ballerine',
+    build: -0.8, youth: -0.4,
+    bias: {
+      stature: 0.3, reach: 1, limbBias: -0.7, girth: -0.7, limbGirth: -0.5, shoulders: -0.6,
+      footScale: -0.4, handScale: -0.3, legTaper: -0.35, stance: -0.8, head: -0.1,
+      // Taille marquée, hanches rondes, mollets de danseuse, bras arrondis.
+      waist: 1.5, hips: 1.1, chest: 0.3, depth: -0.5, legLower: 0.9, legUpper: 0.2, elbow: 0.7,
+    },
+  },
+  {
+    // Cuisses énormes qui s'effilent, grands pieds, petits bras, buste droit.
+    id: 'kangourou', name: 'kangourou',
+    build: 0.2, youth: -0.2,
+    bias: {
+      limbThick: -1.2, legTaper: -0.3, footScale: 1, limbBias: -1.2, handScale: -0.3, stature: 0.3,
+      // Bassin lourd, poitrine menue ; cuisses énormes, petits bras repliés
+      // contre la poitrine, genoux fléchis.
+      hips: 1.2, belly: 0.5, chest: -0.5, hunch: 0.4, depth: 0.4,
+      legUpper: 2, legLower: -0.4, armLower: -0.3, elbow: 2.2, knee: 1.2,
+    },
   },
 ]
 
@@ -196,12 +283,19 @@ export const ARCHETYPES: readonly Archetype[] = [
  * extrêmes qui sortaient de la famille sont ramenés.
  */
 const SERIES = {
-  head: [0.8, 1.38],
-  torsoHeight: [0.6, 1.65],
-  torsoRadius: [0.66, 1.85],
-  limbLength: [0.5, 1.75],
-  limbRadius: [0.72, 1.7],
+  head: [0.78, 1.45],
+  torsoHeight: [0.55, 1.75],
+  torsoRadius: [0.62, 1.95],
+  limbLength: [0.48, 1.85],
+  limbRadius: [0.66, 1.85],
 } as const
+
+/**
+ * Intensité des signatures, **entre marqué et caricatural** (choix de Leo sur
+ * l'échelle de croquis, 26 sept.) : chaque signature est poussée de 30 %,
+ * bornes de la série élargies d'autant.
+ */
+const CHARGE = 1.3
 const series = (v: number, [lo, hi]: readonly [number, number]) => clamp(v, lo, hi)
 
 /** Paramètres de la poupée une fois sa morphologie appliquée. */
@@ -213,7 +307,7 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
   const a = amount
   // Borné : aux signatures fortes, un facteur libre pouvait tomber sous la
   // moitié (torse d'un têtard) ou dépasser le double.
-  const k = (v: number, span: number) => clamp(1 + v * span * a, 0.5, 1.9)
+  const k = (v: number, span: number) => clamp(1 + v * span * a, 0.45, 2.1)
 
   // --- tête ---
   const headRadius = s.headRadius * series(k(m.head, 0.2), SERIES.head)
@@ -244,7 +338,7 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
   // --- torse ---
   const torsoHeight = s.torsoHeight * series(k(m.stature, 0.3), SERIES.torsoHeight)
   const torsoRadius = s.torsoRadius * series(k(m.girth, 0.35), SERIES.torsoRadius)
-  const torsoTaper = clamp(s.torsoTaper + m.shoulders * 0.15 * a, 0.4, 1.25)
+  const torsoTaper = clamp(s.torsoTaper + m.shoulders * 0.25 * a, 0.4, 1.6)
   // Une peluche dodue est bourrée plus serré qu'une maigre : moins de bosses.
   const lumps = clamp(s.lumps * k(m.lumps * 0.7 - m.girth * 0.3, 0.45), 0, 0.25)
 
@@ -258,10 +352,10 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
   const thick = k(m.girth, 0.2) * k(-m.reach, 0.08) * k(m.limbGirth, 0.3)
   const armLength = lb.armLength * series(k(m.reach + m.limbBias * 0.7, 0.32), SERIES.limbLength)
   const legLength = lb.legLength * series(k(m.reach - m.limbBias * 0.5 + m.stature * 0.3, 0.3), SERIES.limbLength)
-  const armRadius = lb.armRadius * series(thick * k(m.limbThick, 0.09), SERIES.limbRadius)
-  const legRadius = lb.legRadius * series(thick * k(-m.limbThick, 0.09), SERIES.limbRadius)
+  const armRadius = lb.armRadius * series(thick * k(m.limbThick, 0.18), SERIES.limbRadius)
+  const legRadius = lb.legRadius * series(thick * k(-m.limbThick, 0.18), SERIES.limbRadius)
   const armSpread = clamp(lb.armSpread + m.stance * 0.2 * a, 0, 1.4)
-  const legSpread = clamp(lb.legSpread + m.stance * 0.12 * a, 0.02, 0.8)
+  const legSpread = clamp(lb.legSpread + m.stance * 0.12 * a + m.legSplay * 0.2 * a, 0.02, 0.8)
 
   // --- visage : il suit le crâne ---
   // Les cotes du visage sont absolues : sans mise à l'échelle, une grosse tête
@@ -281,8 +375,32 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
       ...s,
       headRadius, headSquash, headEgg, headPuff, headCheekY, headCheekSpread,
       torsoHeight, torsoRadius, torsoTaper, lumps,
+      torsoSquare: clamp((s.torsoSquare ?? 0) + m.torsoSquare * a, 0, 1),
+      // Sculpture : ~0,26 par unité de signature (CHARGE compris).
+      chest: clamp((s.chest ?? 0) + m.chest * 0.2 * a, -0.3, 0.5),
+      waist: clamp((s.waist ?? 0) + m.waist * 0.2 * a, -0.3, 0.5),
+      belly: clamp((s.belly ?? 0) + m.belly * 0.22 * a, -0.3, 0.6),
+      hips: clamp((s.hips ?? 0) + m.hips * 0.2 * a, -0.3, 0.6),
+      hunch: clamp((s.hunch ?? 0) + m.hunch * 0.2 * a, 0, 0.6),
+      torsoDepth: clamp((s.torsoDepth ?? 0.86) + m.depth * 0.09 * a, 0.6, 1.15),
     },
-    limbs: { armLength, armRadius, armSpread, legLength, legRadius, legSpread },
+    limbs: {
+      ...lb,
+      armLength, armRadius, armSpread, legLength, legRadius, legSpread,
+      // Formes : mains, pieds et galbe des membres (voir `ARCHETYPES`).
+      handScale: clamp((lb.handScale ?? 1) * (1 + m.handScale * a), 0.6, 2),
+      footScale: clamp((lb.footScale ?? 1) * (1 + m.footScale * a), 0.6, 2),
+      armTaper: clamp((lb.armTaper ?? 0) + m.armTaper * a, -0.6, 0.8),
+      legTaper: clamp((lb.legTaper ?? 0) + m.legTaper * a, -0.6, 0.8),
+      armUpper: clamp((lb.armUpper ?? 0) + m.armUpper * 0.22 * a, -0.3, 0.6),
+      armLower: clamp((lb.armLower ?? 0) + m.armLower * 0.22 * a, -0.3, 0.6),
+      legUpper: clamp((lb.legUpper ?? 0) + m.legUpper * 0.22 * a, -0.3, 0.6),
+      legLower: clamp((lb.legLower ?? 0) + m.legLower * 0.22 * a, -0.3, 0.6),
+      // Plis de repos : ~0,4 rad par unité de signature.
+      elbowRest: clamp((lb.elbowRest ?? 0) + m.elbow * 0.3 * a, 0, 1.2),
+      kneeRest: clamp((lb.kneeRest ?? 0) + m.knee * 0.4 * a, 0, 1.3),
+      kneeOut: clamp((lb.kneeOut ?? 0) + m.kneeOut * 0.8 * a, 0, 1),
+    },
     face: {
       ...f,
       eyeSpacing: f.eyeSpacing * rw * k(m.eyeGap, 0.08),
@@ -308,7 +426,7 @@ function coherent(base: DollParams, q: DollParams) {
   const h = dollLayout(q).height / dollLayout(base).height
   const ratio =
     q.shape.headRadius / q.shape.torsoRadius / (base.shape.headRadius / base.shape.torsoRadius)
-  return h > 0.62 && h < 1.32 && ratio > 0.35 && ratio < 2.4
+  return h > 0.6 && h < 1.38 && ratio > 0.35 && ratio < 2.6
 }
 
 export type MorphPick = { morph: Morph; archetype: Archetype }
