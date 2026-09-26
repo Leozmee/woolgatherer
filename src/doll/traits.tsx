@@ -6,6 +6,7 @@ import { CrossStitch, Thread, Pin, jitterColor, pinColor } from './parts'
 import { armClearance, armSpheres, bodyRadius, bodySpheres, onTorso, onHeadPolar } from './surface'
 import { ClothSheet, type ClothExtras } from '../core/cloth'
 import { Scarf, scarfMetrics } from './scarf'
+import { Streamer, streamerColliders, type StreamerRest } from './streamer'
 import {
   buildPatches,
   patchHoles,
@@ -473,7 +474,9 @@ const CORDS = ['#e5d1c1', '#4b3109', '#7d7f6a', '#8a4a42']
 export function bowMetrics(p: DollParams) {
   const r = p.shape.torsoRadius * p.shape.torsoTaper
   // Taille variable, mais bornée : au-delà le nœud mange le buste.
-  const wing = r * (0.56 + mulberry32(p.seed + 515)() * 0.26)
+  // Agrandi d'un tiers : c'est la signature de silhouette de la poupée, il
+  // doit se lire de loin (voir aussi ses pans, `bowTails`).
+  const wing = r * (0.56 + mulberry32(p.seed + 515)() * 0.26) * 1.35
   const half = wing * 0.58
   // Sous le menton, à partir du bas réel du crâne (layout : headY = headH×0.78).
   const localY = -p.shape.headRadius * p.shape.headSquash * 0.22 - half * 0.95 - r * 0.05
@@ -506,6 +509,49 @@ export function bowMetrics(p: DollParams) {
   const fold = Math.atan2(Math.max(0, z - tipZ), tipX)
 
   return { r, wing, half, localY, torsoY, z, fold }
+}
+
+/**
+ * Pans du nœud papillon : deux rubans qui partent du nœud en V sur la
+ * poitrine et **flottent** au moindre geste — la signature de la poupée.
+ *
+ * Posés en V et non à la verticale : un pan qui pend droit est déjà à
+ * l'équilibre, rien ne le fait plier (voir l'écharpe). Chaque rang est calé
+ * sur le rayon du corps à sa hauteur, plus l'épaisseur du duvet.
+ */
+export function bowTails(p: DollParams): { shapes: StreamerRest[]; width: number; thickness: number } {
+  const { half, localY, wing } = bowMetrics(p)
+  const rnd = mulberry32(p.seed + 517)
+  const width = half * 0.75
+  const thickness = wing * 0.05
+  const clear = p.shell.height + p.shape.lumps * p.shape.torsoRadius * 0.65 + thickness * 2
+  const rows = 11
+  const cols = 3
+  const shapes = [-1, 1].map((side) => {
+    const L = p.shape.torsoHeight * (0.34 + rnd() * 0.14)
+    const spread = 0.45 + rnd() * 0.15
+    const y0 = localY - half * 0.15
+    const rest: THREE.Vector3[] = []
+    const pin: number[] = []
+    for (let i = 0; i < rows; i++) {
+      const t = i / (rows - 1)
+      const y = y0 - L * t
+      const cx = side * (half * 0.12 + L * spread * t)
+      const r = bodyRadius(p, y) + clear
+      const cz = Math.sqrt(Math.max(0, r * r - cx * cx))
+      const across = new THREE.Vector3(cz, 0, -cx).normalize()
+      for (let j = 0; j < cols; j++) {
+        const u = (j / (cols - 1) - 0.5) * width
+        rest.push(new THREE.Vector3(cx, y, cz).addScaledVector(across, u))
+        // Un soupçon de retenue sur toute la longueur : libres, les deux pans
+        // glissaient l'un sur l'autre au milieu et le nœud lisait comme une
+        // cravate. Assez faible pour qu'ils flottent au geste.
+        pin.push(i === 0 ? 1 : i === 1 ? 0.5 : 0.05 * (1 - t))
+      }
+    }
+    return { rest, pin, rows, cols }
+  })
+  return { shapes, width, thickness }
 }
 
 /**
@@ -1442,8 +1488,23 @@ function useExtra(
         // nœud droit gardait un centre de travers.
         const knotTilt = lean * 0.6 + (bow() - 0.5) * 0.05
 
+        const tails = bowTails(p)
+        const tailColliders = streamerColliders(p, tails.thickness)
         return {
           neck: (
+            <>
+            {tails.shapes.map((shape, i) => (
+              <Streamer
+                key={`tail${i}`}
+                p={p}
+                shape={shape}
+                thickness={tails.thickness}
+                colliders={tailColliders}
+                cfg={{ gravity: 0.35, damping: 0.06 }}
+              >
+                {fabric(i === 0 ? wingA : wingB)}
+              </Streamer>
+            ))}
             <group position={[0, localY, z + wing * 0.1]} rotation={[0, 0, lean]}>
               {wings.map((w, i) => (
                 // Miroir par rotation, pas par échelle négative : une échelle
@@ -1463,6 +1524,7 @@ function useExtra(
                 {fabric(knot)}
               </mesh>
             </group>
+            </>
           ),
         }
       }
