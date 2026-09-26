@@ -1,0 +1,527 @@
+--- a/src/doll/hairstyles.tsx
++++ b/src/doll/hairstyles.tsx
+@@ -6,7 +6,7 @@
+ import { useDisposable } from '../core/useDisposable'
+ import { clamp, mulberry32 } from '../core/rand'
+ import type { CordMaps } from '../core/cord'
+-import { onHeadPolar } from './surface'
++import { onHeadPolar, onHead } from './surface'
+ import { EYE_SCALE } from './face'
+ import type { DollParams } from './params'
+ 
+@@ -19,7 +19,7 @@
+  * crâne, pas des cheveux — mais avec sa propre silhouette :
+  *
+  * - **locks** : les dreadlocks tressées, simulées (`hair.tsx`) ;
+- * - **bouclettes** : une tignasse de boucles de laine plantées dans le crâne ;
++ * - **bouclettes** : épi en tourbillon, anglaises tout autour, frange en crosses ;
+  * - **mèches** : une coupe au bol, frange devant, carré court ou long ;
+  * - **chignon** : cheveux tirés vers une pelote, ou deux macarons ;
+  * - **houppette** : un plumet noué qui jaillit du sommet ;
+@@ -132,7 +132,6 @@
+ 
+ const UP = new THREE.Vector3(0, 1, 0)
+ const DOWN = new THREE.Vector3(0, -1, 0)
+-const GOLDEN = Math.PI * (3 - Math.sqrt(5))
+ 
+ /**
+  * Ressorts répartis en secteurs autour de la tête, pivot au centre, bout placé
+@@ -451,34 +450,39 @@
+   tuck?: number
+   /** Crêtes de tension sur la couche du dessus (0 : aucune). */
+   grooves?: number
++  /**
++   * Épi libre plutôt qu'attache : aucun lien ne cache la convergence, les
++   * bouts s'arrêtent en étoile autour de l'épi, d'un diamètre au-delà à trois
++   * en deçà — tous au même point, ils y feraient un pâté de fil.
++   */
++  whorl?: boolean
++  /**
++   * Tourbillon : rotation signée (rad) autour de l'attache, pleine à
++   * l'attache, nulle à `swirlReach` (rad) d'elle. Fonction de la **distance**
++   * à l'attache et non de la fraction du brin : une torsion qui ne dépend que
++   * de la distance conserve les aires, donc la couverture (mesuré : −0,0 point,
++   * contre −1,5 point pour une torsion en fraction du brin).
++   */
++  swirl?: number
++  swirlReach?: number
++  /**
++   * Mèches de la couche du dessus : elle bombe au milieu de chaque section
++   * (la plus proche des directions données) et se creuse à leur frontière —
++   * le sillon que l'encre dessine. Seul le relèvement change : la couverture
++   * ne bouge pas. Resserrer ou onduler les brins par section la faisait
++   * perdre (−3 à −5 points, mesuré) : c'est la couche du dessous seule qui
++   * couvrait alors les frontières.
++   */
++  sections?: THREE.Vector3[]
++  /** Volume de la couche du dessus au milieu du brin (unités monde). */
++  puff?: number
+ }
+ 
+-/**
+- * Cheveux tirés de la lisière vers une ou plusieurs attaches : **tenus**.
+- *
+- * Chaque brin glisse sur le crâne jusqu'à son attache par le plus court chemin
+- * sur la sphère. Serrés par le lien, ils ne bougent pas : aucun ressort, ni
+- * mobilité ni écartement — seules les parties libres (queue, nattes, pelote)
+- * ont une physique. Avec des ressorts par secteur, le dessus du crâne balançait
+- * comme les queues ; et leur mobilité était la plus forte au bout noué, qui
+- * sortait de dessous le ruban.
+- *
+- * **Densité, sans base.** Les brins sont le plus écartés là où ils partent, sur
+- * le bord de la zone (ils convergent ensuite). Les racines y sont donc posées
+- * au **pas constant en longueur réelle** — la lisière, et la raie quand deux
+- * attaches se font face —, un brin tous les 1,8 rayon, sur deux couches
+- * alternées. Posées au pas d'azimut, elles s'espaçaient aux tempes, où la
+- * lisière monte vite : 47 à 65 % du crâne couvert là, avec le trou du pôle en
+- * prime. Au-delà de 90° de l'attache, les chemins s'écartent encore avant de
+- * converger : la longueur y compte pour 1/sin θ.
+- *
+- * **Relèvement.** La couche du dessous dépasse juste la pointe du duvet ; celle
+- * du dessus garde l'enveloppe d'avant — pas d'effet casque.
+- *
+- * Rend la ligne de lisière avant, d'où une frange peut partir vers l'avant
+- * pendant que les tirés partent vers l'arrière : une seule source, aucun
+- * recouvrement.
+- */
++/** Lisière des cheveux tirés, en direction : pointe de nuque comprise. */
++function rimOf(limit: (az: number) => number) {
++  return (az: number) => dirOf(az, limit(az) + 0.02 - Math.max(0, -Math.cos(az)) ** 3 * 0.18)
++}
++
+ function pulled(
+   p: DollParams,
+   rnd: () => number,
+@@ -488,9 +492,10 @@
+   low: number,
+   o: PulledOpts = {},
+ ) {
++  const R = p.shape.headRadius
+   const limit = o.crown !== undefined ? hairlineAt(low, o.crown) : hairline(p, low)
+   // Lisière irrégulière qui descend en pointe sur la nuque.
+-  const rim = (az: number) => dirOf(az, limit(az) + 0.02 - Math.max(0, -Math.cos(az)) ** 3 * 0.18)
++  const rim = rimOf(limit)
+   const dirs = targets.map((t) => t.clone().normalize())
+   const nearest = (f: THREE.Vector3) => dirs.reduce((a, d) => (d.dot(f) > a.dot(f) ? d : a), dirs[0])
+   const split = dirs.length === 2 && dirs[0].x * dirs[1].x < 0
+@@ -513,6 +518,7 @@
+     : [{ to: null as THREE.Vector3 | null, line: Array.from({ length: 721 }, (_, k) => rim(-Math.PI + (k / 720) * Math.PI * 2)) }]
+ 
+   const base = Math.max(r * 0.8, p.shell.height - r * 0.9)
++  const secs = o.sections?.map((s) => s.clone().normalize())
+   for (const z of zones) {
+     const pos = z.line.map((d) => onDir(p, d, 0, POLE).pos)
+     const cum = [0]
+@@ -533,81 +539,357 @@
+       const ridge = upper && o.grooves ? r * 0.9 * (0.5 + 0.5 * Math.cos((2 * Math.PI * o.grooves * at) / B)) : 0
+       const layer = upper ? base + r * (0.9 + rnd() * 0.3) + ridge : base * (1 + rnd() * 0.2)
+       const ang = from.angleTo(to)
+-      const reach = o.tuck ? Math.max(0.2, 1 - o.tuck / Math.max(ang, 1e-3)) : 1
++      const reach = o.tuck
++        ? Math.max(0.2, 1 - o.tuck / Math.max(ang, 1e-3))
++        : o.whorl
++          ? 1 - (r * (-2 + rnd() * 8)) / (R * Math.max(ang, 1e-3))
++          : 1
++      // Place dans sa section : 0 au milieu, 1 à la frontière avec la voisine.
++      let across = 0
++      if (upper && secs) {
++        let s1 = -2
++        let s2 = -2
++        for (const d of secs) {
++          const c = d.dot(from)
++          if (c > s1) [s1, s2] = [c, s1]
++          else if (c > s2) s2 = c
++        }
++        const b1 = Math.acos(clamp(s1, -1, 1))
++        const b2 = Math.acos(clamp(s2, -1, 1))
++        across = clamp((2 * b1) / Math.max(1e-3, b1 + b2), 0, 1)
++      }
+       const M = clamp(Math.ceil(ang / 0.08), 8, 24)
+       const pts: THREE.Vector3[] = []
+       for (let k = 0; k <= M; k++) {
+-        const d = from.clone().lerp(to, (k / M) * reach).normalize()
+-        const lift = k === 0 ? -r * 2 : k === M && o.tuck ? -r * 0.5 : layer
++        const t = k / M
++        const d = from.clone().lerp(to, t * reach).normalize()
++        if (o.swirl) d.applyAxisAngle(to, o.swirl * clamp(1 - d.angleTo(to) / (o.swirlReach ?? 1.1), 0, 1) ** 2)
++        const puff = upper && o.puff ? o.puff * Math.sin(Math.PI * t) * (1 - 0.7 * across * across) : 0
++        const lift = k === 0 ? -r * 2 : k === M && o.tuck ? -r * 0.5 : layer + puff
+         pts.push(onDir(p, d, lift, POLE).pos)
+       }
+       // Aucune option de mouvement : aMover −1, mobilité et écartement nuls.
+       out.yarn.push(yarn(pts, r, { step: 6 }))
+     }
+   }
+-  return { frontLine: (az: number) => limit(az) + 0.02 }
++  return { frontLine: (az: number) => limit(az) + 0.02, rim }
+ }
+ 
+ // ---------------------------------------------------------------- coiffures
+ 
+ /**
+- * Bouclettes : des boucles de laine dressées sur le crâne.
++ * Anglaise : une vrille de laine qui pend d'une tête de section.
+  *
+- * Chaque boucle est une spirale dans un plan qui **contient la normale** —
+- * elle se dresse, au lieu d'être posée à plat — et son départ est enfoncé
+- * sous la surface : c'est ce qui la fait tenir au crâne. Petites et serrées,
+- * ou grosses et lâches : la grosseur de la boucle et leur nombre dérivent en
+- * sens inverse, comme l'épaisseur et la densité des locks. Pas de physique :
+- * une boucle est courte et serrée, elle ne ballotte pas.
++ * Un ruban de `strands` brins côte à côte enroulé en hélice autour d'un axe
++ * vertical : le pas vaut la largeur du ruban (`strands` × 2,05 r), la vrille
++ * est pleine et le sillon entre deux tours, plus profond que l'écart entre
++ * deux brins, est ce que l'encre dessine. Le rayon se resserre vers le bas et
++ * les brins convergent : une pointe, pas un bout de tuyau. Douze anneaux par
++ * tour (un anneau tous les trois rayons en donnait 4 à 6 : des hexagones).
++ *
++ * Rend le débattement sûr de son ressort : pivot au centre du crâne, un point
++ * se déplace au plus de |v|·angle·mobilité ; aucun ne doit venir sur un
++ * bouton. Les deux anglaises de tempe, qui encadrent le visage, en ont besoin.
++ *
++ * L'axe est repoussé hors du crâne point par point (`clearHead`) : sous les
++ * tempes la tête s'élargit — bajoues — et une vrille verticale y entrerait.
++ * La racine est enfouie sous le premier tour, qui couvre la convergence de la
++ * section : on ne voit pas où le crâne s'arrête et où la vrille commence.
++ */
++function ringlet(
++  p: DollParams,
++  r: number,
++  out: Parts,
++  o: {
++    az: number
++    head: THREE.Vector3 // direction de la tête de section (sur la lisière)
++    length: number
++    rho: number
++    strands: number
++    hand: number // sens d'enroulement, signé : ±1
++    mover: number
++    phase: number
++    /** Boutons (vue de face) : centre et rayon, bornes hautes. */
++    eyes: { x: number; y: number; size: number }[]
++  },
++) {
++  const base = Math.max(r * 0.8, p.shell.height - r * 0.9)
++  const free = (t: number) => smooth(0.04, 0.35, t) * (0.55 + 0.45 * t)
++  // Débattement sûr : aucun point, tourné autour du centre de son angle fois
++  // sa mobilité, ne vient sur un bouton (déplacement ≤ |v|·angle·free).
++  let safe = Infinity
++  const s = onDir(p, o.head, 0, POLE)
++  const w = r * 2.05
++  const P = o.strands * w
++  const turns = o.length / P
++  const K = Math.ceil(turns * 12) + 1
++  const air = base + p.shape.headRadius * 0.015
++  const top = s.pos.clone().addScaledVector(s.normal, o.rho + r + air)
++  const axisAt = (u: number, rho: number) => {
++    const q = top.clone().addScaledVector(DOWN, o.length * u)
++    return clearHead(p, q, rho + r + air)
++  }
++  for (let j = 0; j < o.strands; j++) {
++    const off = (j - (o.strands - 1) / 2) * w
++    const pts: THREE.Vector3[] = [s.pos.clone().addScaledVector(s.normal, -r * 2)]
++    for (let k = 0; k <= K; k++) {
++      const u = k / K
++      const rho = o.rho * (1 - 0.5 * u ** 1.2)
++      const ax = axisAt(u, rho)
++      const outH = new THREE.Vector3(ax.x, 0, ax.z).normalize()
++      const tan = new THREE.Vector3(outH.z, 0, -outH.x)
++      const th = o.hand * turns * Math.PI * 2 * u
++      // Brins du ruban décalés le long de l'axe, refermés à la pointe.
++      const along = off * (1 - u ** 2)
++      const q = ax
++        .addScaledVector(DOWN, along)
++        .addScaledVector(outH, -Math.cos(th) * rho)
++        .addScaledVector(tan, Math.sin(th) * rho)
++      pts.push(q)
++      const f = free((k + 1) / (K + 2))
++      if (q.z > 0 && f > 0)
++        for (const e of o.eyes) safe = Math.min(safe, (Math.hypot(q.x - e.x, q.y - e.y) - e.size - r) / (q.length() * f))
++    }
++    out.yarn.push(
++      yarn(pts, r, {
++        mover: o.mover,
++        // La tête de la vrille est cousue : elle ne bouge qu'à partir du
++        // premier tour, et s'écarte à la rotation seulement en bas.
++        free,
++        fling: (t) => 0.6 * smooth(0.1, 1, t),
++        phase: o.phase,
++        segs: K + 2,
++        taper: 0.3,
++      }),
++    )
++  }
++  return 0.8 * safe
++}
++
++/**
++ * Mèches de frange en crosse : comme la grande frange — mèches pointues,
++ * brins qui convergent sur leur dernier tiers, deux rangées décalées — mais la
++ * pointe **s'enroule** : le cap tourne de plus en plus vite (spirale d'Euler),
++ * un tour à un tour un quart. C'est la « virgule » des frisettes d'anime.
++ * Le bas de l'enroulement reste au-dessus de `faceSafe.edge(f)`.
++ */
++function curledFringe(
++  p: DollParams,
++  rnd: () => number,
++  r: number,
++  out: Parts,
++  o: {
++    rim: (az: number) => THREE.Vector3
++    width: number
++    tufts: number
++    edgeSy: number
++    hand: number
++    maxAngle: number
++    rho: number
++  },
++) {
++  const R = p.shape.headRadius
++  const base = Math.max(r * 0.8, p.shell.height - r * 0.9)
++  const f0 = out.movers.length
++  const centers: number[] = []
++  for (let k = 0; k < o.tufts; k++) {
++    const ac = (((k + 0.5) / o.tufts) * 2 - 1) * o.width
++    centers.push(ac)
++    out.movers.push({
++      pivot: new THREE.Vector3(),
++      dir: new THREE.Vector3(Math.sin(ac) * 0.75, -0.66, Math.cos(ac) * 0.75).normalize(),
++      length: R,
++      cfg: { stiffness: 0.05 + rnd() * 0.03, drag: 0.07 + rnd() * 0.04, gravity: 0 },
++      maxAngle: o.maxAngle,
++    })
++  }
++  const turnsOf = centers.map(() => 0.9 + rnd() * 0.3)
++  const lenOf = centers.map(() => rnd())
++  const latEdge = Math.asin(clamp(o.edgeSy, -1, 1))
++  for (let c = 0; c < o.tufts; c++) {
++    const sx = Math.abs(centers[c]) < 1e-3 ? o.hand : Math.sign(centers[c])
++    const root = o.rim(centers[c])
++    const lat0 = Math.asin(clamp(root.y, -1, 1))
++    const cosL = Math.max(0.3, Math.cos(lat0))
++    const w0 = ((2 * o.width) / o.tufts) * R * cosL * 1.1 // largeur à la racine
++    const band = o.rho * 0.9
++    const turns = turnsOf[c]
++    const Lc = Math.PI * 2 * o.rho * turns
++    // Bas de l'enroulement au-dessus du bord : la crosse descend d'environ 0,6 ρ sous son départ.
++    const straight = Math.max(o.rho * 0.5, (lat0 - latEdge) * R - o.rho * (0.6 + lenOf[c] * 0.3) - band * 0.5 - r)
++    const L = straight + Lc
++    // Axe de la mèche dans la carte du front (X est, Y haut), échantillonné finement.
++    const N = 60
++    const C: [number, number, number][] = []
++    let X = 0, Y = 0
++    for (let k = 0; k <= N; k++) {
++      const s = (k / N) * L
++      const u = s > straight ? Math.min(1, (s - straight) / Lc) : 0
++      const h = -Math.PI / 2 + sx * Math.PI * 2 * turns * u ** 1.6
++      C.push([X, Y, h])
++      X += Math.cos(h) * (L / N)
++      Y += Math.sin(h) * (L / N)
++    }
++    // Brins : deux rangées décalées, de toute la largeur à la racine au ruban de la crosse, puis en pointe.
++    const per = clamp(Math.ceil((2 * w0) / (1.8 * r)), 6, 18)
++    for (let i = 0; i < per; i++) {
++      const row = i % 2
++      const off = (Math.floor(i / 2) + 0.5 + row * 0.5) / Math.ceil(per / 2) - 0.5
++      const layer = base + r * (0.4 + rnd() * 0.6) + row * r * 0.8
++      const phase = rnd() * 6
++      const M = 30
++      const pts: THREE.Vector3[] = []
++      for (let k = 0; k <= M; k++) {
++        const s = (k / M) * L
++        const j = Math.min(N, Math.round((s / L) * N))
++        const [cx, cy, h] = C[j]
++        const u = s > straight ? Math.min(1, (s - straight) / Lc) : 0
++        const w = s <= straight ? w0 + (band - w0) * (s / straight) ** 0.8 : band * (1 - u) ** 0.9
++        const px = cx - Math.sin(h) * off * w
++        const py = cy + Math.cos(h) * off * w
++        const lat = lat0 + py / R
++        const az = centers[c] + px / (R * Math.max(0.2, Math.cos(lat)))
++        const lift = k === 0 ? -r * 2 : layer + R * (0.015 + 0.03 * u)
++        pts.push(onHeadPolar(p, az, clamp(Math.sin(lat), -0.98, POLE), lift).pos)
++      }
++      out.yarn.push(
++        yarn(pts, r, {
++          mover: f0 + c,
++          free: (t) => smooth(0.05, 0.5, t),
++          fling: (t) => 0.35 * smooth(0.3, 1, t),
++          phase,
++          segs: 22,
++          taper: 0.25,
++        }),
++      )
++    }
++  }
++}
++
++/**
++ * Bouclettes : épi en tourbillon, anglaises tout autour, frange en crosses.
++ *
++ * Une toison de 170 à 310 boucles debout ne couvrait que 26 à 57 % du crâne —
++ * vue le long de la normale, une boucle dressée n'est qu'un trait — et lisait
++ * comme du vermicelle sur une calotte. La coupe est maintenant faite de
++ * **grandes formes** :
++ *
++ * - **calotte** : les brins de `pulled`, tirés vers un **épi libre** derrière le
++ *   sommet, en tourbillon ; deux couches au pas de 1,8 r, bombées par mèche
++ *   (une mèche par anglaise ou crosse). Posée sur le crâne, elle ne bouge pas ;
++ * - **anglaises** : des vrilles pleines qui pendent de la lisière, longues aux
++ *   tempes où elles encadrent le visage, courtes à la nuque, en miroir gauche /
++ *   droite. Un ressort chacune, pivot au centre du crâne : elles sautillent au
++ *   geste, s'écartent en tournant ;
++ * - **frange en crosses** : trois ou quatre mèches qui s'enroulent en virgule
++ *   au-dessus des sourcils, bord et débattement tirés de `faceSafe`.
+  */
+ function curls(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
+   const R = p.shape.headRadius
++  const ry = R * p.shape.headSquash
++  const fs = faceSafe(p)
++  // Tirages de tête, tous faits quelle que soit la suite.
+   const g = rnd()
+-  const loop = R * (0.06 + g * 0.05)
+-  const r = yarnR * (0.9 + g * 0.35)
+-  const low = -0.1 + rnd() * 0.3
+-  const limit = hairline(p, low)
+-  /**
+-   * Nombre de boucles déduit de l'aire à couvrir, pas fixé.
+-   *
+-   * À soixante boucles le crâne restait nu entre elles : on lisait une
+-   * couronne de ressorts plantés, pas une tignasse. Une toison, c'est des
+-   * boucles qui se touchent — donc une boucle par carré d'à peu près son
+-   * diamètre, sur la calotte au-dessus de `low` (aire ∝ hauteur).
+-   */
+-  const cap = 2 * Math.PI * R * R * (0.97 - low)
+-  const count = clamp(Math.round(cap / (loop * 1.55) ** 2), 60, 420)
+-  // Bouclettes : elles rebondissent par secteurs — raides et peu amorties,
+-  // une boucle serrée sautille plus qu'elle ne pend.
+-  const sector = sectorMovers(out, rnd, R, 8, 0.16, 0.08)
+-  for (let i = 0; i < count; i++) {
+-    const t = (i + 0.5) / count
+-    const sy = low + (0.97 - low) * t
+-    const az = i * GOLDEN + rnd() * 0.3
+-    if (sy < limit(az)) continue
+-    const s = onHeadPolar(p, az, sy, 0)
+-    const [t1, t2] = tangentBasis(s.normal)
+-    const phi = rnd() * Math.PI
+-    const dir = t1.clone().multiplyScalar(Math.cos(phi)).addScaledVector(t2, Math.sin(phi))
+-    const side = t1.clone().multiplyScalar(-Math.sin(phi)).addScaledVector(t2, Math.cos(phi))
+-    const lr = loop * (0.8 + rnd() * 0.45)
+-    const center = s.pos.clone().addScaledVector(s.normal, lr * 0.5)
+-    // Un tour et demi de spirale, pas un anneau : l'anneau lit comme une
+-    // rondelle dressée, la spirale comme une boucle de laine qui frise.
+-    const N = 16
+-    const pts = Array.from({ length: N + 1 }, (_, k) => {
+-      const u = k / N
+-      const a = -Math.PI / 2 + u * 1.5 * Math.PI * 2
+-      const rr = lr * Math.sin(Math.PI * Math.min(1, u * 1.4)) ** 0.3
+-      return center
+-        .clone()
+-        .addScaledVector(dir, Math.cos(a) * rr)
+-        .addScaledVector(s.normal, Math.sin(a) * rr)
+-        .addScaledVector(side, (u - 0.5) * lr * 0.9)
++  const r = yarnR * (0.9 + g * 0.3)
++  const hand = rnd() < 0.5 ? -1 : 1
++  const whorl = dirOf(Math.PI + (rnd() - 0.5) * 0.8, 0.86 + rnd() * 0.08)
++  const swirl = hand * (0.7 + rnd() * 0.5)
++  const sideLow = -0.33 - rnd() * 0.06
++  // Grosseur des anglaises : elle suit le fil, comme l'épaisseur des locks.
++  const rho = R * (0.105 + 0.03 * g + rnd() * 0.01)
++  const lenK = rnd()
++  const fringeF = 2.0 + rnd() * 0.25
++  const tuftsN = 3 + Math.floor(rnd() * 2)
++  const rhoC = R * (0.06 + rnd() * 0.015)
++  const tied = rnd() < 0.4
++  const knotSeed = rnd() // réservé au nœud (sous-graine) : tiré même sans ruban
++  out.ribbonColor = RIBBONS[Math.floor(rnd() * RIBBONS.length)]
++
++  // Lisière : le front sous la frange, les côtés aux oreilles, la nuque en pointe.
++  const edgeSy = fs.edge(fringeF)
++  const front = clamp(edgeSy + (rhoC * 2.6 + r) / ry, 0.6, 0.88)
++  const limit = hairlineAt(sideLow, front)
++  const rim = rimOf(limit)
++
++  // Anglaises : de la tempe (au-delà des boutons) à la nuque, au pas de leur diamètre.
++  const azR = fs.sideAz
++  const D = 2 * (rho + r)
++  const arcN = 240
++  const arcPts = Array.from({ length: arcN + 1 }, (_, k) =>
++    onDir(p, rim(azR + ((Math.PI * 2 - 2 * azR) * k) / arcN), 0, POLE).pos,
++  )
++  let arc = 0
++  const cumA = [0]
++  for (let k = 1; k <= arcN; k++) cumA.push((arc += arcPts[k].distanceTo(arcPts[k - 1])))
++  const ringN = clamp(Math.round(arc / (D * 1.05)) + 1, 8, Math.min(14, MAX_MOVERS - tuftsN))
++  const ringAz = Array.from({ length: ringN }, (_, k) => {
++    const at = (k / (ringN - 1)) * arc
++    let j = 1
++    while (j < arcN && cumA[j] < at) j++
++    const u = (at - cumA[j - 1]) / Math.max(1e-9, cumA[j] - cumA[j - 1])
++    return azR + ((Math.PI * 2 - 2 * azR) * (j - 1 + u)) / arcN
++  })
++  const heads = ringAz.map((az) => rim(az))
++  const width = azR - (rho + r) / R - 0.05
++  const fringeRoots = Array.from({ length: tuftsN }, (_, k) => rim((((k + 0.5) / tuftsN) * 2 - 1) * width))
++
++  // Calotte : tirée vers l'épi en tourbillon, bombée par mèche. Tenue. Sa
++  // lisière avant passe sous les racines de la frange : entre deux mèches de
++  // frange, c'est elle qu'on voit, pas le front.
++  pulled(p, rnd, r, [whorl], out, sideLow, {
++    crown: front - (4 * r) / ry,
++    whorl: true,
++    swirl,
++    sections: [...heads, ...fringeRoots],
++    puff: R * 0.05,
++  })
++
++  curledFringe(p, rnd, r, out, { rim, width, tufts: tuftsN, edgeSy, hand, maxAngle: fs.maxAngle(edgeSy), rho: rhoC })
++
++  // Anglaises : longues aux tempes, courtes à la nuque ; le bout reste
++  // au-dessus des épaules sur les côtés, du bas du crâne derrière.
++  const floorAt = (back: number) => -ry * (0.8 + 0.2 * back)
++  // Boutons en vue de face, aux bornes hautes des tirages (comme faceSafe).
++  const eyeSize = Math.max(p.face.leftSize, p.face.rightSize) * EYE_SCALE * 1.14
++  const eyes = [-1, 1].map((sx) => {
++    const e = onHead(p, sx * p.face.eyeSpacing * 0.5 * 1.12, p.face.eyeHeight, 0).pos
++    return { x: e.x, y: e.y, size: eyeSize }
++  })
++  // Brins par anglaise : le pas (brins × 2,05 r) vaut 2,6 ρ, une hélice à 22°.
++  const S = clamp(Math.round((2.6 * rho) / (r * 2.05)), 2, 6)
++  ringAz.forEach((az, k) => {
++    const back = clamp((Math.abs(Math.atan2(Math.sin(az), Math.cos(az))) - azR) / (Math.PI - azR), 0, 1)
++    const head = heads[k]
++    const top = onDir(p, head, 0, POLE).pos
++    const want = R * (0.95 - 0.6 * back) * (0.8 + 0.3 * lenK) * (0.75 + rnd() * 0.5)
++    const length = Math.max(R * 0.15, Math.min(want, top.y - floorAt(back)))
++    // Chiralité portée par le côté : les deux moitiés sont en miroir.
++    const sx = Math.sign(Math.sin(az)) || 1
++    const m = out.movers.length
++    out.movers.push({
++      pivot: new THREE.Vector3(),
++      dir: top.clone().addScaledVector(DOWN, length * 0.5).normalize(),
++      length: R,
++      cfg: { stiffness: 0.06 + rnd() * 0.04, drag: 0.08 + rnd() * 0.04, gravity: 0 },
++      maxAngle: 0.3,
+     })
+-    pts[0].addScaledVector(s.normal, -r * 2)
+-    out.yarn.push(yarn(pts, r, { mover: sector(az), free: (t) => 0.6 + 0.4 * t, fling: (t) => 0.6 * t, phase: rnd() * 6 }))
+-  }
++    const rk = rho * (1 - 0.15 * back)
++    const safe = ringlet(p, r, out, { az, head, length, rho: rk, strands: S, hand: sx * hand, mover: m, phase: rnd() * 6, eyes })
++    out.movers[m].maxAngle = clamp(safe, 0.05, 0.3)
++    // Bridée par le visage : plus raide d'autant, pour ne pas vivre en butée,
++    // et amortie en √ pour garder le même nombre de rebonds.
++    const stiff = clamp(0.3 / out.movers[m].maxAngle, 1, 2) ** 0.8
++    out.movers[m].cfg.stiffness *= stiff
++    out.movers[m].cfg.drag *= Math.sqrt(stiff)
++    // Ruban noué en tête des deux anglaises de tempe, deux poupées sur cinq.
++    if (tied && (k === 0 || k === ringN - 1)) {
++      const s = onDir(p, head, 0, POLE)
++      const air = Math.max(r * 0.8, p.shell.height - r * 0.9) + R * 0.015
++      const at = clearHead(p, s.pos.clone().addScaledVector(s.normal, rk + r + air).addScaledVector(DOWN, length * 0.08), rk + r + air)
++      void knotSeed // bowKnot(p, mulberry32(Math.floor(knotSeed * 1e9)), …) quand la brique existera
++      out.ribbon.push(ring(at, DOWN, rk * 0.75 + r * 1.2, r * 1.3))
++    }
++  })
+ }
+ 
+ /**

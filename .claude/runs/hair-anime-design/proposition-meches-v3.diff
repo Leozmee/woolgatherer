@@ -1,0 +1,453 @@
+--- /Users/leogallus/Projets/DummyFaces-coupes/src/doll/hairstyles.tsx	2026-09-25 21:27:18
++++ hairstyles.clean.tsx	2026-09-26 08:59:16
+@@ -337,6 +337,18 @@
+     edge: (f: number) => clamp((p.face.eyeHeight + size * f) / ry, 0.3, 0.85),
+     maxAngle: (edgeSy: number, freeMax = 1) => clamp((0.8 * (edgeSy * ry - buttonTop)) / (R * freeMax), 0.04, 0.3),
+     sideAz: clamp(Math.asin(clamp((p.face.eyeSpacing * 0.56 + size) / R, 0, 0.95)) + 0.2, 0.95, 1.3),
++    /**
++     * Dégagement, vu de face, d'un point de brin de rayon `rr` aux boutons :
++     * l'œil peut être n'importe où entre les bornes d'écart, d'où la distance
++     * au segment qu'il balaie. Ce qui est derrière la joue ne compte pas.
++     */
++    gap: (q: THREE.Vector3, rr: number) => {
++      if (q.z < R * 0.3) return Infinity
++      const x = Math.abs(q.x)
++      const x0 = p.face.eyeSpacing * 0.44
++      const x1 = p.face.eyeSpacing * 0.56
++      return Math.hypot(x - clamp(x, x0, x1), q.y - p.face.eyeHeight) - size - rr
++    },
+   }
+ }
+ 
+@@ -611,46 +623,160 @@
+ }
+ 
+ /**
+- * Mèches : coupe au bol, en brins de laine.
++ * Mèches : coupe au bol d'anime, en brins de laine.
+  *
+- * Les brins rayonnent d'un **épi** au sommet, un peu en arrière : frange
+- * devant, arrêtée au-dessus des sourcils, carré sur les côtés et derrière.
+- * Partis d'un anneau serré autour du pôle, les brins de devant n'avaient plus
+- * que quelques centimètres avant la lisière, et la frange se réduisait à une
+- * rangée de bouts de fil au ras du front.
+- *
+- * Chaque brin suit la surface point par point, et sous l'équateur il ne peut
+- * plus se rapprocher de l'axe : il retombe par-dessus les bajoues au lieu de
+- * rentrer sous la mâchoire. Physique : le carré ballotte autour du centre du
+- * crâne, la frange presque pas — elle doit rester au-dessus des yeux.
++ * Dôme gonflé à lobes, frange en pointes arrêtée au-dessus des sourcils,
++ * **carré plongeant** — plus long sur les joues qu'à la nuque, il encadre le
++ * visage —, pointes de nuque dont certaines se retroussent, et un tourbillon
++ * à l'épi. Pas d'épi rebelle ni de mèches latérales à part : sur une planche,
++ * ce sont les signes des coupes tirées (voir le tableau des fronts).
++ *
++ * **Couverture déduite de la géométrie.** Les brins partent d'un épi derrière
++ * le sommet et sont répartis **en angle autour de lui** (`fan`) : répartis en
++ * azimut de pointe, l'éventail était dense vers la nuque et lâche sur les
++ * côtés — l'écart entre deux géodésiques issues de l'épi vaut sin ρ · Δψ,
++ * maximal à 90° de l'épi. Leur nombre vient du crâne et du fil : deux
++ * couches dont chacune, au tour le plus large, pose un brin tous les
++ * 1,6 à 2,1 rayons — la loi des cheveux tirés —, et non une constante.
++ *
++ * **Physique.** Un ressort par mèche (16), pivot au centre, sans gravité :
++ * le repos est la géométrie, et rien ne bouge tant que la tête ne bouge pas.
++ * Racines presque tenues — à l'épi toutes les mèches se rejoignent, et deux
++ * ressorts voisins qui y tiraient chacun de leur côté déchiraient le sommet —,
++ * longueurs libres. L'écartement centrifuge ne décolle que les longueurs. Le
++ * débattement de chaque ressort est **déduit du dégagement aux boutons**.
+  */
++const BOWL_COVER = 2.8
++/** Portée du tourbillon autour de l'épi, en radians. */
++const SWIRL_RHO = 0.55
++/** Profondeur des pointes de la frange ; 0,2 ailleurs. */
++const FRONT_POINT = 0.12
++/** Longueur d'un segment de tube, en rayons de crâne : le tracé se courbe à l'échelle du crâne, pas du fil. */
++const BOWL_SEG = 0.13
++
+ function bowlCut(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
+   const R = p.shape.headRadius
++  const ry = R * p.shape.headSquash
++  const safe = faceSafe(p)
+   const g = rnd()
+-  const r = yarnR * (0.8 + g * 0.35)
+-  const count = Math.round(210 - g * 50)
+-  // Au moins jusqu'aux oreilles : arrêtée plus haut, la coupe laissait nu tout
+-  // le bas du crâne — l'effet chauve, réservé à « trois poils ».
++  const r = yarnR * (0.95 + g * 0.35)
++  // 2r·n / (2π·R·1,05) = BOWL_COVER ; r ∝ R, donc R s'annule :
++  // n ≈ 3,0 / (épaisseur · (0,95 + 0,35g)) — 230 à 320 brins à 0,03.
++  const n = clamp(Math.round((BOWL_COVER * Math.PI * R * 1.05) / r), 140, 360)
++  // Nuque : au moins jusqu'aux oreilles (l'effet chauve est réservé à « trois poils »).
+   const end = -0.2 - rnd() * 0.5
+-  const wave = rnd() < 0.5 ? 0 : 0.04 + rnd() * 0.06
+-  // Huit ressorts autour de la tête, bout placé vers leur secteur : à
+-  // l'aplomb du centre, un ressort unique était sur l'axe de rotation de la
+-  // poupée et ne ressentait rien (voir la grande frange).
+-  const SECTORS = 8
+-  const first = out.movers.length
+-  for (let k = 0; k < SECTORS; k++) {
+-    const ac = ((k + 0.5) / SECTORS) * Math.PI * 2
++  const wave = rnd() < 0.5 ? 0 : 0.03 + rnd() * 0.04
++  const whorl = dirOf(Math.PI + (rnd() - 0.5) * 1.2, 0.8 + rnd() * 0.12)
++  // Chiralité portée comme un signe : sens du tourbillon et du coiffage.
++  const hand = rnd() < 0.5 ? -1 : 1
++  // Sens de coiffage, pas une frange de côté (celle des nattes) : les pointes
++  // glissent de 3 à 7°, le bord reste horizontal.
++  const comb = hand * (0.06 + rnd() * 0.06)
++  const swirl = -hand * (0.45 + rnd() * 0.3)
++  // Bord de frange : la règle commune des franges courtes, au-dessus des sourcils.
++  const edge = safe.edge(2.0 + rnd() * 0.15)
++  // Carré plongeant : les joues descendent sous la nuque, jusqu'à la mâchoire.
++  const jaw = Math.max(-0.92, Math.min(end, -0.3) - 0.1 - rnd() * 0.15)
++  const CLUMPS = 16
++  const span = (Math.PI * 2) / CLUMPS
++
++  const clump0 = out.movers.length
++  for (let k = 0; k < CLUMPS; k++) {
++    // Bout vers le centre de la mèche du dessus (décalée d'une demi-mèche).
++    const ac = ((k + 1) / CLUMPS) * Math.PI * 2
+     out.movers.push({
+       pivot: new THREE.Vector3(),
+       dir: new THREE.Vector3(Math.sin(ac) * 0.75, -0.66, Math.cos(ac) * 0.75).normalize(),
+       length: R,
+-      cfg: { stiffness: 0.035 + rnd() * 0.02, drag: 0.12 + rnd() * 0.06, gravity: 0 },
+-      maxAngle: 0.22,
++      // Écart resserré : deux mèches voisines trop différentes s'ouvrent en
++      // mouvement et montrent le crâne.
++      cfg: { stiffness: 0.032 + rnd() * 0.016, drag: 0.08 + rnd() * 0.04, gravity: 0 },
++      maxAngle: 0.3, // réduit plus bas selon le dégagement aux boutons
+     })
+   }
+-  const sector = (az: number) =>
+-    first + (Math.floor(((((az % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2)) * SECTORS) % SECTORS)
+-  radiate(p, rnd, r, count, hairline(p, end, 2.3), out, { wave, moverOf: sector, volume: R * 0.045 })
++
++  /*
++   * Lisière : plate au-dessus des sourcils jusqu'au-delà de leur bout
++   * (sideAz), puis elle plonge vers la mâchoire et remonte vers la nuque.
++   * Plonger plus tôt — au coin de l'œil — faisait passer les longueurs sur
++   * le bout des sourcils froncés.
++   */
++  const A = safe.sideAz
++  const hem = (az: number) => {
++    const a = Math.abs(Math.atan2(Math.sin(az), Math.cos(az)))
++    const cheek = smooth(A, A + 0.45, a)
++    const back = smooth(A + 0.6, Math.PI - 0.25, a)
++    return edge + (jaw - edge) * cheek + (end - jaw) * back
++  }
++  /* Garde-fou pour les très gros boutons (sideAz plafonné) : jamais de pointe sur un œil. */
++  const eyeX = p.face.eyeSpacing * 0.5 * 1.12
++  const size = Math.max(p.face.leftSize, p.face.rightSize) * EYE_SCALE * 1.14
++  const floor = (az: number) => {
++    const a = Math.atan2(Math.sin(az), Math.cos(az))
++    if (Math.abs(a) > Math.PI / 2) return -1
++    const dx = Math.max(0, R * 1.02 * Math.abs(Math.sin(a)) - eyeX)
++    const h = (size + R * 0.08) ** 2 - dx * dx
++    return h > 0 ? (p.face.eyeHeight + Math.sqrt(h)) / ry : -1
++  }
++  const front = (az: number) => smooth(Math.cos(A + 0.1), Math.cos(A * 0.5), Math.cos(az))
++
++  // Dégagement de chaque ressort aux boutons : le plus petit, et son bras de levier.
++  const clear = new Map<number, { gap: number; lever: number }>()
++  const report = (pts: THREE.Vector3[], rr: number, mover: number | undefined) => {
++    if (mover === undefined) return
++    const c = clear.get(mover) ?? { gap: Infinity, lever: 1 }
++    for (const q of pts) {
++      const d = safe.gap(q, rr)
++      if (d < c.gap) {
++        c.gap = d
++        c.lever = q.length()
++      }
++    }
++    clear.set(mover, c)
++  }
++
++  const shared = {
++    fan: true, whorl, clumps: CLUMPS, clumpMover: clump0, floor, pole: POLE, swirl, onStrand: report,
++    sweep: (az: number) => comb * Math.max(0, Math.cos(az)) ** 2,
++    frontAt: front,
++  }
++  /*
++   * Dessous : plaqué, peu pincé, pointes courtes, un peu plus court que la
++   * lisière — il bouche les V du dessus, décalé d'une demi-mèche. Sous la
++   * frange il s'arrête à mi-hauteur des V : plus bas, la frange lit comme
++   * une lisière dentelée continue ; pas du tout, et le front se voit entre
++   * les pointes jusqu'en haut. Mèches calées pour qu'après le coiffage une
++   * pointe tombe au milieu du front.
++   */
++  radiate(p, rnd, r, Math.round(n * 0.45), (az) => hem(az) + 0.02 + FRONT_POINT * 0.4 * front(az), out, {
++    ...shared,
++    clumpShift: -comb / span, clumpVarAt: (az) => 0.05 - 0.03 * front(az), point: 0.08, pinch: 0.3,
++    jitter: ((Math.PI * 2) / (n * 0.45)) * 0.3, layerSpan: [0.6, 0.5], volume: R * 0.03,
++    taper: 0.12, rootK: [0.005, 0.025], step: (1.5 * BOWL_SEG * R) / r,
++    free: (t) => 0.08 + 0.45 * smooth(0.15, 1, t),
++    fling: (t) => 0.35 * smooth(0.4, 1, t),
++  })
++  // Dessus : grosses mèches en lentille, pointues, gonflées, pointes évasées.
++  radiate(p, rnd, r, Math.round(n * 0.6), hem, out, {
++    ...shared,
++    clumpShift: 0.5 - comb / span, clumpVarAt: (az) => 0.1 - 0.07 * front(az), point: 0.2, pinch: 0.66,
++    pointAt: (az) => 0.2 + (FRONT_POINT - 0.2) * front(az),
++    // Frange : des lames larges. Fermées à 0,66 comme le reste, quatre mèches
++    // laissaient le front nu entre elles.
++    pinchAt: (az) => 0.66 - 0.26 * front(az),
++    jitter: ((Math.PI * 2) / (n * 0.6)) * 0.3, layerSpan: [1.2, 1.0], volume: R * 0.09,
++    flare: R * 0.07, ragged: 0.03, wave, clumpWave: true, rootK: [0.02, 0.04],
++    lens: true, flickRate: 0.4, step: (BOWL_SEG * R) / r,
++    free: (t) => 0.12 + 0.88 * smooth(0.1, 1, t),
++    fling: (t, reach) => (0.5 + 0.5 * reach) * smooth(0.3, 1, t),
++  })
++
++  /*
++   * Débattement **déduit du dégagement** : un ressort pivotant au centre fait
++   * glisser un point de θ·|point|. θ ≤ 0,9 · dégagement / bras de levier,
++   * plafonné à 0,3.
++   */
++  for (const [m, c] of clear) out.movers[m].maxAngle = clamp((0.9 * c.gap) / c.lever, 0.06, 0.3)
+ }
+ 
+ /**
+@@ -718,12 +844,59 @@
+      * une chevelure s'arrête au bas du crâne, à la mâchoire au plus.
+      */
+     extend?: number
++    /*
++     * Options de la coupe au bol. Toutes absentes par défaut : la grande
++     * frange, seule autre utilisatrice, reste identique au bit près.
++     */
++    /** Épi imposé (partagé avec les mèches d'encadrement). */
++    whorl?: THREE.Vector3
++    /** Brins répartis en angle **autour de l'épi**, pas en azimut de pointe. */
++    fan?: boolean
++    /** Désordre en azimut, en radians ; 0,08 par défaut. */
++    jitter?: number
++    /** Décalage des mèches, en fraction de mèche (couche du dessus : 0,5). */
++    clumpShift?: number
++    /** Écart de longueur d'une mèche à l'autre ; 0,14 par défaut. */
++    clumpVar?: number
++    /** Profondeur des pointes (bords de mèche plus courts) ; 0,16 par défaut. */
++    point?: number
++    /** Profondeur et fermeture selon l'azimut de la mèche (frange à part). */
++    pointAt?: (az: number) => number
++    clumpVarAt?: (az: number) => number
++    /** Poids de la frange selon l'azimut : ni évasement ni désordre, pointe posée sur le front. */
++    frontAt?: (az: number) => number
++    pinchAt?: (az: number) => number
++    /** Ondulation en phase dans toute la mèche, pas brin à brin. */
++    clumpWave?: boolean
++    /** Hauteur de pose : r·(a + hasard·b) ; [0,7 ; 1,4] par défaut. */
++    layerSpan?: [number, number]
++    /** Plancher de la pointe (au-dessus des boutons), en hauteur normalisée. */
++    floor?: (az: number) => number
++    /** Part du trajet épi → pointe où le brin prend racine ; [0,04 ; 0,06]. */
++    rootK?: [number, number]
++    /** Mobilité et écartement le long du brin, `reach` = portée de la pointe. */
++    free?: (t: number, reach: number) => number
++    fling?: (t: number, reach: number) => number
++    taper?: number
++    step?: number
++    /** Hauteur max au pôle ; 0,98 par défaut. */
++    pole?: number
++    /** Tourbillon de l'épi, en radians, signé. */
++    swirl?: number
++    /** Mèches en lentille : profondeur par mèche, bombée au milieu. */
++    lens?: boolean
++    /** Part des mèches (hors frange) dont la pointe se retrousse. */
++    flickRate?: number
++    /** Frange balayée : décalage de pointe en azimut selon l'azimut. */
++    sweep?: (az: number) => number
++    /** Rapport de chaque brin posé : tracé, rayon, pivot. */
++    onStrand?: (pts: THREE.Vector3[], r: number, mover: number | undefined) => void
+   } = {},
+ ) {
+   const wave = o.wave ?? 0
+   const volume = o.volume ?? 0
+   const waves = 2 + Math.floor(rnd() * 3)
+-  const whorl = dirOf(Math.PI + (rnd() - 0.5) * 1.2, 0.8 + rnd() * 0.12)
++  const whorl = o.whorl ?? dirOf(Math.PI + (rnd() - 0.5) * 1.2, 0.8 + rnd() * 0.12)
+   const M = 18
+   const clumps = o.clumps ?? 0
+   // Longueur propre à chaque mèche, tirée avant la boucle.
+@@ -731,26 +904,67 @@
+   // Décalage du centre des mèches, faible : fort, des brins voisins se
+   // croisaient d'une mèche à l'autre.
+   const clumpTwist = Array.from({ length: clumps }, () => (rnd() - 0.5) * 0.12)
++  // Tirages des options : présents ou absents selon la coupe, jamais selon la graine.
++  const clumpPhase = o.clumpWave ? Array.from({ length: clumps }, () => rnd() * Math.PI * 2) : []
++  const clumpDepth = o.lens ? Array.from({ length: clumps }, () => 0.3 + 0.7 * rnd()) : []
++  const clumpFlick = o.lens ? Array.from({ length: clumps }, () => rnd()) : []
++  /**
++   * Éventail : la pointe du brin parti de l'épi dans la direction ψ est le
++   * premier point de ce grand cercle qui passe sous la lisière. Réparties en
++   * azimut autour de l'axe vertical, les pointes laissaient l'éventail dense
++   * vers la nuque et lâche sur les côtés — l'écart entre deux géodésiques
++   * issues de l'épi vaut sin ρ · Δψ, maximal à 90° de l'épi, sur les côtés.
++   */
++  const [e1, e2] = tangentBasis(whorl)
++  const fanTip = (psi: number) => {
++    const dir = e1.clone().multiplyScalar(Math.cos(psi)).addScaledVector(e2, Math.sin(psi))
++    const at = (rho: number) => whorl.clone().multiplyScalar(Math.cos(rho)).addScaledVector(dir, Math.sin(rho))
++    const below = (q: THREE.Vector3) => q.y < limit(Math.atan2(q.x, q.z))
++    let lo = 0.2
++    let hi = 0.2
++    while (hi < Math.PI * 0.95 && !below(at(hi))) {
++      lo = hi
++      hi += 0.05
++    }
++    for (let k = 0; k < 12; k++) {
++      const mid = (lo + hi) / 2
++      if (below(at(mid))) hi = mid
++      else lo = mid
++    }
++    return at(hi)
++  }
+   for (let i = 0; i < count; i++) {
+-    const az = (i / count) * Math.PI * 2 + (rnd() - 0.5) * 0.08
++    let az = (i / count) * Math.PI * 2 + (rnd() - 0.5) * (o.jitter ?? 0.08)
++    if (o.fan) {
++      const q = fanTip(az)
++      az = Math.atan2(q.x, q.z)
++      if (az < 0) az += Math.PI * 2
++    }
+     const ragged = o.ragged ?? 0
+     // Tirés dans tous les cas : sauter un tirage décalerait toute la suite.
+     const cut = rnd()
+     const depth = rnd()
+     const flick = rnd()
+     let tipSy =
+-      limit(az) + (rnd() - 0.5) * 0.04 + ragged * ((cut - 0.5) * 1.2 + depth * 0.7)
++      limit(az) + (rnd() - 0.5) * 0.04 + ragged * (1 - (o.frontAt ? o.frontAt(az) : 0)) * ((cut - 0.5) * 1.2 + depth * 0.7)
+     tipSy -= (o.backLonger ?? 0) * Math.max(0, -Math.cos(az)) ** 1.5
+     let tipAz = az
+     let clump = 0
++    let across = 0
+     if (clumps) {
+       const span = (Math.PI * 2) / clumps
+-      const c = Math.floor((((az % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / span)
++      const sh = (o.clumpShift ?? 0) * span
++      const a0 = az - sh
++      const c = Math.floor((((a0 % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / span)
+       clump = c
+-      const center = (c + 0.5) * span + clumpTwist[c] * span
+-      const u = clamp((az - (c + 0.5) * span) / (span * 0.5), -1, 1)
++      const center = (c + 0.5) * span + sh + clumpTwist[c] * span
++      // Écart au centre de la mèche, ramené dans ]−π, π] : sans ce repli, un
++      // brin d'azimut légèrement négatif tombait dans la dernière mèche avec
++      // un écart de près de 2π.
++      const u = clamp(Math.atan2(Math.sin(a0 - (c + 0.5) * span), Math.cos(a0 - (c + 0.5) * span)) / (span * 0.5), -1, 1)
++      across = u
+       // Mèche plus ou moins longue ; bords plus courts : la pointe.
+-      tipSy += clumpLen[c] * 0.14 + Math.abs(u) ** 1.4 * 0.16
++      tipSy += clumpLen[c] * (o.clumpVarAt ? o.clumpVarAt(center) : o.clumpVar ?? 0.14) + Math.abs(u) ** 1.4 * (o.pointAt ? o.pointAt(center) : o.point ?? 0.16)
+       tipAz = center
+     }
+     // Bornée des deux côtés : poussée sous −1 par l'arrière plus long, la
+@@ -762,8 +976,11 @@
+      * les brins se groupaient en faisceaux dès le milieu, et le crâne se
+      * voyait entre deux mèches.
+      */
+-    const pinchTo = tipAz - az
+-    const pinch = o.pinch ?? 0.55
++    const pinchTo = Math.atan2(Math.sin(tipAz - az), Math.cos(tipAz - az))
++    const pinch = o.pinchAt ? o.pinchAt(tipAz) : o.pinch ?? 0.55
++    const sw = o.sweep ? o.sweep(tipAz) : 0
++    // Plancher évalué là où la pointe **arrive** : pincée et balayée comprises.
++    if (o.floor) tipSy = Math.max(tipSy, o.floor(az + (clumps ? pinch * pinchTo : 0) + sw))
+     const tip = dirOf(az, clamp(tipSy, -0.9, 0.9))
+     // Départ : sur la raie, à la hauteur de front ou de nuque qui correspond à
+     // l'azimut du brin ; ou dispersé autour de l'épi — tous au même point, ils
+@@ -772,14 +989,27 @@
+       ? new THREE.Vector3(Math.sign(tip.x) * 0.03, 0, Math.cos(az) * 0.55 + (rnd() - 0.5) * 0.08)
+           .setY(1)
+           .normalize()
+-      : whorl.clone().addScaledVector(tip.clone().sub(whorl), 0.04 + rnd() * 0.06).normalize()
++      : whorl.clone().addScaledVector(tip.clone().sub(whorl), (o.rootK?.[0] ?? 0.04) + rnd() * (o.rootK?.[1] ?? 0.06)).normalize()
+     // Brin trop court pour exister : devant, sous une frange, la lisière est
+     // si haute que les longueurs partant de la raie s'y arrêtaient aussitôt —
+     // des bouts de fil effilés qui hérissaient le sommet. On ne les pose pas.
+     if (from.angleTo(tip) < 0.5) continue
+     // Couche : de plaquée à franchement décollée, pour les chevelures fournies.
+-    const layer = r * (0.7 + rnd() * 1.4) + volume * depth
+-    const phase = rnd() * Math.PI * 2
++    /*
++     * Lentille : profondeur cohérente dans la mèche, bombée au milieu et
++     * pincée aux bords, bruit par brin divisé par trois. Sinon le dôme est un
++     * tapis de brins à des hauteurs au hasard : pas de volume par mèche, pas
++     * de lobes sur la silhouette, pas de sillon d'ombre entre deux mèches.
++     */
++    const dEff = o.lens && clumps
++      ? clamp(clumpDepth[clump] * Math.sqrt(Math.max(0, 1 - across * across)) * 0.85 + depth * 0.15, 0, 1)
++      : depth
++    const [l0, l1] = o.layerSpan ?? [0.7, 1.4]
++    const layer = r * (l0 + rnd() * l1 * (o.lens ? 0.3 : 1)) + volume * dEff
++    // Pointe retroussée : mèche entière (hors frange) avec `lens`, brin à brin sinon.
++    const flicks = o.lens && clumps ? clumpFlick[clump] < (o.flickRate ?? 0.4) && Math.cos(tipAz) < 0.3 : flick < 0.35
++    const phase0 = rnd() * Math.PI * 2
++    const phase = o.clumpWave && clumps ? clumpPhase[clump] : phase0
+     // Mobilité : nulle à l'épi, pleine au bout du carré, faible pour la frange.
+     const reach = clamp((0.7 - tipSy) / 0.9, 0.12, 1)
+     let rMax = 0
+@@ -787,17 +1017,33 @@
+     for (let k = 0; k <= M; k++) {
+       const t = k / M
+       const d = from.clone().lerp(tip, t).normalize()
++      /*
++       * Tourbillon : rotation autour de l'axe de l'épi, maximale à l'épi et
++       * nulle à SWIRL_RHO. Fonction de ρ seul : l'ordre des brins est
++       * conservé (aucun croisement) et les pointes ne bougent pas.
++       */
++      if (o.swirl) {
++        const w = Math.max(0, 1 - d.angleTo(whorl) / SWIRL_RHO)
++        d.applyAxisAngle(whorl, o.swirl * w * w)
++      }
+       const close = clumps ? pinch * clamp((t - 0.62) / 0.38, 0, 1) ** 1.5 : 0
+-      const a = Math.atan2(d.x, d.z) + pinchTo * close + wave * Math.sin(t * waves * Math.PI + phase) * t
+-      const sy = clamp(d.y, -0.98, 0.98)
++      // Balayage : nul au premier quart, entier à la pointe.
++      const a =
++        Math.atan2(d.x, d.z) + pinchTo * close + wave * Math.sin(t * waves * Math.PI + phase) * t + sw * smooth(0.25, 1, t)
++      // Pôle : borné à 0,98, un brin qui passe par-dessus contournait une
++      // calotte de rayon 0,2 R — tonsure vue de dessus.
++      const sy = clamp(d.y, -0.98, o.pole ?? 0.98)
+       // Gonflement : nul à la racine, maximal au milieu, retombant à la pointe.
+-      const puff = volume * depth * Math.sin(Math.PI * Math.min(1, t * 1.15)) * 0.8
+-      // Pointe retroussée pour un brin sur trois, sur le dernier cinquième.
+-      const flip = ragged > 0 && flick < 0.35 ? r * 5 * Math.max(0, (t - 0.8) / 0.2) ** 2 : 0
++      const puff = volume * dEff * Math.sin(Math.PI * Math.min(1, t * 1.15)) * 0.8
++      // Pointe retroussée sur le dernier cinquième.
++      const flip = ragged > 0 && flicks ? r * (o.lens ? 7 * (0.6 + 0.4 * dEff) : 5) * Math.max(0, (t - 0.8) / 0.2) ** 2 : 0
+       // Tout autour, un peu plus ample derrière : les pics évasés font
+       // l'allure de la coupe, et ne les avoir qu'à la nuque la coupait en deux.
+-      const flare = (o.flare ?? 0) * (0.75 + 0.35 * Math.max(0, -Math.cos(az))) * Math.max(0, (t - 0.55) / 0.45) ** 2
+-      const s = onHeadPolar(p, a, sy, k === 0 ? -r * 2 : layer + puff + flip + flare)
++      const fr = o.frontAt ? o.frontAt(tipAz) : 0
++      const flare = (o.flare ?? 0) * (1 - fr) * (0.75 + 0.35 * Math.max(0, -Math.cos(az))) * Math.max(0, (t - 0.55) / 0.45) ** 2
++      // Frange : la pointe se pose sur le front au lieu de rester au sommet du volume.
++      const press = 1 - 0.7 * fr * smooth(0.7, 1, t)
++      const s = onHeadPolar(p, a, sy, k === 0 ? -r * 2 : (layer + puff) * press + flip + flare)
+       const h = Math.hypot(s.pos.x, s.pos.z)
+       if (sy < 0 && h < rMax) {
+         s.pos.x *= rMax / h
+@@ -821,6 +1067,7 @@
+       }
+     }
+     const mover = o.clumpMover !== undefined ? o.clumpMover + clump : o.moverOf ? o.moverOf(az) : o.mover
++    o.onStrand?.(pts, r, mover)
+     out.yarn.push(
+       mover === undefined
+         ? yarn(pts, r)
+@@ -834,9 +1081,11 @@
+            */
+           yarn(pts, r, {
+             mover,
+-            free: (t) => 0.4 + 0.6 * t ** 0.9,
+-            fling: (t) => (0.45 + 0.55 * reach) * t ** 0.9,
++            free: o.free ? (t) => o.free!(t, reach) : (t) => 0.4 + 0.6 * t ** 0.9,
++            fling: o.fling ? (t) => o.fling!(t, reach) : (t) => (0.45 + 0.55 * reach) * t ** 0.9,
+             phase,
++            taper: o.taper,
++            step: o.step,
+           }),
+     )
+   }
