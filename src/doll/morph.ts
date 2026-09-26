@@ -69,6 +69,11 @@ const KEYS = [
   'mouthY',
   'mouthW',
   'size', //     taille d'ensemble : tout à l'échelle, proportions intactes
+  // propres au crapaud : nulles pour tous les autres (aucun résidu tiré)
+  'eyeTop', //   yeux sur le dessus du crâne, écartés
+  'grin', //     bouche fendue d'une joue à l'autre
+  'toeOut', //   pieds en canard
+  'armFwd', //   pattes avant posées devant
 ] as const
 
 /**
@@ -142,6 +147,10 @@ function sample(rnd: () => number, type: Archetype): Morph {
     mouthY: c('mouthY', r(0.4)),
     mouthW: c('mouthW', 0.2 * build + r(0.35)),
     size: c('size', r(0.05)),
+    eyeTop: c('eyeTop', 0),
+    grin: c('grin', 0),
+    toeOut: c('toeOut', 0),
+    armFwd: c('armFwd', 0),
   }
 }
 
@@ -210,16 +219,32 @@ export const ARCHETYPES: readonly Archetype[] = [
     head: 0.1, stature: -0.3, reach: -0.4, limbBias: -1, belly: 0.5, chest: 0.6, hunch: -0.6, size: -1.4,
     depth: 0.8, eyeGap: 0.5, limbGirth: 0.3, legUpper: 0.4,
   }),
-  // Un crapaud : très large et très bas, plat d'avant en arrière, assis sur
-  // des cuisses ouvertes en grenouille, grands pieds plats ; bras courts posés
-  // devant comme des pattes avant ; tête large aux bajoues pleines, grande
-  // bouche, yeux hauts et écartés. Les bras ballants de la base, sur lui,
-  // faisaient un petit gros ordinaire (Leo : « ne fait pas assez crapaud »).
+  // Un crapaud dégingandé, accroupi : trapu et bas, la tête posée sur des
+  // épaules aussi larges qu'elle (pas de cou), les cuisses ouvertes à
+  // l'horizontale et les genoux en dehors — c'est le « Λ » des jambes et les
+  // grands pieds en canard qui disent grenouille —, les pattes avant courtes
+  // portées devant le ventre ; au visage, les yeux sur le dessus du crâne et
+  // une bouche fendue d'une joue à l'autre, sur une peau bosselée.
+  //
+  // Ce qui l'empêchait de lire « crapaud » (Leo, deux fois) :
+  // - un tronc de 0,44 × 1,0 sous une tête plus étroite fait une **soucoupe**
+  //   (un tutu), et il cachait les cuisses : ouvertes en grenouille, elles
+  //   passaient tout entières sous son bord, il ne restait que deux tibias
+  //   droits. Tronc arrondi et moins large, jambes plus longues et plus
+  //   fines, écart au plafond : le genou sort enfin du flanc ;
+  // - la tête de la base (grosse boule) le rendait aussi haut que le
+  //   dégingandé (2,02 contre 2,02) : tête rabattue, il tombe à 1,8 ;
+  // - la base allonge les bras (`limbBias` 2,4) : ils restaient ballants ;
+  // - `eyeY`, `eyeGap` et `mouthW` plafonnent à ±3 et ne portaient les yeux
+  //   qu'au cinquième du rayon et la bouche aux quatre cinquièmes : d'où
+  //   `eyeTop`, `grin`, `toeOut` et `armFwd`, clés propres au crapaud.
   variant('crapaud', 'crapaud', 1, 0.1, {
-    stature: -1.4, girth: 1, depth: -0.4, hips: 1.1, belly: 0.9, hunch: -0.6, chest: 0.4,
-    legSplay: 1.8, knee: 3, kneeOut: 1.2, footScale: 1.2, limbThick: -0.6,
-    limbBias: -1.4, stance: 0.4, elbow: -0.2,
-    head: 0.3, cheeks: 1.2, mouthW: 2.5, eyeGap: 1.5, eyeY: 1.5,
+    stature: -0.6, girth: 1.1, depth: 0.3, hips: 0.4, belly: 0.4, hunch: -1.2, chest: 0.4,
+    shoulders: 2.4, lumps: 2,
+    legSplay: 3.2, knee: 3, kneeOut: 1.2, footScale: 1.2, limbThick: -0.8, limbGirth: -0.9, legUpper: 2.4,
+    limbBias: -2.8, reach: -0.1, stance: 1.3, elbow: 2, handScale: -0.4,
+    head: -0.9, egg: 1, cheeks: 1.2, mouthW: 2.5, mouthY: 1.5, eyeGap: 1.5, eyeY: 1.5,
+    eyeTop: 1.5, grin: 2.5, toeOut: 1.8, armFwd: 2,
   }),
   // Plus grand et plus long, mais toujours en boudins : la minceur faisait un
   // bâton inquiétant, la hauteur suffit à la singularité.
@@ -345,7 +370,10 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
   // garde des yeux serrés au milieu et une petite les voit filer sur les côtés.
   const rw = headRadius / s.headRadius
   const rh = rw * (headSquash / s.headSquash)
-  const eyeHeight = f.eyeHeight * rh + m.eyeY * 0.05 * headRadius * a
+  // `eyeTop` (crapaud seulement) monte les yeux au-delà de ce que `eyeY`
+  // permet : à ±3 il ne les porte qu'au cinquième du rayon, sur le front, et
+  // un crapaud a les yeux **sur le dessus** de la tête.
+  const eyeHeight = f.eyeHeight * rh + m.eyeY * 0.05 * headRadius * a + m.eyeTop * 0.12 * headRadius * a
   let mouthHeight = f.mouthHeight * rh + m.mouthY * 0.04 * headRadius * a
   // La bouche reste sous les yeux, avec au moins les quatre cinquièmes de
   // l'écart du panneau : plus près, le visage se tasse en grimace.
@@ -383,14 +411,18 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
       elbowRest: clamp((lb.elbowRest ?? 0) + m.elbow * 0.3 * a, 0, 1.2),
       kneeRest: clamp((lb.kneeRest ?? 0) + m.knee * 0.4 * a, 0, 1.3),
       kneeOut: clamp((lb.kneeOut ?? 0) + m.kneeOut * 0.8 * a, 0, 1),
+      toeOut: clamp((lb.toeOut ?? 0) + m.toeOut * 0.2 * a, 0, 0.8),
+      armFwd: clamp((lb.armFwd ?? 0) + m.armFwd * 0.2 * a, 0, 0.8),
     },
     face: {
       ...f,
-      eyeSpacing: f.eyeSpacing * rw * k(m.eyeGap, 0.08),
+      eyeSpacing: f.eyeSpacing * rw * k(m.eyeGap, 0.08) * k(m.eyeTop, 0.14),
       eyeHeight,
       leftSize: f.leftSize * rw,
       rightSize: f.rightSize * rw,
-      mouthWidth: f.mouthWidth * rw * k(m.mouthW, 0.14),
+      // `grin` (crapaud) : au plafond de `mouthW`, la bouche ne couvrait que
+      // les quatre cinquièmes du rayon — une bouche de peluche, pas une gueule.
+      mouthWidth: f.mouthWidth * rw * k(m.mouthW, 0.14) * k(m.grin, 0.3),
       mouthHeight,
     },
   }
