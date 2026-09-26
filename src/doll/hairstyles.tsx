@@ -1143,89 +1143,89 @@ function bun(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
 }
 
 /**
- * Houppette : un plumet noué sur le sommet, dont les brins retombent en
- * fontaine tout autour du crâne.
+ * Houppette : cheveux **tirés** vers un nœud au sommet, et un plumet en
+ * palmier qui en jaillit.
  *
  * Premier essai : un plumet seul, sur un crâne nu — une poupée chauve avec un
  * toupet. Puis une base couchée sous le plumet : deux coiffures superposées,
- * rejeté. C'est donc le plumet lui-même qui couvre : chaque brin jaillit du
- * nœud, monte, puis retombe **sur** le crâne en l'épousant jusqu'à la
- * lisière. Une partie des brins, plus courts, reste dressée au centre : c'est
- * elle qui fait le toupet.
+ * rejeté. Ensuite une gerbe qui retombait en fontaine sur tout le crâne et
+ * glissait par secteurs : des cheveux noués qui bougent, contraire à ce qu'on
+ * attend d'une coupe attachée. Ici la chevelure est tirée vers le nœud et
+ * **tenue** (`pulled`, aucun ressort) ; seul le plumet bouge.
  *
- * Physique : le toupet oscille autour du nœud, raide et peu amorti — il
- * rebondit. La gerbe qui retombe glisse sur le crâne par secteurs ; seule sa
- * sortie du nœud reste fixe, sinon elle s'en détacherait.
+ * Le plumet est fait de **lames** : des brins groupés à plat, qui montent puis
+ * s'arquent et retombent — un palmier, l'allure anime de la coupe « ananas ».
+ * Des brins en gerbe ronde lisaient comme un blaireau. Chaque lame a son
+ * ressort, sans gravité (la géométrie retombe déjà), et ses réglages : sept
+ * ressorts identiques bougeraient comme un seul.
+ *
+ * Nœud au pôle, légèrement en avant : derrière, c'est le bout haut de la
+ * fermeture éclair.
  */
 function tuft(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   const R = p.shape.headRadius
-  const s = onHeadPolar(p, (rnd() - 0.5) * 0.5, 0.93 + rnd() * 0.04, 0)
-  const [t1, t2] = tangentBasis(s.normal)
-  const rise = R * (0.12 + rnd() * 0.1)
-  const r = yarnR * (1 + rnd() * 0.35)
-  const limit = hairline(p, -0.1 + rnd() * 0.25)
-  const zip = zipBand(p, r)
-  out.movers.push({
-    pivot: s.pos.clone(),
-    dir: s.normal.clone(),
-    length: rise * 2,
-    cfg: { stiffness: 0.12, drag: 0.1, gravity: 0.4 },
-    maxAngle: 0.45,
-  })
+  const r = yarnR * (0.95 + rnd() * 0.3)
+  const tie = onHeadPolar(p, (rnd() - 0.5) * 0.6, 0.97 + rnd() * 0.02, 0)
+  const knot = tie.pos.clone().addScaledVector(tie.normal, r * 2.2)
+  const [t1, t2] = tangentBasis(tie.normal)
+  out.ribbonColor = RIBBONS[Math.floor(rnd() * RIBBONS.length)]
+  pulled(p, rnd, r, [tie.pos], out, -0.1 + rnd() * 0.2, { tuck: (r * 4) / R, grooves: 12 + Math.floor(rnd() * 5) })
 
-  /**
-   * Brins qui retombent jusqu'à la lisière. Leur partie posée sur le crâne
-   * bouge aussi, par secteurs pivotant au centre : elle glisse sur le crâne.
-   * Pendue au nœud, elle y restait figée — seul le plumet bougeait.
-   */
-  const sector = sectorMovers(out, rnd, R, 8, 0.3, 0.035)
-  const count = 80
-  const M = 18
-  for (let i = 0; i < count; i++) {
-    const az = (i / count) * Math.PI * 2 + (rnd() - 0.5) * 0.08
-    const tip = dirOf(az, limit(az) + (rnd() - 0.5) * 0.05)
-    const side = Math.abs(tip.x) > 1e-3 ? Math.sign(tip.x) : i % 2 ? 1 : -1
-    const top = s.normal.clone()
-    const layer = r * (0.7 + rnd() * 1.2)
-    const arc = rise * (0.7 + rnd() * 0.5)
-    const pts: THREE.Vector3[] = [s.pos.clone().addScaledVector(s.normal, -r * 2)]
-    for (let k = 1; k <= M; k++) {
-      const t = k / M
-      // La gerbe s'ouvre sur la fermeture au lieu de la recouvrir.
-      const d = keepOffZip(top.clone().lerp(tip, t).normalize(), zip, side)
-      // Bosse de la gerbe : haute au départ, nulle une fois posée.
-      const bulge = arc * Math.sin(Math.PI * Math.min(1, t * 1.6)) * (t < 0.62 ? 1 : 0)
-      pts.push(onDir(p, d, layer + Math.max(0, bulge)).pos)
-    }
-    out.yarn.push(yarn(pts, r, { mover: sector(az), free: (t) => clamp(t / 0.2, 0, 1) * (0.4 + 0.6 * t), fling: (t) => t, phase: rnd() * 6 }))
-  }
-
-  // Toupet : brins courts, dressés au centre.
-  // Le toupet est la signature de la coupe : trop court, la houppette ne se
-  // distinguait plus d'une coupe au bol.
-  const tall = 18 + Math.floor(rnd() * 10)
-  const L = R * (0.5 + rnd() * 0.3)
-  for (let i = 0; i < tall; i++) {
-    const phi = (i / tall) * Math.PI * 2 + rnd() * 0.5
-    const dir = t1.clone().multiplyScalar(Math.cos(phi)).addScaledVector(t2, Math.sin(phi))
-    const len = L * (0.7 + rnd() * 0.45)
-    const droop = 0.2 + rnd() * 0.3
-    const pts: THREE.Vector3[] = [s.pos.clone().addScaledVector(s.normal, -r * 2)]
-    for (let k = 1; k <= 10; k++) {
-      const t = k / 10
-      pts.push(
-        s.pos
-          .clone()
-          .addScaledVector(s.normal, len * (t - droop * t * t))
-          .addScaledVector(dir, len * 0.55 * Math.pow(t, 1.2))
-          .addScaledVector(DOWN, len * droop * t * t * 0.35),
-      )
-    }
-    out.yarn.push(yarn(pts, r, { mover: 0, free: (t) => t ** 1.3, phase: rnd() * 6 }))
-  }
+  // Chouchou : deux tours serrés au pied du plumet.
   for (let w = 0; w < 2; w++) {
-    const c = s.pos.clone().addScaledVector(s.normal, rise * (0.35 + w * 0.3))
-    out.yarn.push(ring(c, s.normal, r * 4.2, r * 0.9))
+    const c = knot.clone().addScaledVector(tie.normal, r * (0.5 + w * 1.8))
+    out.ribbon.push(ring(c, tie.normal, r * 4.6, r * 1.3))
+  }
+
+  const blades = 6 + Math.floor(rnd() * 3)
+  const L = R * (0.85 + rnd() * 0.3)
+  const phase0 = rnd() * Math.PI * 2
+  for (let b = 0; b < blades; b++) {
+    const phi = phase0 + (b / blades) * Math.PI * 2 + (rnd() - 0.5) * 0.4
+    const out1 = t1.clone().multiplyScalar(Math.cos(phi)).addScaledVector(t2, Math.sin(phi))
+    const len = L * (0.75 + rnd() * 0.45)
+    const rise = 0.55 + rnd() * 0.35
+    const width = r * (9 + rnd() * 3)
+    // Axe de la lame : monte le long de la normale, s'arque vers l'extérieur,
+    // retombe. Bézier cubique, comme la queue haute.
+    const P0 = knot.clone().addScaledVector(tie.normal, r * 3)
+    const P1 = P0.clone().addScaledVector(tie.normal, len * rise)
+    const P2 = P0.clone().addScaledVector(tie.normal, len * rise * 0.9).addScaledVector(out1, len * 0.6)
+    const P3 = P0.clone().addScaledVector(out1, len * 0.95).addScaledVector(tie.normal, len * (rise - 0.75))
+    const axis = (t: number) => {
+      const v = 1 - t
+      return P0.clone()
+        .multiplyScalar(v * v * v)
+        .addScaledVector(P1, 3 * v * v * t)
+        .addScaledVector(P2, 3 * v * t * t)
+        .addScaledVector(P3, t * t * t)
+    }
+    const tip = axis(1)
+    const m = out.movers.length
+    out.movers.push({
+      pivot: P0.clone(),
+      dir: tip.clone().sub(P0).normalize(),
+      length: tip.distanceTo(P0),
+      cfg: { stiffness: 0.06 + rnd() * 0.04, drag: 0.1 + rnd() * 0.06, gravity: 0 },
+      maxAngle: 0.35,
+    })
+    // Travers de la lame : à plat, perpendiculaire à son plan d'arc.
+    const across = new THREE.Vector3().crossVectors(tie.normal, out1).normalize()
+    const strands = 13
+    const N = 16
+    for (let i = 0; i < strands; i++) {
+      const u = ((i + 0.5) / strands) * 2 - 1
+      const depth = (rnd() - 0.5) * r * 1.5
+      const cut = 0.88 + rnd() * 0.12 - Math.abs(u) * 0.1
+      const pts: THREE.Vector3[] = [tie.pos.clone().addScaledVector(tie.normal, -r)]
+      for (let k = 0; k <= N; k++) {
+        const t = (k / N) * cut
+        // Large au milieu, pointue au bout : la lame se referme sur son tiers.
+        const w = width * (0.35 + 0.65 * smooth(0, 0.3, t)) * (1 - 0.9 * smooth(0.55, 1, t))
+        pts.push(axis(t).addScaledVector(across, u * w * 0.5).addScaledVector(out1, depth * (1 - t)))
+      }
+      out.yarn.push(yarn(pts, r, { mover: m, free: (t) => t ** 1.1, fling: (t) => t, phase: rnd() * 6, taper: 0.3 }))
+    }
   }
 }
 
