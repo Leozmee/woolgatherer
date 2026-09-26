@@ -573,11 +573,54 @@ export function beltMetrics(p: DollParams) {
   return {
     y: -p.shape.torsoHeight * 0.14,
     /** Demi-hauteur du cordon, sur tout le tour. */
-    cord: p.thread.radius * 2.2,
+    cord: p.thread.radius * 2.6,
     /** Demi-hauteur de la boucle, et sa demi-largeur en azimut. */
-    buckle: p.thread.radius * 5,
-    buckleAz: (p.thread.radius * 5) / p.shape.torsoRadius,
+    buckle: p.thread.radius * BUCKLE,
+    buckleAz: (p.thread.radius * BUCKLE) / p.shape.torsoRadius,
   }
+}
+
+/**
+ * Rayon de la boucle, en rayons de fil. Une fois et demie l'ancienne : c'est
+ * la signature de silhouette de la poupée, elle doit se lire de loin.
+ */
+const BUCKLE = 7.5
+
+/**
+ * Bouts du cordon qui pendent de la boucle et balancent — ce qui fait vivre
+ * la ceinture pendant l'animation. Posés sur le ventre dans le repère du cou
+ * (celui de `Streamer`), légèrement écartés l'un de l'autre et de biais.
+ */
+export function beltTails(p: DollParams) {
+  const { y } = beltMetrics(p)
+  const rnd = mulberry32(p.seed + 405)
+  const neckY = p.shape.torsoHeight * 0.44
+  const width = p.thread.radius * 3.6
+  const thickness = p.thread.radius * 2.2
+  const lift = p.shell.height + p.shape.lumps * p.shape.torsoRadius * 0.65 + thickness
+  const side = rnd() < 0.5 ? -1 : 1
+  const rows = 10
+  const cols = 2
+  const shapes = [0, 1].map((k) => {
+    const L = p.shape.torsoHeight * (0.3 + rnd() * 0.12 + k * 0.08)
+    const az0 = side * (BUCKLE * p.thread.radius * (0.4 + k * 0.5)) / p.shape.torsoRadius
+    const rest: THREE.Vector3[] = []
+    const pin: number[] = []
+    for (let i = 0; i < rows; i++) {
+      const t = i / (rows - 1)
+      const ty = y - L * t
+      const az = az0 + side * t * 0.35
+      const s0 = onTorso(p, az, ty, lift)
+      const across = new THREE.Vector3(Math.cos(az), 0, -Math.sin(az))
+      for (let j = 0; j < cols; j++) {
+        const u = (j / (cols - 1) - 0.5) * width
+        rest.push(s0.pos.clone().addScaledVector(across, u).setY(s0.pos.y - neckY))
+        pin.push(i === 0 ? 1 : i === 1 ? 0.4 : 0)
+      }
+    }
+    return { rest, pin, rows, cols }
+  })
+  return { shapes, thickness }
 }
 
 /**
@@ -1338,13 +1381,33 @@ function useExtra(
         const belt = new THREE.TubeGeometry(
           new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.4),
           n * 3,
-          th.radius * 1.6,
+          th.radius * 2.2,
           6,
           true,
         )
         const front = onTorso(p, 0, y, 0.012)
+        const tails = beltTails(p)
+        const tailColliders = streamerColliders(p, tails.thickness)
 
         return {
+          // Les bouts pendants bougent : hors du `<Batched>` du torse, dans le
+          // repère du cou comme tout `Streamer`.
+          neck: (
+            <>
+              {tails.shapes.map((shape, i) => (
+                <Streamer
+                  key={i}
+                  p={p}
+                  shape={shape}
+                  thickness={tails.thickness}
+                  colliders={tailColliders}
+                  cfg={{ gravity: 0.6, damping: 0.08 }}
+                >
+                  <meshPhysicalMaterial color={th.color} roughness={0.88} sheen={0.6} />
+                </Streamer>
+              ))}
+            </>
+          ),
           torso: (
             <group>
               <mesh geometry={belt} castShadow>
@@ -1355,7 +1418,7 @@ function useExtra(
                 <mesh position={[0, 0, -th.radius * 0.6]} castShadow>
                   <extrudeGeometry
                     args={[
-                      buckleFrame(kind, th.radius * 5, th.radius * 3.1),
+                      buckleFrame(kind, th.radius * BUCKLE, th.radius * BUCKLE * 0.62),
                       {
                         depth: th.radius * 1.2,
                         bevelEnabled: true,
@@ -1377,7 +1440,7 @@ function useExtra(
                 </mesh>
                 {/* ardillon */}
                 <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-                  <cylinderGeometry args={[th.radius * 0.6, th.radius * 0.6, th.radius * 8, 8]} />
+                  <cylinderGeometry args={[th.radius * 0.8, th.radius * 0.8, th.radius * BUCKLE * 1.6, 8]} />
                   <meshPhysicalMaterial
                     map={wood.map}
                     color="#6d4a2e"
