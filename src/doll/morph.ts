@@ -204,7 +204,7 @@ export const ARCHETYPES: readonly Archetype[] = [
   // épais et poings généreux, torse plein, jambes plus courtes.
   variant('gorille', 'gorille', 0.6, -0.3, {
     shoulders: 1.8, limbThick: 1.2, limbBias: 0.3, head: -0.4, chest: 1.2, hunch: 0.3,
-    armLower: 0.6, armUpper: 0.3, stance: 0.4, handScale: 0.3, stature: -0.3,
+    armLower: 0.6, armUpper: 0.3, stance: 0.4, handScale: 0.1, stature: -0.3,
   }),
   // Grosse tête de bébé sur un petit corps rond ; les bras restent longs et
   // ballants, c'est ce qui en fait un poupon dégingandé et pas un poupon.
@@ -227,15 +227,17 @@ export const ARCHETYPES: readonly Archetype[] = [
   variant('araignee', 'araignée', -0.2, -0.1, {
     stance: 3, legSplay: 1.2, reach: 0.6, stature: -0.8, knee: 0.8, kneeOut: 1, waist: 0.6,
   }),
-  // Épaules larges et torse bombé, mais le dos reste un peu rond et les bras
-  // ballants : un costaud nonchalant plutôt qu'un bodybuilder.
+  // Épaules larges et torse bombé, buste redressé ; bras de longueur normale
+  // et un peu écartés — c'est le V qui domine. Avec les longs bras épais de la
+  // base il se confondait avec le gorille.
   variant('hercule', 'hercule', 0.4, -0.5, {
     shoulders: 2.6, chest: 1.6, waist: 0.8, hips: -0.5, armUpper: 0.8, limbThick: 0.7,
-    head: -0.4, hunch: -0.6,
+    head: -0.4, hunch: -0.9, limbBias: -1.2, stance: 0.8,
   }),
-  // Bassin lourd, cuisses pleines et grands pieds ; bras un peu moins longs.
+  // Bassin lourd, cuisses pleines et grands pieds ; bras plus courts, un peu
+  // repliés devant — la seule variante dont les bras ne ballent pas.
   variant('kangourou', 'kangourou', 0.2, -0.1, {
-    limbThick: -0.8, legUpper: 1.4, hips: 0.9, footScale: 0.8, limbBias: -1, belly: 0.2,
+    limbThick: -0.8, legUpper: 1.9, hips: 1.1, footScale: 1.1, limbBias: -1.6, belly: 0.2, elbow: 1,
   }),
   // Taille marquée entre poitrine et hanches, buste redressé, mollets.
   variant('ballerine', 'ballerine', -0.4, -0.3, {
