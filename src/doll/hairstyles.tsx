@@ -1449,13 +1449,16 @@ function ponytail(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
  */
 function braids(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   const R = p.shape.headRadius
-  const rb = yarnR * (3.2 + rnd() * 1)
+  const rb = yarnR * (4 + rnd() * 1.2)
   const r = yarnR * 0.9
   const sy0 = 0.15 + rnd() * 0.2
-  const hang = R * (0.25 + rnd() * 0.35)
+  const hang = R * (0.45 + rnd() * 0.4)
   out.ribbonColor = RIBBONS[Math.floor(rnd() * RIBBONS.length)]
   const starts = [-1, 1].map((sx) => onHeadPolar(p, sx * (Math.PI / 2 + 0.35), sy0, 0))
-  pulled(p, rnd, r, starts.map((s) => s.pos), out, NAPE_LOW + rnd() * 0.12)
+  // Lisière avant relevée : la frange balayée part de là (voir `sweptFringe`).
+  const crown = clamp(faceSafe(p).edge(2.3) + 0.08, 0.55, 0.9)
+  const { frontLine } = pulled(p, rnd, r, starts.map((s) => s.pos), out, NAPE_LOW + rnd() * 0.12, { crown })
+  sweptFringe(p, rnd, r, frontLine, out)
 
   starts.forEach((s0, n) => {
     const az = Math.atan2(s0.pos.x, s0.pos.z)
@@ -1502,6 +1505,65 @@ function braids(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
       out.yarn.push(yarn(tassel, r, { mover: m, free: () => 1 }))
     }
   })
+}
+
+/**
+ * Frange balayée sur le côté, en mèches pointues — l'allure anime des nattes.
+ *
+ * Les brins partent sous la lisière des cheveux tirés (`frontLine`) et
+ * traversent le front en biais vers un côté tiré au sort, épousant le crâne
+ * point par point. Le bord s'arrête au-dessus des boutons (`faceSafe.edge`) ;
+ * les brins se groupent en mèches qui se referment sur leur dernier tiers. Un
+ * ressort par mèche, pivot au centre du crâne, sans gravité, débattement
+ * borné pour que la pointe ne descende jamais sur un bouton.
+ */
+function sweptFringe(p: DollParams, rnd: () => number, r: number, frontLine: (az: number) => number, out: Parts) {
+  const safe = faceSafe(p)
+  const side = rnd() < 0.5 ? -1 : 1
+  const clumps = 4 + Math.floor(rnd() * 2)
+  const span = 1.5
+  const sweep = 0.45 + rnd() * 0.2
+  // Au ras des sourcils, juste au-dessus des boutons : à deux tailles de
+  // bouton au-dessus des yeux, sur de gros boutons, la frange n'avait plus
+  // la place d'exister sous la lisière.
+  const edge = safe.edge(1.35 + rnd() * 0.2)
+  const N = 14
+  const first = out.movers.length
+  const lens = Array.from({ length: clumps }, () => 0.8 + rnd() * 0.4)
+  for (let c = 0; c < clumps; c++) {
+    const az = (((c + 0.5) / clumps) * 2 - 1) * span * 0.5 + side * sweep
+    out.movers.push({
+      pivot: new THREE.Vector3(),
+      dir: dirOf(az, edge),
+      length: p.shape.headRadius,
+      cfg: { stiffness: 0.05 + rnd() * 0.03, drag: 0.1 + rnd() * 0.05, gravity: 0 },
+      maxAngle: Math.min(0.2, safe.maxAngle(edge)),
+    })
+  }
+  const strands = clumps * 9
+  for (let i = 0; i < strands; i++) {
+    const c = i % clumps
+    const u = (Math.floor(i / clumps) + 0.5) / 9 - 0.5
+    const cw = span / clumps
+    const az0 = (((c + 0.5) / clumps) * 2 - 1) * span * 0.5 + u * cw * 0.9
+    const tipAz = az0 + side * sweep
+    const center = (((c + 0.5) / clumps) * 2 - 1) * span * 0.5 + side * sweep
+    const sy0 = Math.min(0.97, frontLine(az0) + 0.14)
+    // Pointe de mèche : au bord, les brins du milieu descendent plus bas.
+    const tipSy = edge + (Math.abs(u) * 0.12 + (1 - lens[c]) * 0.1)
+    const layer = r * (1.6 + rnd() * 1.4)
+    const pts: THREE.Vector3[] = []
+    for (let k = 0; k <= N; k++) {
+      const t = k / N
+      const close = 0.8 * smooth(0.6, 1, t)
+      const a = az0 + (tipAz - az0) * t
+      const sy = sy0 + (tipSy - sy0) * t
+      pts.push(onHeadPolar(p, a * (1 - close) + center * close, sy, k === 0 ? -r * 2 : layer).pos)
+    }
+    out.yarn.push(
+      yarn(pts, r, { mover: first + c, free: (t) => 0.4 + 0.6 * t, fling: (t) => t * 0.8, phase: rnd() * 6, taper: 0.35 }),
+    )
+  }
 }
 
 /**
