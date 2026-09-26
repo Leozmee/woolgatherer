@@ -7,7 +7,7 @@ import { turntable } from '../core/turntable'
 import { mulberry32 } from '../core/rand'
 import { useDisposable } from '../core/useDisposable'
 import { Batched } from '../core/batch'
-import { footGeometry, headGeometry, limbGeometry, mittenGeometry, torsoGeometry } from './geometry'
+import { cuffSeamGeometry, footGeometry, headGeometry, limbGeometry, mittenGeometry, soleGeometry, soleSeamGeometry, torsoGeometry } from './geometry'
 import { Pin, jitterColor, pinColor } from './parts'
 import { EYE_SCALE, Face, faceLook, type FaceLook } from './face'
 import { makeWoodTexture } from './wood'
@@ -22,6 +22,8 @@ import {
   makeShellUniforms,
   shellInstances,
   shellShader,
+  soleCutShader,
+  bareShader,
 } from './fuzz'
 import { dollLayout, legDrop, tipScale } from './layout'
 import { Zip, zipFuzzShader, zipHole } from './zip'
@@ -80,6 +82,8 @@ function Fuzz({
   holes,
   joint,
   zip,
+  sole,
+  bare,
 }: {
   geometry: THREE.BufferGeometry
   maps: WoolMaps
@@ -90,6 +94,10 @@ function Fuzz({
   zip?: ReturnType<typeof zipHole>
   /** Pièces cousues sous lesquelles retirer la laine — le torse seul en a. */
   holes?: PatchHoles
+  /** Pied : pas de duvet sous la semelle de feutre. */
+  sole?: boolean
+  /** Pas de duvet hors de cette tranche de hauteur [bas, haut] (revers de moufle). */
+  bare?: [number, number]
 }) {
   const count = p.shell.count
   // Toutes les coques en un dessin (voir `shellInstances`).
@@ -103,6 +111,7 @@ function Fuzz({
   // clic sur « générer ».
   const uni = useMemo(makeHoleUniforms, [])
   const shellUni = useMemo(makeShellUniforms, [])
+  const bareUni = useMemo(() => ({ uBareAbove: { value: 1e9 }, uBareBelow: { value: -1e9 } }), [])
   shellUni.uShellCount.value = count
   shellUni.uShellHeight.value = p.shell.height
   const compile = useMemo(() => {
@@ -110,13 +119,19 @@ function Fuzz({
     const shell = shellShader(shellUni)
     const bend = joint ? jointShader(joint) : null
     const zipCut = zip ? zipFuzzShader(zip) : null
+    const soleCut = sole ? soleCutShader() : null
+    const bareCut = bare ? bareShader(bareUni) : null
     return (sh: THREE.WebGLProgramParametersWithUniforms) => {
       hole?.(sh)
       shell(sh)
       bend?.(sh)
       zipCut?.(sh)
+      soleCut?.(sh)
+      bareCut?.(sh)
     }
-  }, [uni, shellUni, holes, joint, zip])
+  }, [uni, shellUni, holes, joint, zip, sole, bareUni, !!bare])
+  bareUni.uBareBelow.value = bare?.[0] ?? -1e9
+  bareUni.uBareAbove.value = bare?.[1] ?? 1e9
   useMemo(() => {
     uni.uHoleMask.value = holes?.mask ?? null
     uni.uHoleCount.value = holes?.count ?? 0
@@ -129,7 +144,7 @@ function Fuzz({
       <meshPhysicalMaterial
         onBeforeCompile={compile}
         customProgramCacheKey={() =>
-          `fuzz${holes ? '-holes' : ''}${joint ? '-joint' : ''}${zip ? `-zip${zip.half.toFixed(4)}${zip.top.toFixed(4)}${zip.bottom.toFixed(4)}` : ''}`
+          `fuzz${holes ? '-holes' : ''}${joint ? '-joint' : ''}${sole ? '-sole' : ''}${bare ? '-bare' : ''}${zip ? `-zip${zip.half.toFixed(4)}${zip.top.toFixed(4)}${zip.bottom.toFixed(4)}` : ''}`
         }
         map={maps[0]}
         alphaMap={maps[3]}
@@ -333,16 +348,24 @@ export function Doll({
     () => limbGeometry(lb.legRadius, lb.legLength, s.lumps, s.lumpScale, p.seed + 3, lb.legTaper ?? 0, lb.legUpper ?? 0, lb.legLower ?? 0),
     [lb.legRadius, lb.legLength, s.lumps, s.lumpScale, p.seed, lb.legTaper, lb.legUpper, lb.legLower],
   )
+  // Main et pied suivent le galbe du membre (le bout d'une massue est plus
+  // gros) et leur propre échelle (`handScale`, `footScale`).
+  const handR = lb.armRadius * 1.35 * tipScale(lb.armTaper, lb.handScale)
+  const wristR = lb.armRadius * (1 + (lb.armLower ?? 0) * 0.3)
+  const footR = lb.legRadius * 1.3 * tipScale(lb.legTaper, lb.footScale)
   const handGeo = useDisposable(
-    // Main et pied suivent le galbe du membre (le bout d'une massue est plus
-    // gros) et leur propre échelle (`handScale`, `footScale`).
-    () => mittenGeometry(lb.armRadius * 1.35 * tipScale(lb.armTaper, lb.handScale), lb.armRadius * (1 + (lb.armLower ?? 0) * 0.3), s.lumps, s.lumpScale, p.seed),
-    [lb.armRadius, lb.armTaper, lb.handScale, lb.armLower, s.lumps, s.lumpScale, p.seed],
+    () => mittenGeometry(handR, wristR, s.lumps, s.lumpScale, p.seed),
+    [handR, wristR, s.lumps, s.lumpScale, p.seed],
   )
+  const cuffSeamGeo = useDisposable(() => cuffSeamGeometry(handR, wristR, p.thread.radius * 1.2), [handR, wristR, p.thread.radius])
   const footGeo = useDisposable(
-    () => footGeometry(lb.legRadius * 1.3 * tipScale(lb.legTaper, lb.footScale), s.lumps, s.lumpScale, p.seed + 5),
-    [lb.legRadius, lb.legTaper, lb.footScale, s.lumps, s.lumpScale, p.seed],
+    () => footGeometry(footR, s.lumps, s.lumpScale, p.seed + 5),
+    [footR, s.lumps, s.lumpScale, p.seed],
   )
+  const soleGeo = useDisposable(() => soleGeometry(footR), [footR])
+  const soleSeamGeo = useDisposable(() => soleSeamGeometry(footR, p.thread.radius * 0.75), [footR, p.thread.radius])
+  // Feutre de semelle : une teinte franche par poupée, la même aux deux pieds.
+  const felt = useMemo(() => FELTS[Math.floor(mulberry32(p.seed + 811)() * FELTS.length)], [p.seed])
 
   // --- locks en ficelle ---
   //
@@ -946,7 +969,8 @@ export function Doll({
         <mesh geometry={armGeo} castShadow receiveShadow>
           <Wool maps={armMaps} p={p} color={slots.tints?.[key]} joint={joints.arm[side]} />
         </mesh>
-        <Fuzz geometry={armGeo} maps={armMaps} p={p} joint={joints.arm[side]} />
+        {/* Pas de duvet d'avant-bras sous le revers de la moufle. */}
+        <Fuzz geometry={armGeo} maps={armMaps} p={p} joint={joints.arm[side]} bare={[-lb.armLength - lb.armRadius * 0.35 + handR * 0.42, 1e9]} />
         <Batched deps={batchDeps}>{slots.limbs?.[key]}</Batched>
         {lower('arm', side, lb.armLength, (
           <>
@@ -956,7 +980,10 @@ export function Doll({
                 <mesh geometry={handGeo} castShadow>
                   <Wool maps={armMaps} p={p} color={slots.tints?.[key]} />
                 </mesh>
-                <Fuzz geometry={handGeo} maps={armMaps} p={p} />
+                <Fuzz geometry={handGeo} maps={armMaps} p={p} bare={[-1e9, -handR * 0.1]} />
+                <mesh geometry={cuffSeamGeo}>
+                  <meshPhysicalMaterial color={p.thread.color} roughness={0.7} sheen={0.6} sheenRoughness={0.5} />
+                </mesh>
               </group>
               {weapon && side === -1 && (
                 <group ref={weaponRef}>
@@ -997,7 +1024,13 @@ export function Doll({
               <mesh geometry={footGeo} castShadow>
                 <Wool maps={legMaps} p={p} color={slots.tints?.[key]} />
               </mesh>
-              <Fuzz geometry={footGeo} maps={legMaps} p={p} />
+              <Fuzz geometry={footGeo} maps={legMaps} p={p} sole />
+              <mesh geometry={soleGeo} castShadow receiveShadow>
+                <meshPhysicalMaterial color={felt} roughness={0.95} sheen={0.4} sheenRoughness={0.8} />
+              </mesh>
+              <mesh geometry={soleSeamGeo}>
+                <meshPhysicalMaterial color={p.thread.color} roughness={0.7} sheen={0.6} sheenRoughness={0.5} />
+              </mesh>
             </group>
             <group position={[0, lb.legLength * JOINT, 0]}>
               <Batched deps={batchDeps}>{slots.limbEnds?.[key]}</Batched>
@@ -1161,6 +1194,12 @@ const _qId = new THREE.Quaternion()
 const _legK: Record<number, number> = {}
 const _kneeDir = new THREE.Vector3()
 const _qc = new THREE.Quaternion()
+/**
+ * Feutres de semelle : des teintes franches et moyennes, qui tranchent sur la
+ * laine sans la concurrencer — un feutre clair disparaît sous le pied, un noir
+ * pur se lit comme un trou.
+ */
+const FELTS = ['#7a4b3a', '#4a5568', '#8c3a34', '#5d6140', '#3d3635', '#a07a52', '#5a4a6b', '#2f5a5a']
 /** Pointes de pied tournées un peu vers l'extérieur : parallèles, ils lisent comme des patins. */
 const TOE_OUT = {
   [-1]: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -0.14),

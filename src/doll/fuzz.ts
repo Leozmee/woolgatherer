@@ -156,6 +156,43 @@ uniform int uHoleCount;`,
  * Les instances se dessinent dans l'ordre de leur rang, comme le faisait
  * `renderOrder` : du fond du duvet vers sa pointe.
  */
+/**
+ * Retire le duvet là où la normale **de base** regarde vers le bas : le
+ * dessous du pied, sous la semelle de feutre (voir CLAUDE.md, « il faut
+ * retirer la laine dessous »). Lue avant que la coque ne soit repoussée.
+ */
+export function soleCutShader() {
+  return (sh: THREE.WebGLProgramParametersWithUniforms) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vSoleN;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSoleN = normal.y;')
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vSoleN;')
+      .replace('#include <alphatest_fragment>', 'if (vSoleN < -0.5) discard;\n#include <alphatest_fragment>')
+  }
+}
+
+/**
+ * Retire le duvet hors d'une tranche de hauteur **de base** (repère du
+ * maillage) : au-dessus de `uBareAbove` sur la moufle (son revers, tricoté
+ * serré, où le surjet doit se lire), sous `uBareBelow` sur l'avant-bras (dont
+ * les fibres traversaient le revers et cachaient le fil). Uniformes et non
+ * constantes : une valeur par poupée recompilerait le programme six fois par
+ * planche.
+ */
+export type BareUniforms = { uBareAbove: { value: number }; uBareBelow: { value: number } }
+export function bareShader(uni: BareUniforms) {
+  return (sh: THREE.WebGLProgramParametersWithUniforms) => {
+    Object.assign(sh.uniforms, uni)
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vBareY;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBareY = position.y;')
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uBareAbove;\nuniform float uBareBelow;\nvarying float vBareY;')
+      .replace('#include <alphatest_fragment>', 'if (vBareY > uBareAbove || vBareY < uBareBelow) discard;\n#include <alphatest_fragment>')
+  }
+}
+
 export function shellInstances(source: THREE.BufferGeometry, count: number, height: number) {
   const g = new THREE.InstancedBufferGeometry()
   g.index = source.index

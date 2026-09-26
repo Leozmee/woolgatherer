@@ -208,7 +208,7 @@ function blob(
  * l'avant-bras, que le revers doit couvrir quelle que soit la taille de main.
  */
 export function mittenGeometry(r: number, arm: number, lumps: number, lumpScale: number, seed: number) {
-  const cuffR = Math.max(r * 0.84, arm * 1.14)
+  const cuffR = Math.max(r * 0.9, arm * 1.2)
   const cuff = blob(cuffR, r * 0.2, cuffR, [0, r * 0.22, 0], undefined, 0, 2.4)
   const palm = blob(r * 0.48, r * 1.05, r * 0.8, [0, -r * 0.48, 0], (v) => {
     // −1 au poignet, +1 au bout des doigts.
@@ -255,6 +255,132 @@ export function footGeometry(r: number, lumps: number, lumpScale: number, seed: 
   }, 0, 2.6)
   geo.computeVertexNormals()
   return stuff(geo, lumps * r * 0.7, lumpScale / Math.max(r, 0.05), seed + 37)
+}
+
+// ---------------------------------------------------------------- semelle, coutures
+
+/** Contour du pied à sa plus grande largeur (repère du pied), même formule que `footGeometry`. */
+function footOutline(r: number, k: number, n: number) {
+  const out: THREE.Vector2[] = []
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2
+    const s = Math.sin(a)
+    const c = Math.cos(a)
+    const rho = Math.pow(Math.abs(s / 0.78) ** 2.6 + Math.abs(c / 1.45) ** 2.6, -1 / 2.6)
+    const f = c * rho / 1.45
+    out.push(new THREE.Vector2(s * rho * r * k * (1 + 0.18 * f - 0.08 * Math.max(0, -f)), c * rho * r * k + r * 0.42))
+  }
+  return out
+}
+
+/** Pointe relevée du pied, en hauteur, pour `z` dans le repère du pied (voir `footGeometry`). */
+function toeLift(r: number, z: number) {
+  const toe = Math.max(0, (z - r * 0.42) / (r * 1.45) - 0.45) / 0.55
+  return r * 0.14 * toe * toe
+}
+
+/** Semelle : contour (fraction du pied), épaisseur et arrondi, en rayons de pied. */
+const SOLE_K = 1
+const SOLE_DEPTH = 0.1
+const SOLE_BEVEL = 0.04
+
+/**
+ * Semelle de feutre : une plaque au contour du pied, un peu en retrait, aux
+ * bords arrondis, cambrée avec la pointe. Posée sous la laine, dont le duvet
+ * est retiré dessous (`soleCut`) — sans quoi les fibres la traversent, comme
+ * sous les pièces cousues.
+ */
+export function soleGeometry(r: number) {
+  const pts = footOutline(r, SOLE_K, 48)
+  // Forme dans le plan (x, −z) : après rotation, elle s'étend en z vers l'avant.
+  const shape = new THREE.Shape(pts.map((v) => new THREE.Vector2(v.x, -v.y)))
+  const bevel = SOLE_BEVEL * r
+  const depth = SOLE_DEPTH * r
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: true,
+    bevelThickness: bevel,
+    bevelSize: bevel,
+    bevelSegments: 2,
+    curveSegments: 1,
+  })
+  geo.rotateX(-Math.PI / 2)
+  // Bas de la semelle un poil sous celui de la laine (−r) : elle porte la poupée.
+  geo.translate(0, -r - r * 0.015 + bevel, 0)
+  const pos = geo.attributes.position as THREE.BufferAttribute
+  for (let i = 0; i < pos.count; i++) pos.setY(i, pos.getY(i) + toeLift(r, pos.getZ(i)))
+  pos.needsUpdate = true
+  geo.computeVertexNormals()
+  return geo
+}
+
+/** Brins de fil fusionnés : chaque point est une Bézier quadratique (bouts, sommet). */
+function threads(stitches: [THREE.Vector3, THREE.Vector3, THREE.Vector3][], radius: number) {
+  const parts = stitches.map(([a, c, b]) => new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(a, c, b), 4, radius, 4, false))
+  const geo = mergeGeometries(parts)!
+  parts.forEach((g) => g.dispose())
+  return geo
+}
+
+/**
+ * Points avant qui cousent la semelle au pied, juste au-dessus du rebord :
+ * chaque point entre dans la laine à ses deux bouts (voir CLAUDE.md, « un
+ * point de couture se définit par le fait d'entrer dans le tissu »).
+ */
+export function soleSeamGeometry(r: number, thread: number) {
+  const n = 30
+  // Sur la tranche du feutre, à mi-hauteur : c'est là qu'on voit une semelle
+  // cousue. Sur la laine, le duvet mangeait les points.
+  const bottom = -r - r * 0.015
+  const y = bottom + (SOLE_DEPTH + SOLE_BEVEL * 2) * r * 0.5
+  const ring = footOutline(r, SOLE_K, n * 2)
+  const c = new THREE.Vector3(0, 0, r * 0.42)
+  const at = (v: THREE.Vector2, lift: number) => {
+    const p = new THREE.Vector3(v.x, 0, v.y)
+    const d = p.clone().sub(c)
+    const len = d.length()
+    p.copy(c).addScaledVector(d, (len + SOLE_BEVEL * r + lift) / len)
+    p.y = y + toeLift(r, p.z)
+    return p
+  }
+  const out: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = []
+  for (let i = 0; i < n; i++) {
+    const a = ring[i * 2]
+    const b = ring[(i * 2 + 1) % ring.length]
+    const m = new THREE.Vector2().addVectors(a, b).multiplyScalar(0.5)
+    out.push([at(a, -thread * 2), at(m, thread * 2), at(b, -thread * 2)])
+  }
+  return threads(out, thread)
+}
+
+/**
+ * Surjet du revers de moufle : des points obliques qui passent par-dessus le
+ * bord bas du revers, tous penchés du même côté — c'est l'inclinaison
+ * régulière qui fait lire « surjet » et non « pointillés ».
+ */
+export function cuffSeamGeometry(r: number, arm: number, thread: number) {
+  const cuffR = Math.max(r * 0.9, arm * 1.2)
+  const n = 16
+  // Point du revers (superellipsoïde d'exposant 2,4, centre 0,22 r, demi-hauteur
+  // 0,2 r) à l'azimut `a` et à la hauteur `y`, décollé de `lift`.
+  const ringAt = (a: number, lift: number, y: number) => {
+    const s = Math.sin(a)
+    const c = Math.cos(a)
+    const dy = Math.min(1, Math.abs(y - r * 0.22) / (r * 0.2))
+    const rho = cuffR * Math.pow(1 - dy ** 2.4, 1 / 2.4) * Math.pow(Math.abs(s) ** 2.4 + Math.abs(c) ** 2.4, -1 / 2.4)
+    return new THREE.Vector3(s * (rho + lift), y, c * (rho + lift))
+  }
+  const out: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = []
+  const da = ((Math.PI * 2) / n) * 0.45
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2
+    out.push([
+      ringAt(a, -thread * 2, r * 0.3),
+      ringAt(a + da * 0.5, thread * 3, r * 0.2),
+      ringAt(a + da, -thread * 2, r * 0.1),
+    ])
+  }
+  return threads(out, thread)
 }
 
 /** Une mèche de laine : tube le long d'une courbe qui part du crâne et retombe. */
