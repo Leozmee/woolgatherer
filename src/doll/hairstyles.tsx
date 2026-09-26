@@ -285,6 +285,10 @@ function yarn(points: THREE.Vector3[], radius: number, o: YarnOpts = {}): THREE.
 function merged(parts: THREE.BufferGeometry[]): THREE.BufferGeometry | null {
   if (!parts.length) return null
   const out = mergeGeometries(parts)
+  // Une fusion ratée rend `null` sans bruit : toute la matière disparaît, et
+  // la poupée reste chauve (la pelote du chignon, privée d'un attribut, l'a
+  // fait). On le dit en atelier.
+  if (!out && import.meta.env.DEV) console.error('[coiffure] fusion impossible : attributs incompatibles')
   parts.forEach((g) => g.dispose())
   return out
 }
