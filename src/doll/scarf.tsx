@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { FrameCarry, followLimbs, localFloor, useRigBones } from './rig'
+import { Inertia, followLimbs, useRigBones } from './rig'
 import { mulberry32 } from '../core/rand'
 import { ClothSheet } from '../core/cloth'
 import { makeKnitMaps } from '../core/knit'
@@ -29,9 +29,7 @@ import {
  */
 const FRONT_PTS = 18
 const WRAP_PTS = 26
-// Pan arrière très long (voir `TAIL`) : plus de rangs, sinon il se plie en
-// segments raides quand il flotte.
-const BACK_PTS = 30
+const BACK_PTS = 14
 const ROWS = FRONT_PTS + WRAP_PTS + BACK_PTS
 
 /**
@@ -80,17 +78,6 @@ const SCARF_FUZZ = 0.45
  * peluche ; trop généreux, il rouvre le jour entre le corps et l'écharpe. Il
  * suit donc les réglages d'épaisseur et de relief, sinon les deux dérivent.
  */
-/**
- * **Signature de silhouette.** Le pan arrière est trois fois plus long que
- * celui d'une écharpe ordinaire : il traîne derrière la poupée, se soulève
- * dans la course, fouette dans les coups — il fait partie de l'animation. Le
- * pan avant, lui, s'allonge à peine : c'est le dos qui porte la ligne.
- */
-const TAIL = { back: 2.7, front: 1.15 }
-
-/** Part d'inertie « monde » des pans libres (voir `ClothExtras.carry`). */
-const CARRY = 0.92
-
 const clearOf = (p: DollParams) => (p.scarf.thickness * (1 + p.scarf.ribDepth)) / 2
 
 /**
@@ -167,8 +154,8 @@ export function scarfMetrics(p: DollParams) {
     band,
     localY,
     torsoY: p.shape.torsoHeight * 0.44 + localY,
-    front: p.shape.torsoHeight * (0.55 + rnd() * 0.3) * p.scarf.front * TAIL.front,
-    back: p.shape.torsoHeight * (0.56 + rnd() * 0.3) * p.scarf.back * TAIL.back,
+    front: p.shape.torsoHeight * (0.55 + rnd() * 0.3) * p.scarf.front,
+    back: p.shape.torsoHeight * (0.56 + rnd() * 0.3) * p.scarf.back,
     /**
      * Sens d'enroulement, et côté du pan avant — les deux vont ensemble.
      *
@@ -417,8 +404,7 @@ function centerline(p: DollParams, m: Metrics) {
   // Pan arrière, du cou vers le bout — il part lui aussi de la couche
   // intérieure, et ressort donc de dessous le tour.
   const backJoin = wrapAt(1)
-  // Long, il descendrait au sol le long du dos : son bout s'écarte en arrière.
-  const backEnd = tailEnd(-dir * 0.55, -0.85, -m.back * 0.8).add(new THREE.Vector3(0, 0, -m.back * 0.45))
+  const backEnd = tailEnd(-dir * 0.55, -0.85, -m.back)
   const backChord = backJoin.distanceTo(backEnd)
   const backM0 = wrapTangent(1).multiplyScalar(backChord * 0.6)
   const backM1 = fall(-dir, -1).multiplyScalar(backChord * 0.75)
@@ -627,6 +613,10 @@ export function Scarf({ p, tint }: { p: DollParams; tint: string }) {
     [grid, p.seed, p.scarf.bend, p.scarf.slack],
   )
 
+  // Atelier : la nappe simulée, pour mesurer le drapé (voir CLAUDE.md, audits).
+  useEffect(() => {
+    if (import.meta.env.DEV) Object.assign(window, { __scarf: { cloth, ROWS, COLS, FRONT_PTS, WRAP_PTS, m } })
+  }, [cloth, m])
   const geo = useMemo(() => sheetGeometry(ROWS, RCOLS), [])
   useEffect(() => () => geo.dispose(), [geo])
 
@@ -777,8 +767,7 @@ export function Scarf({ p, tint }: { p: DollParams; tint: string }) {
   }, [fringe, grid.unit, m.band])
 
   const rig = useRigBones()
-  const carry = useMemo(() => new FrameCarry(), [])
-  const floor = useMemo(() => ({ n: new THREE.Vector3(0, 1, 0), d: -1e9 }), [])
+  const inertia = useMemo(() => new Inertia(), [])
   useFrame((_, dt) => {
     // Obstacles des membres sur la pose **animée** : bras levé, le tissu doit
     // passer par-dessus, pas au travers. Bras puis jambes, en fin de liste.
@@ -790,18 +779,8 @@ export function Scarf({ p, tint }: { p: DollParams; tint: string }) {
     group.current.getWorldQuaternion(quat)
     gravityDir.set(0, -1, 0).applyQuaternion(quat.invert())
     // Écharpe de peluche : presque rien ne pèse, et le tissu continue de bouger.
-    // Les pans libres gardent leur élan dans le monde (rotations comprises) :
-    // la torsion d'une attaque les fait voler. Le long pan se pose au sol.
-    const delta = carry.update(group.current)
-    if (rig) localFloor(group.current, rig.floorY + p.shape.headRadius * 0.02, floor)
-    cloth.step(
-      dt,
-      { gravity: p.scarf.weight, damping: p.scarf.drape, iterations: 9 },
-      colliders,
-      gravityDir,
-      undefined,
-      { carry: delta, carryK: CARRY, floor: rig ? floor : null },
-    )
+    const accel = inertia.update(group.current, dt)
+    cloth.step(dt, { gravity: p.scarf.weight, damping: p.scarf.drape, iterations: 9 }, colliders, gravityDir, accel)
     writeSheet(geo, cloth.points, ROWS, COLS, RCOLS, render.mid, m.band * p.scarf.thickness, render.rib, p.scarf.ribDepth)
 
     readEnd(fringe.ends[0], cloth.points, 0, 1)
