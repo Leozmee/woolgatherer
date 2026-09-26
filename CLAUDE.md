@@ -749,6 +749,14 @@ arrive ; sinon, reprendre depuis ces branches.
   mèches pointues (`bunch` `clumps`) et deux mèches latérales.
 - **Nattes** : frange balayée en mèches pointues (`sweptFringe`), tresses plus
   épaisses et longues. **Trois poils** : toujours trois, crosse / ressort / pic.
+- **Couronne d'épingles** : plus un signe, un accessoire (épingles fixes
+  d'origine) tiré par une ou deux poupées de chaque planche (`boardCrowns`) ;
+  la 6e poupée est « sans signe » (pièce imposée sur le devant).
+- Mèches latérales parties de la racine (épi, raie) ; grande frange : 0, 1 ou
+  2 mèches des côtés aux pointes éclaircies (`tintedClumps`).
+- **Trois poils** gardée (Leo ne veut pas de poupée *sans rien*) : plus
+  courts, trois formes distinctes tirées parmi six (ressort, crosse, pic,
+  vague, zigzag, boucle), longueur, épaisseur, écart et inclinaison propres.
 - Non fait, volontairement : refonte « anglaises » des bouclettes (Leo les a
   validées, il a seulement demandé plus de densité).
 

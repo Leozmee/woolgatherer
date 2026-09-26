@@ -1268,32 +1268,40 @@ function tuft(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
 }
 
 /**
- * Trois poils : **trois**, sur un crâne nu — seule coupe qui a droit d'être
- * chauve, et c'est son gag. Deux à cinq tire-bouchons semblables lisaient
- * comme une calvitie accidentelle ; trois poils de caractères différents
- * lisent comme un personnage.
+ * Trois poils : **trois**, sur un crâne presque nu — seule coupe qui a le
+ * droit d'être presque chauve, et c'est son gag. Deux à cinq tire-bouchons
+ * semblables lisaient comme une calvitie accidentelle ; trois poils de
+ * caractères différents lisent comme un personnage.
  *
- * Chacun tire sa forme : **ressort** (hélice qui part d'un rayon nul à la
- * racine — plein rayon, il paraît posé), **crosse** (brin qui monte et se
- * roule en crochet au bout) ou **pic** (droit, effilé en pointe). L'axe fléchit
- * un peu sous son poids : droit, il lit comme une antenne. Racines près du
- * sommet, devant la fermeture. Chacun son ressort, sans gravité (la pose de
- * repos n'est pas la verticale), raide et peu amorti : ça rebondit.
+ * Chaque génération tire **trois formes distinctes** parmi six — ressort
+ * (hélice qui part d'un rayon nul : plein rayon, elle paraît posée), crosse
+ * (crochet au bout), pic (droit, effilé), vague (S souple), zigzag (éclair),
+ * boucle (un anneau au bout) — et pour chacun sa longueur, son épaisseur, son
+ * écart et son inclinaison : deux poupées « trois poils » ne se ressemblent
+ * pas. Courts : au-delà d'un demi-rayon de tête ils lisaient comme des
+ * antennes. L'axe fléchit un peu sous le poids. Racines près du sommet,
+ * devant la fermeture. Chacun son ressort, sans gravité (la pose de repos
+ * n'est pas la verticale), raide et peu amorti : ça rebondit.
  */
 function wisps(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   const R = p.shape.headRadius
-  const r = clamp(yarnR * 1.3, R * 0.022, R * 0.038)
-  const kinds = ['coil', 'hook', 'spike'] as const
-  // Ordre mélangé : le ressort n'est pas toujours au milieu.
-  const order = [0, 1, 2].sort(() => rnd() - 0.5)
+  const r0 = clamp(yarnR * 1.3, R * 0.022, R * 0.038)
+  const KINDS = ['coil', 'hook', 'spike', 'wave', 'zigzag', 'loop'] as const
+  const deck = KINDS.map((k) => ({ k, key: rnd() })).sort((a, b) => a.key - b.key)
+  const spread = 0.35 + rnd() * 0.35
+  const center = (rnd() - 0.5) * 0.5
   for (let w = 0; w < 3; w++) {
-    const kind = kinds[order[w]]
-    const s = onHeadPolar(p, (w - 1) * 0.6 + (rnd() - 0.5) * 0.15, 0.86 + rnd() * 0.06, 0)
+    const kind = deck[w].k
+    const r = r0 * (0.8 + rnd() * 0.4)
+    const s = onHeadPolar(p, center + (w - 1) * spread + (rnd() - 0.5) * 0.15, 0.84 + rnd() * 0.1, 0)
     const [t1, t2] = tangentBasis(s.normal)
-    const lean = t1.clone().multiplyScalar((w - 1) * 0.6 + (rnd() - 0.5) * 0.3).addScaledVector(t2, (rnd() - 0.5) * 0.4)
+    const lean = t1
+      .clone()
+      .multiplyScalar((w - 1) * (0.3 + rnd() * 0.5) + (rnd() - 0.5) * 0.4)
+      .addScaledVector(t2, (rnd() - 0.5) * 0.6)
     const axis0 = s.normal.clone().addScaledVector(lean, 0.7).normalize()
-    const L = R * (kind === 'spike' ? 0.6 + rnd() * 0.2 : 0.55 + rnd() * 0.25)
-    const bend = kind === 'spike' ? 0.1 + rnd() * 0.1 : 0.25 + rnd() * 0.3
+    const L = R * (0.32 + rnd() * 0.23) * (kind === 'spike' ? 1.1 : 1)
+    const bend = (kind === 'spike' ? 0.08 : 0.2) + rnd() * 0.3
     const m = out.movers.length
     out.movers.push({
       pivot: s.pos.clone(),
@@ -1304,9 +1312,11 @@ function wisps(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
     })
     const pts: THREE.Vector3[] = [s.pos.clone().addScaledVector(s.normal, -r * 2)]
     let at = s.pos.clone()
-    const N = kind === 'coil' ? 48 : 20
-    const coil = R * (0.045 + rnd() * 0.025)
-    const turns = 2.5 + rnd() * 2
+    const N = kind === 'coil' || kind === 'loop' ? 48 : kind === 'zigzag' ? 28 : 20
+    const coil = R * (0.03 + rnd() * 0.025)
+    const turns = 2 + rnd() * 2.5
+    const waves = 1.5 + rnd() * 1.5
+    const flip = rnd() < 0.5 ? -1 : 1
     for (let k = 1; k <= N; k++) {
       const t = k / N
       const axis = axis0.clone().addScaledVector(DOWN, bend * t).normalize()
@@ -1320,7 +1330,18 @@ function wisps(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
         // Crochet sur le dernier tiers : un tour qui s'enroule vers l'extérieur.
         const h = smooth(0.6, 1, t)
         const a = h * Math.PI * 1.6
-        q.addScaledVector(b1, (1 - Math.cos(a)) * coil * 1.4).addScaledVector(axis, (Math.sin(a) - a) * coil * 0.8 * h)
+        q.addScaledVector(b1, flip * (1 - Math.cos(a)) * coil * 1.4).addScaledVector(axis, (Math.sin(a) - a) * coil * 0.8 * h)
+      } else if (kind === 'wave') {
+        q.addScaledVector(b1, flip * Math.sin(t * waves * Math.PI * 2) * coil * 0.9 * t)
+      } else if (kind === 'zigzag') {
+        // Éclair : dents franches, pas une sinusoïde.
+        const z = (t * waves * 2) % 2
+        q.addScaledVector(b1, flip * (z < 1 ? z : 2 - z) * coil * 1.2 * Math.min(1, t * 3))
+      } else if (kind === 'loop') {
+        // Un anneau au bout : le brin monte droit puis fait un tour complet.
+        const h = smooth(0.55, 1, t)
+        const a = h * Math.PI * 2
+        q.addScaledVector(b1, flip * (1 - Math.cos(a)) * coil * 1.3).addScaledVector(axis, (Math.sin(a) - a) * coil * 1.3 * h)
       }
       pts.push(q)
     }
@@ -1330,7 +1351,7 @@ function wisps(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
         free: (t) => t,
         phase: rnd() * 6,
         taper: kind === 'spike' ? 0.85 : 0.3,
-        step: kind === 'coil' ? 1.2 : undefined,
+        step: kind === 'coil' || kind === 'loop' || kind === 'zigzag' ? 1.2 : undefined,
       }),
     )
   }
