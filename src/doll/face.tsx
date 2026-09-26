@@ -198,6 +198,27 @@ const REST: Record<Mood, (side: -1 | 1) => FacePose> = {
   inquiet: () => ({ mouth: M({ width: 0.72, wave: 0.03, curve: -0.03 }), brows: both(B(1.94, 1.38, 0.02, 0.08)), lids: both(Lp(0.12, -0.55)), cross: false }),
 }
 
+/**
+ * Repos de la poupée : son humeur, avec des paupières **toujours visibles**.
+ *
+ * Plusieurs humeurs ouvraient l'œil en grand (0 à 0,12 de paupière) : le
+ * feutre disparaissait derrière le bord du bouton et l'œil perdait ce qui le
+ * fait vivre. Chaque poupée tire donc un plancher de paupière, plus ou moins
+ * lourd (0,2 à 0,4), avec un léger écart d'un œil à l'autre ; une humeur plus
+ * lourde garde la sienne. Les expressions du combat, elles, peuvent ouvrir
+ * grand (surprise) : c'est un instant, pas un repos.
+ */
+function restPose(look: FaceLook): FacePose {
+  const pose = REST[look.mood](look.side)
+  const rnd = mulberry32(look.seed + 77)
+  const floor = 0.2 + rnd() * 0.2
+  const lids = pose.lids.map((l) => ({ ...l, upper: Math.max(l.upper, floor + (rnd() - 0.5) * 0.08) })) as [
+    LidPose,
+    LidPose,
+  ]
+  return { ...pose, lids }
+}
+
 /** Expressions du combat (voir `WANTS` dans `expression.tsx` pour ce qui les déclenche). */
 const EXPR: Record<Expression, (side: -1 | 1) => FacePose> = {
   focus: () => ({ mouth: M({ width: 0.6, curve: -0.05 }), brows: both(B(1.3, 1.8, 0, 0.14)), lids: both(Lp(0.4, 0.9, 0.12)), cross: false }),
@@ -893,7 +914,7 @@ export function faceLive(
     .filter(([s]) => s !== missing)
     .map(([s, at, radius]) => ({ side: s as -1 | 1, at, radius }))
   const ctx: FaceCtx = { p, look, eyes, mouthLift, stitchDip, buttons, ink }
-  const poses = [REST[look.mood](look.side), ...EXPRESSIONS.map((e) => EXPR[e](look.side))]
+  const poses = [restPose(look), ...EXPRESSIONS.map((e) => EXPR[e](look.side))]
   const built = poses.map((pose) => poseSlots(ctx, pose))
   const threads: LiveThreads = { targets: built.map((b) => b.slots), colors: built[0].colors }
   const lidPoses: LidPoses = poses.map((pose) => pose.lids)

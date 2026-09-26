@@ -1293,7 +1293,19 @@ function bunch(
   tie: { pos: THREE.Vector3; normal: THREE.Vector3 },
   L: number,
   out: Parts,
-  o: { axis?: (t: number) => THREE.Vector3; spring?: Mover; flare?: number; count?: number; tight?: number } = {},
+  o: {
+    axis?: (t: number) => THREE.Vector3
+    spring?: Mover
+    flare?: number
+    count?: number
+    tight?: number
+    /**
+     * Mèches pointues, façon anime : les brins se regroupent par `clumps`
+     * faisceaux qui se referment sur leur dernier tiers. Une touffe dont tous
+     * les brins s'évasent également lit comme un pinceau.
+     */
+    clumps?: number
+  } = {},
 ) {
   const R = p.shape.headRadius
   const m = out.movers.length
@@ -1328,18 +1340,30 @@ function bunch(
   const count = o.count ?? 22 + Math.floor(rnd() * 10)
   const margin = r * 2.5
   const N = 16
+  const clumps = o.clumps ?? 0
+  const centers = Array.from({ length: clumps }, (_, c) => ({
+    phi: ((c + 0.5) / clumps) * Math.PI * 2 + (rnd() - 0.5) * 0.5,
+    rad: 0.45 + rnd() * 0.4,
+    len: 0.85 + rnd() * 0.25,
+  }))
   for (let i = 0; i < count; i++) {
     const phi = rnd() * Math.PI * 2
     const rad = Math.sqrt(rnd())
-    const len = 0.85 + rnd() * 0.2
+    const lenRnd = 0.85 + rnd() * 0.2
+    const cl = clumps ? centers[i % clumps] : null
+    const len = cl ? cl.len * (0.9 + (lenRnd - 0.85) * 0.5) : lenRnd
     const pts: THREE.Vector3[] = [tie.pos.clone().addScaledVector(tie.normal, -r * 2)]
     for (let k = 1; k <= N; k++) {
       const t = (k / N) * len
       const a = axisAt(t)
       const tangent = axisAt(Math.min(1, t + 0.02)).sub(axisAt(Math.max(0, t - 0.02))).normalize()
       const [b1, b2] = tangentBasis(tangent)
-      const spread = (tight + (flare - tight) * t * t) * rad
-      a.addScaledVector(b1, Math.cos(phi) * spread).addScaledVector(b2, Math.sin(phi) * spread)
+      const spread = tight + (flare - tight) * t * t
+      // Vers le centre de sa mèche, sur le dernier tiers.
+      const pull = cl ? 0.85 * smooth(0.5, 1, t / len) : 0
+      const px = Math.cos(phi) * rad * (1 - pull) + (cl ? Math.cos(cl.phi) * cl.rad * pull : 0)
+      const py = Math.sin(phi) * rad * (1 - pull) + (cl ? Math.sin(cl.phi) * cl.rad * pull : 0)
+      a.addScaledVector(b1, px * spread).addScaledVector(b2, py * spread)
       pts.push(clearHead(p, a, margin))
     }
     out.yarn.push(yarn(pts, r, { mover: m, free: (t) => t ** 1.2, phase: rnd() * 6 }))
@@ -1360,7 +1384,9 @@ function pigtails(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   const ties = [-1, 1].map((sx) => onHeadPolar(p, sx * (Math.PI / 2 + 0.25), sy, 0))
   out.ribbonColor = RIBBONS[Math.floor(rnd() * RIBBONS.length)]
   pulled(p, rnd, r, ties.map((t) => t.pos), out, NAPE_LOW + rnd() * 0.12)
-  for (const t of ties) bunch(p, rnd, r, t, L, out)
+  for (const t of ties) bunch(p, rnd, r, t, L, out, { clumps: 5, count: 34 + Math.floor(rnd() * 8), flare: 7 + rnd() * 2 })
+  // Deux mèches qui encadrent le visage : l'allure des couettes d'anime.
+  sideLocks(p, rnd, r, hairline(p, NAPE_LOW), out)
 }
 
 /**

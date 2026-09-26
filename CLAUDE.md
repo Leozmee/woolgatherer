@@ -730,6 +730,11 @@ arrive ; sinon, reprendre depuis ces branches.
   fils du visage à cibles de morphing, paupières de feutre ; mesuré dans
   l'arène : concentration 0,92 au coup, grimace 0,84 au coup reçu, croix 1 au
   K.O. Le combattant passé est celui de la poupée (`fighter`), planche comprise.
+- **Paupières toujours visibles au repos** (demande de Leo) : plancher tiré par
+  poupée (0,2–0,4, écart d'un œil à l'autre), l'humeur plus lourde l'emporte.
+- **Houppette** refaite : cheveux tirés tenus vers un nœud au sommet, plumet de
+  lames aplaties en palmier, un ressort par lame. **Couettes** : queues en
+  mèches pointues (`bunch` `clumps`) et deux mèches latérales.
 
 
 #### 2026-09-25 — fermeture éclair, endurance
