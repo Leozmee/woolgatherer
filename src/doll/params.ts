@@ -75,6 +75,14 @@ export type DollParams = {
     kneeRest: number
     /** Genou vers l'avant (0) ou vers l'extérieur (1), en grenouille. */
     kneeOut: number
+    /**
+     * Pieds en canard : rotation des pointes vers l'extérieur, en radians, en
+     * plus de celle du patron. Seule la morpho du crapaud la pose (0 sinon) ;
+     * pas de curseur au panneau.
+     */
+    toeOut?: number
+    /** Bras portés vers l'avant au repos, en radians (crapaud seulement). */
+    armFwd?: number
   }
   face: {
     eyeSpacing: number

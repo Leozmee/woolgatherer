@@ -577,6 +577,7 @@ export function Doll({
     }
   }, [joints, lb.armLength, lb.legLength])
   const stepper = useMemo(() => new Stepper(), [])
+  const toeOut = useMemo(() => toeOutQuats(lb.toeOut ?? 0), [lb.toeOut])
   const hipW = useMemo(() => ({ [-1]: new THREE.Vector3(), 1: new THREE.Vector3() }) as Record<-1 | 1, THREE.Vector3>, [])
   /** Pied au repos, repère de la racine : hanche, puis l'axe écarté de la jambe. */
   const footRest = useMemo(() => {
@@ -649,6 +650,10 @@ export function Doll({
     poseLegR.current.rotation.x -= kneeFwd * 0.5
     poseLegL.current.rotation.z -= kneeSide * 0.5
     poseLegR.current.rotation.z += kneeSide * 0.5
+    // Bras portés devant au repos (`armFwd`, crapaud) : ses pattes avant se
+    // posent devant le ventre au lieu de pendre sur les flancs.
+    poseArmL.current.rotation.x -= lb.armFwd ?? 0
+    poseArmR.current.rotation.x -= lb.armFwd ?? 0
     // Plis : coude et genou du geste. Au sol, l'IK reprend les genoux.
     for (const side of [-1, 1] as const) {
       lowerPose.current[`arm${side}`]?.rotation.set(pose[side === -1 ? 'elbow-1' : 'elbow1'][0] - elbowRest, 0, 0)
@@ -754,7 +759,7 @@ export function Doll({
       if (!f) continue
       f.parent!.updateWorldMatrix(true, false)
       f.parent!.getWorldQuaternion(_qd).invert().multiply(_qc)
-      f.quaternion.identity().slerp(_qd, footFlat.current).multiply(TOE_OUT[side])
+      f.quaternion.identity().slerp(_qd, footFlat.current).multiply(toeOut[side])
     }
 
     if (weaponRef.current) aimWeapon(weaponRef.current)
@@ -1200,11 +1205,17 @@ const _qc = new THREE.Quaternion()
  * pur se lit comme un trou.
  */
 const FELTS = ['#7a4b3a', '#4a5568', '#8c3a34', '#5d6140', '#3d3635', '#a07a52', '#5a4a6b', '#2f5a5a']
-/** Pointes de pied tournées un peu vers l'extérieur : parallèles, ils lisent comme des patins. */
-const TOE_OUT = {
-  [-1]: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -0.14),
-  1: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.14),
-} as Record<-1 | 1, THREE.Quaternion>
+/**
+ * Pointes de pied tournées un peu vers l'extérieur : parallèles, ils lisent
+ * comme des patins. `extra` : les pieds en canard du crapaud (`toeOut`).
+ */
+function toeOutQuats(extra: number) {
+  const a = 0.14 + extra
+  return {
+    [-1]: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -a),
+    1: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), a),
+  } as Record<-1 | 1, THREE.Quaternion>
+}
 const _qd = new THREE.Quaternion()
 const _qa = new THREE.Quaternion()
 const _qb = new THREE.Quaternion()
