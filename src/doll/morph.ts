@@ -68,6 +68,7 @@ const KEYS = [
   'eyeGap',
   'mouthY',
   'mouthW',
+  'size', //     taille d'ensemble : tout à l'échelle, proportions intactes
 ] as const
 
 /**
@@ -140,6 +141,7 @@ function sample(rnd: () => number, type: Archetype): Morph {
     eyeGap: c('eyeGap', 0.4 * youth + r(0.3)),
     mouthY: c('mouthY', r(0.4)),
     mouthW: c('mouthW', 0.2 * build + r(0.35)),
+    size: c('size', r(0.05)),
   }
 }
 
@@ -202,9 +204,10 @@ export const ARCHETYPES: readonly Archetype[] = [
   BASE,
   // Grosse tête de bébé sur un petit corps rond ; les bras restent longs et
   // ballants, c'est ce qui en fait un poupon dégingandé et pas un poupon. Tête
-  // modérée : à +1, le corps disparaissait dessous (Leo).
+  // modérée : à +1, le corps disparaissait dessous (Leo). Et **le plus petit
+  // de la série** (`size`) : c'est la taille d'ensemble qui fait un bébé.
   variant('poupon', 'poupon', 0.2, 1, {
-    head: 0.45, stature: -0.45, reach: -0.4, limbBias: -1, belly: 0.5, chest: 0.6, hunch: -0.6,
+    head: 0.1, stature: -0.3, reach: -0.4, limbBias: -1, belly: 0.5, chest: 0.6, hunch: -0.6, size: -1.4,
     depth: 0.8, eyeGap: 0.5, limbGirth: 0.3, legUpper: 0.4,
   }),
   // Un crapaud : très large et très bas, plat d'avant en arrière, assis sur
@@ -360,7 +363,7 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
       chest: clamp((s.chest ?? 0) + m.chest * 0.2 * a, -0.3, 0.5),
       waist: clamp((s.waist ?? 0) + m.waist * 0.2 * a, -0.3, 0.5),
       belly: clamp((s.belly ?? 0) + m.belly * 0.22 * a, -0.3, 0.6),
-      hips: clamp((s.hips ?? 0) + m.hips * 0.2 * a, -0.3, 0.6),
+      hips: clamp((s.hips ?? 0) + m.hips * 0.2 * a, -0.3, 0.8),
       hunch: clamp((s.hunch ?? 0) + m.hunch * 0.2 * a, 0, 0.6),
       torsoDepth: clamp((s.torsoDepth ?? 0.86) + m.depth * 0.09 * a, 0.6, 1.15),
     },
@@ -391,7 +394,34 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
       mouthHeight,
     },
   }
-  return spreadFeet(out)
+  return spreadFeet(scaleDoll(out, k(m.size, 0.15)))
+}
+
+/**
+ * Taille d'ensemble : toutes les cotes de longueur multipliées par `f`, les
+ * proportions intactes. Une tête agrandie **relativement** ne fait pas un bébé
+ * : le poupon avait la hauteur du dégingandé et, avec sa grosse tête, paraissait
+ * le plus massif de la planche alors qu'il doit être le plus petit (Leo). Les
+ * écarts d'angle, galbes et sculptures sont sans dimension et ne bougent pas.
+ */
+function scaleDoll(q: DollParams, f: number): DollParams {
+  if (Math.abs(f - 1) < 1e-6) return q
+  const { shape: s, limbs: lb, face: fc } = q
+  return {
+    ...q,
+    shape: { ...s, headRadius: s.headRadius * f, torsoHeight: s.torsoHeight * f, torsoRadius: s.torsoRadius * f },
+    limbs: {
+      ...lb,
+      armLength: lb.armLength * f, armRadius: lb.armRadius * f,
+      legLength: lb.legLength * f, legRadius: lb.legRadius * f,
+    },
+    face: {
+      ...fc,
+      eyeSpacing: fc.eyeSpacing * f, eyeHeight: fc.eyeHeight * f,
+      leftSize: fc.leftSize * f, rightSize: fc.rightSize * f,
+      mouthWidth: fc.mouthWidth * f, mouthHeight: fc.mouthHeight * f,
+    },
+  }
 }
 
 /**
