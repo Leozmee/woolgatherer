@@ -32,6 +32,9 @@ export type ClothStiffness = {
 
 type Link = { a: number; b: number; len: number; k: number }
 
+/** Étirement maximal d'un lien de structure (voir `step`). */
+const MAX_STRAIN = 1.12
+
 /** Options d'un pas de simulation au-delà de la gravité et des obstacles. */
 export type ClothExtras = {
   /**
@@ -203,11 +206,15 @@ export class ClothSheet {
         b.addScaledVector(_d, (-diff * wb) / total)
       }
 
+
       // Collisions : on repousse à la surface de chaque sphère.
       for (let i = 0; i < n; i++) {
         const p = this.points[i]
+        // Ce qui est retenu fort ignore les obstacles `loose` (voir `Collider`).
+        const held = this.pin[i] >= 0.25
         for (let c = 0; c < colliders.length; c++) {
           const s = colliders[c]
+          if (held && s.loose) continue
           _push.subVectors(p, s.center)
           const d = _push.length()
           if (d > 1e-6 && d < s.radius) p.copy(s.center).addScaledVector(_push, s.radius / d)
@@ -221,6 +228,40 @@ export class ClothSheet {
           }
         }
       }
+      this.limitStrain()
+    }
+  }
+
+  /**
+   * Borne d'étirement des liens de structure, résolue en entier.
+   *
+   * Les contraintes ne rattrapent qu'une fraction de l'écart par passe :
+   * quand le corps démarre ou saute, la partie retenue suit tandis que le
+   * pan libre reste en arrière, et le lien qui les joint s'étirait jusqu'à
+   * 2,7 fois sa longueur — mesuré à la jonction du pan avant et du tour de
+   * cou, au démarrage du trot et au saut du troisième coup. Au-delà de
+   * `MAX_STRAIN` on ramène d'un coup ; en deçà rien ne change, ni le pli ni
+   * le drapé. Elle passe aussi **après** les collisions : un bras qui frappe
+   * à travers un pan le repoussait de l'autre côté, étiré au triple ; frôler
+   * l'intérieur du bras une image se voit moins.
+   */
+  private limitStrain() {
+    for (let l = 0; l < this.links.length; l++) {
+      const c = this.links[l]
+      if (c.k < 1) continue
+      const a = this.points[c.a]
+      const b = this.points[c.b]
+      _d.subVectors(b, a)
+      const len = _d.length()
+      const max = c.len * MAX_STRAIN
+      if (len <= max) continue
+      const wa = 1 - this.pin[c.a]
+      const wb = 1 - this.pin[c.b]
+      const total = wa + wb
+      if (total < 1e-6) continue
+      const diff = (len - max) / len
+      a.addScaledVector(_d, (diff * wa) / total)
+      b.addScaledVector(_d, (-diff * wb) / total)
     }
   }
 

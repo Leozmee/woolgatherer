@@ -689,11 +689,13 @@ function curls(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
    *
    * À soixante boucles le crâne restait nu entre elles : on lisait une
    * couronne de ressorts plantés, pas une tignasse. Une toison, c'est des
-   * boucles qui se touchent — donc une boucle par carré d'à peu près son
+   * boucles qui se touchent — donc une boucle par carré d'un peu plus que son
    * diamètre, sur la calotte au-dessus de `low` (aire ∝ hauteur).
    */
   const cap = 2 * Math.PI * R * R * (0.97 - low)
-  const count = clamp(Math.round(cap / (loop * 1.55) ** 2), 60, 420)
+  // Pas de 1,2 diamètre (1,55 avant) : à 1,55 on voyait encore la laine du
+  // crâne entre les boucles — demandé plus dense.
+  const count = clamp(Math.round(cap / (loop * 1.2) ** 2), 90, 640)
   // Bouclettes : elles rebondissent par secteurs — raides et peu amorties,
   // une boucle serrée sautille plus qu'elle ne pend.
   const sector = sectorMovers(out, rnd, R, 8, 0.16, 0.08)

@@ -558,7 +558,8 @@ function bodyColliders(p: DollParams, m: Metrics): Collider[] {
   const shift = -m.localY
   return [
     ...bodySpheres(p, 0, -p.shape.torsoHeight * 0.86, skin, shift),
-    ...armSpheres(p, skin, shift),
+    // Les bras levés passent sous le tour de cou (voir `Collider.loose`).
+    ...armSpheres(p, skin, shift).map((c) => ({ ...c, loose: true })),
     ...legSpheres(p, skin, shift),
   ]
 }

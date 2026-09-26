@@ -25,7 +25,17 @@ const _r = new THREE.Vector3()
 const STEP = 1 / 60
 
 /** Sphère contre laquelle une chaîne ne doit pas s'enfoncer (le crâne). */
-export type Collider = { center: THREE.Vector3; radius: number }
+export type Collider = {
+  center: THREE.Vector3
+  radius: number
+  /**
+   * Obstacle ignoré par ce qu'un tissu retient fort (voir `ClothSheet`) : un
+   * bras levé traversait le tour de cou d'une écharpe, la collision poussait
+   * le tissu dehors, la retenue le ramenait, et les liens s'étiraient de moitié
+   * à chaque coup. Seules les parties libres, les pans, l'évitent.
+   */
+  loose?: boolean
+}
 
 /**
  * Spring bone façon VRM : la queue de l'os poursuit sa position de repos avec
