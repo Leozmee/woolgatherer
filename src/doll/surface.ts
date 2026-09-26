@@ -71,16 +71,59 @@ export function onHeadPolar(p: DollParams, azimuth: number, sy: number, lift: nu
  * Source unique pour la géométrie (`torsoGeometry`), la surface (`onTorso`)
  * et le corps de révolution (`bodyRadius`). À `torsoSquare` 0, un ellipsoïde ;
  * vers 1, une superellipse : épaules et hanches franches, flancs droits — le
- * bloc du pavé, sans arêtes (exposant plafonné à 3,6, un coussin et non une
- * boîte). Une copie de cette formule dériverait, et tout ce qui est posé sur
- * le tronc flotterait ou s'enfoncerait.
+ * bloc du pavé, sans arêtes (exposant plafonné, un coussin et non une boîte).
+ * Une copie de cette formule dériverait, et tout ce qui est posé sur le tronc
+ * flotterait ou s'enfoncerait.
+ *
+ * `seat` (0 à 1) : **assise**, la même superellipse mais seulement vers le bas
+ * (voir `TorsoShape`) — le tronc garde sa largeur plus bas avant de se
+ * refermer, au lieu de se pincer en pointe entre les cuisses.
  */
-export function torsoRing(square: number | undefined, sy: number) {
-  const n = 2 + 1.6 * clamp(square ?? 0, 0, 1)
+export function torsoRing(square: number | undefined, sy: number, seat = 0) {
+  const b = Math.max(0, -sy)
+  const n = Math.min(4.2, 2 + 1.6 * clamp(square ?? 0, 0, 1) + SEAT_EXP * clamp(seat, 0, 1) * b * b)
   return Math.pow(Math.max(0, 1 - Math.pow(Math.min(1, Math.abs(sy)), n)), 1 / n)
 }
 
-type Shape = DollParams['shape']
+/**
+ * Raccord des cuisses (voir `thighOverhang`, et `fillHips` dans `morph.ts`),
+ * deux cotes calculées par poupée et jamais réglées au panneau :
+ * - `seat` (0 à 1), l'**assise** : le bas du tronc se remplit — flancs tenus
+ *   plus bas (`torsoRing`) et section qui passe de l'ellipse au coussin
+ *   (superellipse horizontale), ce qui remplit les coins devant et derrière
+ *   les cuisses **sans avancer ni le ventre ni le dos** ;
+ * - `seatWidth`, l'**élargissement** du bas du tronc sur les flancs, en rampe
+ *   douce depuis la taille : une bosse localisée (celle de `hips`) fait une
+ *   jupe évasée, pas un bassin qui se prolonge en cuisses.
+ */
+export type TorsoShape = DollParams['shape'] & { seat?: number; seatWidth?: number }
+type Shape = TorsoShape
+
+/** Exposant ajouté au profil vertical des flancs, en bas, à pleine assise. */
+const SEAT_EXP = 2
+/** Exposant ajouté à la section horizontale, en bas, à pleine assise. */
+const SEAT_SQUIRCLE = 3
+/**
+ * Rampe de l'élargissement : nulle au-dessus de `sy` −0,1, pleine sous −0,8.
+ * Partie de 0,1, elle gonflait le tronc à hauteur des mains du kangourou.
+ */
+const SEAT_RAMP = [-0.1, -0.8] as const
+/**
+ * Hauteur normalisée de l'**assise** : au-dessus, tout ce qui dépasse de la
+ * cuisse est sa calotte — le pilon planté sous le tronc ; au-dessous, la jambe
+ * sort du tronc, c'est normal.
+ */
+export const SEAT_SY = -0.85
+
+/**
+ * Galbe d'un membre : facteur d'épaisseur à la fraction `u` de sa longueur
+ * (0 à l'attache, 1 au bout). Source unique de `limbGeometry` et du raccord
+ * des cuisses (`thighOverhang`).
+ */
+export function limbGirth(taper: number, upper: number, lower: number, u: number) {
+  const g = (c: number) => Math.exp(-(((u - c) / 0.16) ** 2))
+  return Math.max(0.4, (1 + taper * (u - 0.5)) * (1 + upper * g(0.25) + lower * g(0.74)))
+}
 
 /**
  * Sculpture du tronc : facteur du rayon à la hauteur `sy` et à l'azimut `az`
@@ -95,6 +138,8 @@ type Shape = DollParams['shape']
  * en hauteur, pondérée en azimut) : la poitrine gonfle surtout devant, le
  * ventre seulement devant, le dos voûté seulement derrière, les hanches
  * surtout sur les flancs. Symétrique gauche-droite par construction (cos az).
+ * L'élargissement de l'assise (`seatWidth`), lui, est une rampe, et seulement
+ * sur les flancs.
  */
 export function torsoSculpt(s: Shape, sy: number, az: number) {
   const f = Math.cos(az)
@@ -102,6 +147,7 @@ export function torsoSculpt(s: Shape, sy: number, az: number) {
   const back = Math.max(0, -f)
   const lat = 1 - f * f
   const g = (c: number, w: number) => Math.exp(-(((sy - c) / w) ** 2))
+  const rt = clamp((SEAT_RAMP[0] - sy) / (SEAT_RAMP[0] - SEAT_RAMP[1]), 0, 1)
   return Math.max(
     0.4,
     1 +
@@ -109,8 +155,15 @@ export function torsoSculpt(s: Shape, sy: number, az: number) {
       (s.waist ?? 0) * g(-0.22, 0.26) +
       (s.belly ?? 0) * g(-0.3, 0.38) * front * front +
       (s.hips ?? 0) * g(-0.62, 0.3) * (0.3 + 0.7 * lat) +
-      (s.hunch ?? 0) * g(0.48, 0.38) * back * back,
+      (s.hunch ?? 0) * g(0.48, 0.38) * back * back +
+      (s.seatWidth ?? 0) * rt * rt * (3 - 2 * rt) * lat,
   )
+}
+
+/** Exposant de la section horizontale du tronc à la hauteur `sy` (2 : ellipse). */
+function sectionExp(s: Shape, sy: number) {
+  const b = Math.max(0, -sy)
+  return 2 + SEAT_SQUIRCLE * clamp(s.seat ?? 0, 0, 1) * b * b
 }
 
 /**
@@ -120,8 +173,80 @@ export function torsoSculpt(s: Shape, sy: number, az: number) {
  */
 export function torsoPoint(s: Shape, sy: number, az: number, out = new THREE.Vector3()) {
   const t = (sy + 1) * 0.5
-  const w = (1 + (s.torsoTaper - 1) * t) * s.torsoRadius * torsoRing(s.torsoSquare, sy) * torsoSculpt(s, sy, az)
-  return out.set(Math.sin(az) * w, sy * s.torsoHeight * 0.5, Math.cos(az) * w * (s.torsoDepth ?? 0.86))
+  const c = Math.cos(az)
+  const sn = Math.sin(az)
+  // L'assise tient les flancs, pas le ventre ni le dos : de profil, le tronc
+  // garde sa courbe.
+  const seat = (s.seat ?? 0) * sn * sn
+  const w = (1 + (s.torsoTaper - 1) * t) * s.torsoRadius * torsoRing(s.torsoSquare, sy, seat) * torsoSculpt(s, sy, az)
+  const m = sectionExp(s, sy)
+  const dx = m === 2 ? sn : Math.sign(sn) * Math.pow(Math.abs(sn), 2 / m)
+  const dz = m === 2 ? c : Math.sign(c) * Math.pow(Math.abs(c), 2 / m)
+  return out.set(dx * w, sy * s.torsoHeight * 0.5, dz * w * (s.torsoDepth ?? 0.86))
+}
+
+const _tp = new THREE.Vector3()
+
+/**
+ * Distance d'un point au tronc idéal, le long de sa direction horizontale
+ * depuis l'axe (en unités monde ; > 0 dehors). Inverse la paramétrisation de
+ * `torsoPoint` — section en superellipse comprise —, pour mesurer ce qui en
+ * dépasse sans copier sa formule.
+ */
+export function torsoOutside(s: Shape, x: number, y: number, z: number) {
+  const sy = clamp(y / (s.torsoHeight * 0.5), -1, 1)
+  const depth = s.torsoDepth ?? 0.86
+  const zn = z / depth
+  // Direction φ du point ; l'azimut du paramètre qui y mène vérifie
+  // |tan az| = |tan φ|^(m/2).
+  const m = sectionExp(s, sy)
+  const az = Math.atan2(Math.sign(x) * Math.pow(Math.abs(x), m / 2), Math.sign(zn) * Math.pow(Math.abs(zn), m / 2))
+  torsoPoint(s, sy, az, _tp)
+  return Math.hypot(x, zn) - Math.hypot(_tp.x, _tp.z / depth)
+}
+
+/**
+ * Débord de la cuisse hors du tronc, au repos, en rayons de jambe : le pire
+ * point de sa surface au-dessus de l'assise (`SEAT_SY`). Toute la calotte,
+ * tout autour — c'est elle qui se lit comme le haut d'une capsule plantée
+ * sous le tronc —, et du fût seulement le flanc extérieur, qui doit
+ * prolonger celui du tronc vu de face. Devant et derrière, le fût peut sortir
+ * de sous le ventre ou le dos : c'est ainsi qu'une jambe de peluche sort de
+ * son corps, et les couvrir aussi bomberait le ventre et les fesses.
+ */
+export function thighOverhang(p: DollParams) {
+  const s = p.shape
+  const lb = p.limbs
+  const r = lb.legRadius
+  const L = lb.legLength
+  // Écartement, et pli de repos : cuisse en avant, ou en dehors (grenouille).
+  const a = lb.legSpread + (lb.kneeRest ?? 0) * (lb.kneeOut ?? 0) * 0.5
+  const fwd = (lb.kneeRest ?? 0) * (1 - (lb.kneeOut ?? 0)) * 0.5
+  const ca = Math.cos(a), sa = Math.sin(a), cf = Math.cos(fwd), sf = Math.sin(fwd)
+  const hx = hipX(p)
+  const hy = -s.torsoHeight * 0.36
+  const half = s.torsoHeight * 0.5
+  let worst = -Infinity
+  for (let i = 0; i <= 16; i++) {
+    // De la calotte (y > 0) au premier tiers de la cuisse.
+    const yl = r - ((r + L * 0.35) * i) / 16
+    const cap = yl > 0 ? Math.sqrt(Math.max(0, 1 - (yl / r) ** 2)) : 1
+    const rho = r * cap * limbGirth(lb.legTaper ?? 0, lb.legUpper ?? 0, lb.legLower ?? 0, clamp(-yl / L, 0, 1))
+    for (let k = 0; k < 12; k++) {
+      const th = (k / 12) * Math.PI * 2
+      const xl = rho * Math.cos(th)
+      const zl = rho * Math.sin(th)
+      // Écartée (autour de z), puis avancée par le pli (autour de x, −fwd) :
+      // l'ordre des groupes de `Doll.tsx`.
+      const y1 = xl * sa + yl * ca
+      const x = hx + xl * ca - yl * sa
+      const y = hy + y1 * cf + zl * sf
+      const z = zl * cf - y1 * sf
+      if (y / half < SEAT_SY || (yl < 0 && Math.cos(th) < 0.5)) continue
+      worst = Math.max(worst, torsoOutside(s, x, y, z) / r)
+    }
+  }
+  return worst
 }
 
 const _ta = new THREE.Vector3()
@@ -157,7 +282,17 @@ export function hipX(p: DollParams) {
   // Au moins l'épaisseur d'une cuisse, renflement compris : sinon deux cuisses
   // de kangourou ou de poupon s'interpénètrent au milieu (mesuré : −0,12).
   const thigh = lb.legRadius * (1 - (lb.legTaper ?? 0) * 0.25) * (1 + (lb.legUpper ?? 0))
-  return Math.max(s.torsoRadius * 0.44 * Math.sqrt(torsoSculpt(s, -0.72, Math.PI / 2)), thigh * 0.95)
+  // Sans l'élargissement de l'assise : c'est le tronc qui vient couvrir les
+  // cuisses, pas les cuisses qui s'écartent à mesure qu'il s'élargit.
+  // Et un jour franc entre les cuisses, écartement compris : l'ancien raccord,
+  // qui élargissait la bosse des hanches, les écartait du même coup ; sans
+  // lui elles se frôlaient au renflement (0,003).
+  const bare = (s as Shape).seatWidth ? { ...s, seatWidth: 0 } : s
+  return Math.max(
+    s.torsoRadius * 0.44 * Math.sqrt(torsoSculpt(bare, -0.72, Math.PI / 2)),
+    thigh * 0.95,
+    thigh + 0.006 - Math.sin(lb.legSpread) * lb.legLength * 0.25,
+  )
 }
 
 /**
@@ -183,9 +318,11 @@ export function bodyRadius(p: DollParams, y: number) {
   const ts = (y + s.torsoHeight * 0.44) / (s.torsoHeight * 0.5)
   const torso =
     Math.abs(ts) < 1
-      ? (1 + (s.torsoTaper - 1) * (ts + 1) * 0.5) * s.torsoRadius * torsoRing(s.torsoSquare, ts) *
-        // Moyenne du flanc et de la face (celle-ci aplatie par l'épaisseur).
-        0.5 * (torsoSculpt(s, ts, Math.PI / 2) + (s.torsoDepth ?? 0.86) * torsoSculpt(s, ts, 0)) * 0.97
+      ? (1 + (s.torsoTaper - 1) * (ts + 1) * 0.5) * s.torsoRadius *
+        // Moyenne du flanc et de la face (celle-ci aplatie par l'épaisseur) ;
+        // l'assise ne tient que les flancs (voir `torsoPoint`).
+        0.5 * (torsoRing(s.torsoSquare, ts, (s as Shape).seat) * torsoSculpt(s, ts, Math.PI / 2) +
+          torsoRing(s.torsoSquare, ts) * (s.torsoDepth ?? 0.86) * torsoSculpt(s, ts, 0)) * 0.97
       : 0
 
   return Math.max(head, torso)

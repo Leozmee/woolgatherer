@@ -1,6 +1,6 @@
 import { mulberry32, clamp } from '../core/rand'
 import { dollLayout, legDrop, tipScale } from './layout'
-import { hipX, torsoPoint } from './surface'
+import { hipX, thighOverhang, torsoPoint, type TorsoShape } from './surface'
 import type { DollParams } from './params'
 
 /**
@@ -394,7 +394,11 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
       mouthHeight,
     },
   }
-  return spreadFeet(scaleDoll(out, k(m.size, 0.15)))
+  const scaled = scaleDoll(out, k(m.size, 0.15))
+  // Grenouille : l'ancien raccord écarte les hanches, les pieds suivent.
+  if ((scaled.limbs.kneeOut ?? 0) > 0.5) return spreadFeet(widenHips(scaled))
+  // Sinon les pieds s'écartent d'abord : le raccord se prend sur l'écart final.
+  return fillHips(spreadFeet(scaled))
 }
 
 /**
@@ -425,16 +429,91 @@ function scaleDoll(q: DollParams, f: number): DollParams {
 }
 
 /**
- * Jambes raccordées au tronc : le bas du tronc s'élargit (`hips`) jusqu'à
- * recouvrir l'attache des cuisses. Sur un tronc fin (échalas) ou sous de
- * grosses cuisses (kangourou, poupon), la jambe débordait nettement du bassin
- * qui la reçoit et se lisait comme un pilon rapporté (Leo : « pas reliées de
- * manière continue »). Critère mesuré en rayons de jambe, entre la largeur du
- * tronc à l'attache et le bord de la cuisse (à 60 %) : le patron est à −0,13,
- * le dégingandé à −0,16 — un léger débord est celui d'une peluche cousue — ;
- * on ne tolère pas plus de −0,1.
+ * Jambes raccordées au tronc : **le bas du tronc vient envelopper le haut des
+ * cuisses**, jusqu'à ce qu'aucun point de la cuisse au-dessus de l'assise ne
+ * dépasse (`thighOverhang`).
+ *
+ * Le défaut, vu à l'écran : le tronc se referme en pointe vers son pôle, entre
+ * des cuisses qui descendent droit ; la calotte de chaque capsule dépasse de
+ * ce bas pincé, sur le flanc comme devant et derrière, et les jambes lisent
+ * comme deux piliers plantés sous un tronc (Leo : « pas reliées de manière
+ * continue », surtout l'échalas et le kangourou). Une première correction
+ * élargissait la bosse des hanches (`hips`) : elle ne couvrait que 60 % du
+ * bord de la cuisse, à une seule hauteur, et une bosse localisée évase le
+ * tronc en jupe au lieu de le prolonger en cuisses.
+ *
+ * Deux leviers, dans l'ordre, chacun juste assez :
+ * 1. l'**assise** (`seat`, 0 à 1) : les flancs tiennent leur largeur plus bas
+ *    et la section du bas passe de l'ellipse au coussin — les coins devant et
+ *    derrière les cuisses se remplissent sans avancer ni le ventre ni le dos.
+ *    En pratique elle est pleine sur toutes les morphos : elle ne suffit
+ *    jamais seule ;
+ * 2. puis l'**élargissement** des flancs (`seatWidth`), en rampe douce depuis
+ *    la taille : peu sur le dégingandé et l'hercule (0,05–0,2), davantage sur
+ *    l'échalas (tronc fin, 0,3) et le poupon et le kangourou (grosses cuisses,
+ *    0,4–0,5).
+ * Les jambes en grenouille (`kneeOut`, crapaud et araignée) n'y passent pas
+ * (`applyMorph`) : leurs cuisses partent sur le côté, aucun tronc ne peut les
+ * suivre ; elles gardent l'ancien raccord (`widenHips`).
  */
+const SEAT_WIDTH_MAX = 0.8
+/** Écart minimal de la main au flanc, au repos, que l'élargissement respecte. */
+const HAND_CLEAR = 0.02
 function fillHips(q: DollParams): DollParams {
+  const over = (s: TorsoShape) => thighOverhang({ ...q, shape: s })
+  if (over(q.shape) <= 0) return q
+  const s0: TorsoShape = q.shape
+  // Bissection : la plus petite valeur qui convient (la condition ne peut que
+  // s'améliorer quand la valeur monte).
+  const least = (fits: (v: number) => boolean, hi: number) => {
+    if (!fits(hi)) return hi
+    let lo = 0
+    for (let i = 0; i < 10; i++) {
+      const mid = (lo + hi) / 2
+      if (fits(mid)) hi = mid
+      else lo = mid
+    }
+    return hi
+  }
+  const seat = least((v) => over({ ...s0, seat: v }) <= 0, 1)
+  if (seat < 1) return { ...q, shape: { ...s0, seat } as TorsoShape }
+  const at = (v: number): TorsoShape => ({ ...s0, seat: 1, seatWidth: v })
+  // L'élargissement ne tient que les flancs : ce qu'il ne peut pas résorber
+  // (l'arrière d'une cuisse de kangourou) ne doit pas le pousser au maximum.
+  // Et il s'arrête avant les mains, qui pendent à hauteur de hanche chez le
+  // poupon et se replient devant chez le kangourou : élargi sans elles, le
+  // bassin les avalait (mesuré : −0,06 sur le kangourou). Là où elles le
+  // bornent, ce sont elles qui cachent le raccord.
+  const clear = Math.min(handGap({ ...q, shape: s0 }), HAND_CLEAR)
+  const room = SEAT_WIDTH_MAX - least((v) => handGap({ ...q, shape: at(SEAT_WIDTH_MAX - v) }) >= clear, SEAT_WIDTH_MAX)
+  const floor = Math.max(0, over(at(room))) + 0.01
+  const seatWidth = least((v) => over(at(v)) <= floor, room)
+  return { ...q, shape: at(seatWidth) }
+}
+
+/**
+ * Écart de la main au flanc du tronc, au repos : bras écarté, coude plié vers
+ * l'avant, main à mi-hauteur de son revers. Même modèle que le banc d'audit
+ * des morphos.
+ */
+function handGap(q: DollParams) {
+  const s = q.shape
+  const lb = q.limbs
+  const L = dollLayout(q)
+  const a = lb.armLength
+  const handR = lb.armRadius * 1.35 * tipScale(lb.armTaper, lb.handScale)
+  const drop = a * 0.5 + (a * 0.5 + lb.armRadius * 0.35) * Math.cos(lb.elbowRest ?? 0)
+  const hx = L.shoulderX + Math.sin(lb.armSpread) * drop
+  const sy = (L.shoulderY - Math.cos(lb.armSpread) * drop) / (s.torsoHeight * 0.5)
+  const body = Math.abs(sy) < 1 ? torsoPoint(s, sy, Math.PI / 2).x : 0
+  return hx - handR * 0.5 - body
+}
+
+/**
+ * Ancien raccord, gardé pour les jambes en grenouille : la bosse des hanches
+ * (`hips`) couvre 60 % du bord de la cuisse à l'attache, à −0,1 rayon près.
+ */
+function widenHips(q: DollParams): DollParams {
   const lb = q.limbs
   const top = lb.legRadius * (1 - (lb.legTaper ?? 0) * 0.5)
   let s = q.shape
@@ -453,13 +532,17 @@ function fillHips(q: DollParams): DollParams {
  * (poupon, kangourou, échalas) se recouvraient au milieu. On écarte les jambes
  * juste assez — le patron du panneau n'est pas concerné, il n'y passe pas.
  */
-function spreadFeet(q0: DollParams): DollParams {
-  const q = fillHips(q0)
-  const lb = q.limbs
-  const half = lb.legRadius * 1.3 * tipScale(lb.legTaper, lb.footScale) * 0.78 * 1.18
-  const need = (half + 0.012 - hipX(q)) / legDrop(lb)
-  if (need <= Math.sin(lb.legSpread)) return q
-  return { ...q, limbs: { ...lb, legSpread: Math.min(0.8, Math.asin(Math.min(0.99, need))) } }
+function spreadFeet(q: DollParams): DollParams {
+  // L'écart des hanches dépend lui-même de l'écartement (`hipX` garde un jour
+  // entre les cuisses) : quelques passes, jusqu'au point fixe.
+  for (let i = 0; i < 4; i++) {
+    const lb = q.limbs
+    const half = lb.legRadius * 1.3 * tipScale(lb.legTaper, lb.footScale) * 0.78 * 1.18
+    const need = (half + 0.012 - hipX(q)) / legDrop(lb)
+    if (need <= Math.sin(lb.legSpread) + 1e-6 || lb.legSpread >= 0.8) break
+    q = { ...q, limbs: { ...lb, legSpread: Math.min(0.8, Math.asin(Math.min(0.99, need))) } }
+  }
+  return q
 }
 
 /**

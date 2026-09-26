@@ -25,7 +25,7 @@ import {
   soleCutShader,
   bareShader,
 } from './fuzz'
-import { dollLayout, legDrop, tipScale } from './layout'
+import { dollLayout, legReach, tipScale } from './layout'
 import { Zip, zipFuzzShader, zipHole } from './zip'
 import type { PatchHoles } from './patch'
 import { headWidth, onHeadPolar, onTorso, torsoSculpt } from './surface'
@@ -581,7 +581,7 @@ export function Doll({
   /** Pied au repos, repère de la racine : hanche, puis l'axe écarté de la jambe. */
   const footRest = useMemo(() => {
     // Genou fléchi au repos (`kneeRest`) : la jambe est moins haute.
-    const reach = legDrop(lb) + lb.legRadius * 0.3
+    const reach = legReach(lb)
     const out = {} as Record<-1 | 1, THREE.Vector3>
     for (const side of [-1, 1] as const)
       out[side] = new THREE.Vector3(

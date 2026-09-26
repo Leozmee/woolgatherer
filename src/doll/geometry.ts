@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { torsoPoint } from './surface'
+import { limbGirth, torsoPoint } from './surface'
 import type { DollParams } from './params'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { clamp, fbm3 } from '../core/rand'
@@ -131,10 +131,8 @@ export function limbGeometry(
   // « coude » ou « genou » sur un boudin de laine, bien plus que le pli seul.
   if (taper !== 0 || upper !== 0 || lower !== 0) {
     const p = geo.attributes.position as THREE.BufferAttribute
-    const g = (u: number, c: number) => Math.exp(-(((u - c) / 0.16) ** 2))
     for (let i = 0; i < p.count; i++) {
-      const u = clamp(-p.getY(i) / length, 0, 1)
-      const k = Math.max(0.4, (1 + taper * (u - 0.5)) * (1 + upper * g(u, 0.25) + lower * g(u, 0.74)))
+      const k = limbGirth(taper, upper, lower, clamp(-p.getY(i) / length, 0, 1))
       p.setX(i, p.getX(i) * k)
       p.setZ(i, p.getZ(i) * k)
     }
