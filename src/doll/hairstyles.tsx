@@ -1636,7 +1636,9 @@ function tintedClumps(p: DollParams, clumps: number): number[] {
   const count = Math.floor(rnd() * 3)
   const seen = Array.from({ length: clumps }, (_, c) => c).filter((c) => {
     const az = ((c + 0.5) / clumps) * Math.PI * 2
-    return Math.cos(az) > -0.3 && Math.abs(Math.sin(az)) > 0.35
+    // Sur les côtés du visage : devant, sous la frange, les longueurs ne sont
+    // pas posées — une mèche tirée là n'existerait pas.
+    return Math.cos(az) > -0.3 && Math.cos(az) < 0.4 && Math.abs(Math.sin(az)) > 0.35
   })
   const out: number[] = []
   while (out.length < count && seen.length) out.push(seen.splice(Math.floor(rnd() * seen.length), 1)[0])
