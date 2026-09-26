@@ -53,13 +53,15 @@ export function dollLayout(p: DollParams) {
 
   const top = neckY + headY + headH
   // Pied : centre 0,3 rayon sous le bout de la jambe, rayon 1,3 × galbe ×
-  // échelle ; plus la marge du duvet. 2,2 rayons pour le pied du patron.
+  // échelle, et la semelle de feutre qui dépasse de 1,5 % dessous. Plus de
+  // marge de duvet : il est retiré sous la semelle — avec l'ancienne marge
+  // (0,6 rayon), toutes les poupées flottaient d'environ 0,05 au-dessus du sol.
   // La jambe est **écartée** (`legSpread`) : elle ne descend que du cosinus
   // de son écart. Sans lui le sol passait sous les pieds des jambes très
   // ouvertes — 0,09 sous le crapaud, à 0,8 rad —, qui flottaient au-dessus.
   const footK = tipScale(p.limbs.legTaper, p.limbs.footScale)
   const bottom =
-    hipY - legReach(p.limbs) * Math.cos(p.limbs.legSpread) - p.limbs.legRadius * (0.6 + 1.3 * footK)
+    hipY - legReach(p.limbs) * Math.cos(p.limbs.legSpread) - p.limbs.legRadius * 1.3 * 1.015 * footK
   const centerY = (top + bottom) * 0.5
 
   return {
