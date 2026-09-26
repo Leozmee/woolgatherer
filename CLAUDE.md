@@ -283,6 +283,8 @@ src/
 
 **Ce qui bouge ne peut pas vivre dans un `<Batched>`, sauf marqué `noBatch`.** Posé dans un slot fusionné, un ressort anime un maillage caché. Les pièces animées (épingles de couronne, languette) sont marquées avant la fusion (effet de l'enfant, qui passe avant celui du parent) ; les rubans simulés vont dans le slot du cou, jamais fusionné.
 
+**Un détail cousu près de la bouche se mesure contre toutes les bouches.** La cicatrice, tracée depuis sous l'œil, mordait le coin d'une bouche large — et son départ lui-même tombait parfois à côté du coin, sous un gros bouton. `scarPath` la recule (les deux bouts) jusqu'à une demi-croix de cicatrice + une demi-croix de bouche + deux fils de toute bouche que la poupée peut faire, expressions du combat comprises. Mesuré : 0 sur 4 800 visages trop près.
+
 **Pas de `StrictMode`.** Son double montage en dev libère les géométries et textures que R3F utilise encore.
 
 **Ce que la graine tire, le panneau le multiplie ; le reste est en valeur absolue.** Largeur, pans et frange sont des multiplicateurs — un curseur absolu écraserait la variété d'une poupée à l'autre. Épaisseur, côtes, poids, raideurs sont absolus : ce sont des propriétés du tissu, pas de l'exemplaire.

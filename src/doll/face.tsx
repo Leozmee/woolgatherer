@@ -761,6 +761,49 @@ function crossOver(
   return { pts, up, radius: tr * 1.35 }
 }
 
+/** Distance d'un point au segment [a, b]. */
+function segDist(q: V2, a: V2, b: V2) {
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  const t = Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)))
+  return Math.hypot(q[0] - a[0] - t * dx, q[1] - a[1] - t * dy)
+}
+
+/**
+ * Tracé de la cicatrice : en diagonale sur la joue, de sous l'œil vers la
+ * mâchoire, en fuyant vers l'extérieur. Courte et verticale près du coin de
+ * la bouche, elle se lisait comme un prolongement de la bouche, pas comme une
+ * plaie.
+ *
+ * Et elle ne **touche jamais** la bouche : sur une bouche large, son bout
+ * venait mordre le coin des lèvres. Le dégagement se mesure contre toutes les
+ * bouches que la poupée peut faire — repos et expressions du combat, qui
+ * l'élargissent ou l'ouvrent — et vaut une demi-croix de cicatrice, une
+ * demi-croix de bouche et deux fils. Tant qu'il manque, le bout bascule vers
+ * l'extérieur et remonte.
+ */
+export function scarPath(p: DollParams, look: FaceLook, eyes: FaceEyes) {
+  const f = p.face
+  const size = (eyes.leftSize + eyes.rightSize) * 0.5
+  const eyeX = eyes.spacing * 0.5
+  const side = look.side
+  const mouths = [REST[look.mood](side), ...EXPRESSIONS.map((e) => EXPR[e](side))].flatMap((pose) => {
+    const { upper, lower } = lips(pose.mouth, side, f.mouthWidth, f.mouthHeight)
+    return [...upper, ...lower]
+  })
+  const clear = size * 0.375 + f.mouthWidth * 0.14 + p.thread.radius * 2
+  const gap = (a: V2, b: V2) => Math.min(...mouths.map((q) => segDist(q, a, b)))
+  // Le départ, sous l'œil, peut lui-même tomber à côté du coin d'une bouche
+  // large (sous un gros bouton) : les deux bouts reculent ensemble.
+  let a: V2 = [side * (eyeX - size * 0.1), f.eyeHeight - size * 1.3]
+  let b: V2 = [side * (eyeX + size * 1.5), f.mouthHeight - size * 1.1]
+  for (let i = 0; i < 24 && gap(a, b) < clear; i++) {
+    a = [a[0] + side * size * 0.1, a[1] + size * 0.04]
+    b = [b[0] + side * size * 0.12, b[1] + size * 0.08]
+  }
+  return { path: [a, b] as V2[], gap: gap(a, b), clear }
+}
+
 /**
  * Détails cousus à plat, fixes : ce qui ne bouge pas avec l'expression.
  */
@@ -789,13 +832,7 @@ function accentStitches(p: DollParams, look: FaceLook, eyes: FaceEyes, stitchDip
       segs.push({ ...base, color: p.thread.color, radius: tr * 0.7, dip: stitchDip * 0.8, a: [c[0] - r, c[1] - sa * r], b: [c[0] + r, c[1] + sa * r] })
     }
   } else if (accent === 'cicatrice') {
-    // En diagonale sur la joue, de sous l'œil vers la mâchoire, en fuyant
-    // vers l'extérieur. Courte et verticale près du coin de la bouche, elle
-    // se lisait comme un prolongement de la bouche, pas comme une plaie.
-    const path: V2[] = [
-      [side * (eyeX - size * 0.1), f.eyeHeight - size * 1.3],
-      [side * (eyeX + size * 1.5), f.mouthHeight - size * 1.1],
-    ]
+    const { path } = scarPath(p, look, eyes)
     segs.push(...stitchPath(path, false, 'suture', 4, size * 0.75, { ...base, color: darker(p.thread.mouthColor, 0.72) }))
   } else if (accent === 'joues') {
     // Joues brodées : trois traits obliques serrés sur chaque pommette, en
