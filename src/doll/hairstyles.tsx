@@ -8,6 +8,7 @@ import { clamp, mulberry32 } from '../core/rand'
 import type { CordMaps } from '../core/cord'
 import { onHeadPolar } from './surface'
 import { EYE_SCALE } from './face'
+import { zipHole } from './zip'
 import type { DollParams } from './params'
 
 /**
@@ -489,28 +490,65 @@ function pulled(
   o: PulledOpts = {},
 ) {
   const limit = o.crown !== undefined ? hairlineAt(low, o.crown) : hairline(p, low)
-  // Lisière irrégulière qui descend en pointe sur la nuque.
-  const rim = (az: number) => dirOf(az, limit(az) + 0.02 - Math.max(0, -Math.cos(az)) ** 3 * 0.18)
+  // Lisière irrégulière, un peu plus basse derrière.
+  const rim = (az: number) => dirOf(az, limit(az) + 0.02 - Math.max(0, -Math.cos(az)) ** 3 * 0.1)
   const dirs = targets.map((t) => t.clone().normalize())
   const nearest = (f: THREE.Vector3) => dirs.reduce((a, d) => (d.dot(f) > a.dot(f) ? d : a), dirs[0])
   const split = dirs.length === 2 && dirs[0].x * dirs[1].x < 0
+  const zip = zipBand(p, r)
   const a0 = Math.asin(clamp(limit(0), -0.99, 0.99))
   const a1 = Math.PI - Math.asin(Math.max(-0.9, limit(Math.PI) - 0.1))
+  // Bord du ruban, du côté `sx`, de la lisière jusqu'au bout haut.
+  const zipEdge = (sx: number, count: number) =>
+    Array.from({ length: count }, (_, k) => {
+      const y = zip.top + (Math.max(zip.bottom, limit(Math.PI) - 0.1) - zip.top) * (k / (count - 1))
+      return new THREE.Vector3(sx * zip.half, y, -Math.sqrt(Math.max(0, 1 - y * y - zip.half * zip.half)))
+    })
+  const offTape = (d: THREE.Vector3) => d.z < 0 && Math.abs(d.x) < zip.half && d.y < zip.top + 0.02
   /*
-   * Zones : avec deux attaches opposées, chaque moitié a pour bord la raie
-   * (du front à la nuque) puis sa demi-lisière ; sinon la lisière entière.
+   * Zones, et côté de la fermeture de chaque racine (`side`).
+   *
+   * Deux attaches opposées : chaque moitié a pour bord la raie puis sa
+   * demi-lisière. La raie est **le ruban** le long de la fermeture, et se
+   * **referme** au-delà de son bout haut : les racines y passent d'un
+   * cheveu de l'autre côté, les deux moitiés se chevauchent, aucun crâne nu.
+   *
+   * Une seule attache : la lisière entière, coupée par le ruban, plus ses
+   * deux bords jusqu'au bout haut.
    */
-  const zones = split
+  /** `edge` : racine au bord du ruban ; `shut` : sur la raie refermée. Ni l'une ni l'autre n'est enfouie. */
+  type Zone = { to: THREE.Vector3 | null; line: THREE.Vector3[]; side: number[]; edge: boolean[]; shut?: boolean[] }
+  const zones: Zone[] = split
     ? dirs.map((to) => {
         const sx = Math.sign(to.x)
+        const aTop = Math.PI - Math.asin(zip.top)
         const part = Array.from({ length: 121 }, (_, k) => {
           const a = a0 + ((a1 - a0) * k) / 120
-          return new THREE.Vector3(sx * 0.02, Math.sin(a), Math.cos(a)).normalize()
+          const x = a < aTop ? -sx * 0.03 : sx * zip.half
+          const y = Math.sin(a)
+          const c = Math.sqrt(Math.max(0, 1 - x * x - y * y))
+          return new THREE.Vector3(x, y, Math.sign(Math.cos(a)) * c)
         })
-        const edge = Array.from({ length: 180 }, (_, k) => rim(sx * (Math.PI - (Math.PI * (k + 1)) / 181)))
-        return { to: to as THREE.Vector3 | null, line: [...part, ...edge] }
+        const edge = Array.from({ length: 180 }, (_, k) => rim(sx * (Math.PI - (Math.PI * (k + 1)) / 181))).filter(
+          (d) => !offTape(d),
+        )
+        const line = [...part, ...edge]
+        const onTape = line.map((d, i) => i < part.length && d.z < 0 && d.y < zip.top)
+        const shut = line.map((_, i) => i < part.length && !onTape[i])
+        return { to: to as THREE.Vector3 | null, line, side: line.map(() => sx), edge: onTape, shut }
       })
-    : [{ to: null as THREE.Vector3 | null, line: Array.from({ length: 721 }, (_, k) => rim(-Math.PI + (k / 720) * Math.PI * 2)) }]
+    : (() => {
+        const around = Array.from({ length: 721 }, (_, k) => rim((k / 720) * Math.PI * 2 - Math.PI)).filter(
+          (d) => !offTape(d),
+        )
+        // La lisière part de la nuque côté x < 0, fait le tour par l'avant.
+        const left = zipEdge(-1, 60)
+        const right = zipEdge(1, 60).reverse()
+        const line = [...left, ...around, ...right]
+        const side = line.map((d, i) => (i < left.length ? -1 : i >= line.length - right.length ? 1 : Math.sign(d.x) || 1))
+        const edge = line.map((_, i) => i < left.length || i >= line.length - right.length)
+        return [{ to: null, line, side, edge }]
+      })()
 
   const base = Math.max(r * 0.8, p.shell.height - r * 0.9)
   for (const z of zones) {
@@ -519,26 +557,44 @@ function pulled(
     for (let i = 1; i < pos.length; i++) {
       const th = z.line[i].angleTo(z.to ?? nearest(z.line[i]))
       const w = th > Math.PI / 2 ? Math.max(0.3, Math.sin(th)) : 1
-      cum.push(cum[i - 1] + pos[i].distanceTo(pos[i - 1]) / w)
+      // Un saut (bord du ruban → lisière) ne compte pas comme de la lisière.
+      const step = pos[i].distanceTo(pos[i - 1])
+      cum.push(cum[i - 1] + (step > p.shape.headRadius * 0.2 ? 0 : step / w))
     }
     const B = cum[cum.length - 1]
-    const n = clamp(Math.ceil(B / ((o.pitch ?? 1.8) * r)), 60, 480)
+    const n = clamp(Math.ceil(B / ((o.pitch ?? 1.8) * r)), 60, 520)
     for (let i = 0, j = 1; i < n; i++) {
       const at = ((i + 0.5 + (rnd() - 0.5) * 0.3) / n) * B
       while (j < cum.length - 1 && cum[j] < at) j++
       const u = clamp((at - cum[j - 1]) / Math.max(1e-9, cum[j] - cum[j - 1]), 0, 1)
       const from = z.line[j - 1].clone().lerp(z.line[j], u).normalize()
+      const side = u < 0.5 ? z.side[j - 1] : z.side[j]
+      /*
+       * Au bord du ruban, la racine part **sous** le ruban et n'est pas
+       * enfouie : un brin qui sort de la laine en biais laisse, entre deux
+       * racines, un liseré nu le long de la fermeture.
+       */
+      const onEdge = u < 0.5 ? z.edge[j - 1] : z.edge[j]
+      // Raie refermée : les racines passent de l'autre côté et ne sont pas
+      // enfouies — un brin qui sort de la laine laisse un sillon nu sur toute
+      // la longueur de sa sortie, et c'était le trou au-dessus de la fermeture.
+      const shut = !!z.shut?.[u < 0.5 ? j - 1 : j]
+      if (onEdge) {
+        const x = side * zip.tape
+        from.set(x, from.y, -Math.sqrt(Math.max(0, 1 - x * x - from.y * from.y)))
+      }
       const to = z.to ?? nearest(from)
       const upper = i % 2 === 1
       const ridge = upper && o.grooves ? r * 0.9 * (0.5 + 0.5 * Math.cos((2 * Math.PI * o.grooves * at) / B)) : 0
       const layer = upper ? base + r * (0.9 + rnd() * 0.3) + ridge : base * (1 + rnd() * 0.2)
-      const ang = from.angleTo(to)
+      const path = zipPath(from, to, zip, side, rnd)
+      const ang = path.length
       const reach = o.tuck ? Math.max(0.2, 1 - o.tuck / Math.max(ang, 1e-3)) : 1
-      const M = clamp(Math.ceil(ang / 0.08), 8, 24)
+      const M = clamp(Math.ceil(ang / 0.08), 8, 30)
       const pts: THREE.Vector3[] = []
       for (let k = 0; k <= M; k++) {
-        const d = from.clone().lerp(to, (k / M) * reach).normalize()
-        const lift = k === 0 ? -r * 2 : k === M && o.tuck ? -r * 0.5 : layer
+        const d = path.at((k / M) * reach)
+        const lift = k === 0 ? (onEdge || shut ? layer * 0.4 : -r * 2) : k === M && o.tuck ? -r * 0.5 : layer
         pts.push(onDir(p, d, lift, POLE).pos)
       }
       // Aucune option de mouvement : aMover −1, mobilité et écartement nuls.
@@ -546,6 +602,67 @@ function pulled(
     }
   }
   return { frontLine: (az: number) => limit(az) + 0.02 }
+}
+
+/**
+ * Emprise de la fermeture éclair dans l'espace des directions du crâne
+ * (`dirOf`) : demi-largeur en x — ruban plus un fil, pour que les brins
+ * partent **au bord** du ruban et non dessus —, bornes de hauteur. Une seule
+ * source : `zipHole`, celle qui retire le duvet sous le ruban.
+ */
+function zipBand(p: DollParams, r: number) {
+  const h = zipHole(p)
+  const ry = p.shape.headRadius * p.shape.headSquash
+  const R = p.shape.headRadius
+  return { half: (h.half + r * 0.9) / R, tape: (h.half * 0.8) / R, top: h.top / ry, bottom: h.bottom / ry }
+}
+type ZipBand = ReturnType<typeof zipBand>
+
+/** Tient une direction hors du ruban, du côté `side`. */
+function keepOffZip(d: THREE.Vector3, zip: ZipBand, side: number) {
+  if (d.z >= 0 || d.y > zip.top || d.y < zip.bottom || side * d.x >= zip.half) return d
+  const x = side * zip.half
+  d.set(x, d.y, -Math.sqrt(Math.max(0, 1 - x * x - d.y * d.y)))
+  return d
+}
+
+/**
+ * Chemin d'un brin sur le crâne, de `from` à `to`, **sans passer sur la
+ * fermeture**.
+ *
+ * Le plus court chemin s'il ne la croise pas. Sinon il franchit le méridien
+ * arrière au-dessus du bout haut du ruban : on prend le point où le plus
+ * court chemin le croise, et on le **relève** jusque-là. Relever seulement
+ * les brins qui croisent, et envoyer tous ceux-là par un même point, séparait
+ * deux familles — ceux qui montent le long du ruban, ceux qui partent vers
+ * l'attache — et ouvrait un sillon entre les deux. Le relèvement est continu :
+ * un brin qui croisait juste au-dessus du bout ne change pas.
+ *
+ * `at(t)` rend la direction, `length` l'angle parcouru.
+ */
+function zipPath(from: THREE.Vector3, to: THREE.Vector3, zip: ZipBand, side: number, rnd: () => number) {
+  const slerp = (a: THREE.Vector3, b: THREE.Vector3, t: number) => a.clone().lerp(b, t).normalize()
+  const direct = () => ({ length: from.angleTo(to), at: (t: number) => keepOffZip(slerp(from, to, t), zip, side) })
+  // Croisement du plus court chemin avec le plan x = 0, s'il est sur l'arc.
+  const n = new THREE.Vector3().crossVectors(from, to)
+  if (n.lengthSq() < 1e-10 || from.x * side < 0) return direct()
+  const c = new THREE.Vector3().crossVectors(n, new THREE.Vector3(1, 0, 0)).normalize()
+  if (c.dot(from) + c.dot(to) < 0) c.negate()
+  const onArc = Math.abs(from.angleTo(c) + c.angleTo(to) - from.angleTo(to)) < 1e-3
+  const floor = zip.top + 0.03
+  if (!onArc || c.z >= 0 || c.y >= floor || to.x * side > 0) return direct()
+  const y = Math.min(0.995, floor + rnd() * 0.02)
+  const via = new THREE.Vector3(0, y, -Math.sqrt(1 - y * y))
+  const l0 = from.angleTo(via)
+  const l1 = via.angleTo(to)
+  const len = l0 + l1
+  return {
+    length: len,
+    at: (t: number) => {
+      const s = t * len
+      return s < l0 ? keepOffZip(slerp(from, via, s / l0), zip, side) : slerp(via, to, (s - l0) / Math.max(1e-6, l1))
+    },
+  }
 }
 
 // ---------------------------------------------------------------- coiffures
@@ -580,17 +697,25 @@ function curls(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   // Bouclettes : elles rebondissent par secteurs — raides et peu amorties,
   // une boucle serrée sautille plus qu'elle ne pend.
   const sector = sectorMovers(out, rnd, R, 8, 0.16, 0.08)
+  const zip = zipBand(p, r)
   for (let i = 0; i < count; i++) {
     const t = (i + 0.5) / count
     const sy = low + (0.97 - low) * t
     const az = i * GOLDEN + rnd() * 0.3
     if (sy < limit(az)) continue
-    const s = onHeadPolar(p, az, sy, 0)
+    /*
+     * Une boucle qui mordrait sur la fermeture est rangée **au bord** du
+     * ruban, de son côté : les boucles s'alignent de part et d'autre et la
+     * fermeture reste nette, sans trou dans la toison à côté.
+     */
+    const lr = loop * (0.8 + rnd() * 0.45)
+    const dz = dirOf(az, sy)
+    const wide = { ...zip, half: zip.half + (lr * 1.1) / R }
+    const s = onDir(p, keepOffZip(dz, wide, Math.sign(dz.x) || (i % 2 ? 1 : -1)), 0, 0.99)
     const [t1, t2] = tangentBasis(s.normal)
     const phi = rnd() * Math.PI
     const dir = t1.clone().multiplyScalar(Math.cos(phi)).addScaledVector(t2, Math.sin(phi))
     const side = t1.clone().multiplyScalar(-Math.sin(phi)).addScaledVector(t2, Math.cos(phi))
-    const lr = loop * (0.8 + rnd() * 0.45)
     const center = s.pos.clone().addScaledVector(s.normal, lr * 0.5)
     // Un tour et demi de spirale, pas un anneau : l'anneau lit comme une
     // rondelle dressée, la spirale comme une boucle de laine qui frise.
@@ -723,7 +848,16 @@ function radiate(
   const wave = o.wave ?? 0
   const volume = o.volume ?? 0
   const waves = 2 + Math.floor(rnd() * 3)
-  const whorl = dirOf(Math.PI + (rnd() - 0.5) * 1.2, 0.8 + rnd() * 0.12)
+  const zip = zipBand(p, r)
+  /*
+   * L'épi est au **bout haut de la fermeture** : les brins partent de là, la
+   * fermeture ouvre la raie en dessous et rien ne passe dessus. Ailleurs, un
+   * épi derrière le sommet envoyait les brins de l'arrière droit sur le ruban.
+   * Deux tirages, comme avant : la suite de la graine ne bouge pas.
+   */
+  const w0 = rnd()
+  const w1 = rnd()
+  const whorl = dirOf(Math.PI + (w0 - 0.5) * 0.06, Math.min(0.99, zip.top + 0.03 + w1 * 0.02))
   const M = 18
   const clumps = o.clumps ?? 0
   // Longueur propre à chaque mèche, tirée avant la boucle.
@@ -782,14 +916,21 @@ function radiate(
     const phase = rnd() * Math.PI * 2
     // Mobilité : nulle à l'épi, pleine au bout du carré, faible pour la frange.
     const reach = clamp((0.7 - tipSy) / 0.9, 0.12, 1)
+    // Côté de la fermeture où tombe le brin ; à l'aplomb exact, en alternance.
+    const side = Math.abs(tip.x) > 1e-3 ? Math.sign(tip.x) : i % 2 ? 1 : -1
     let rMax = 0
     const pts: THREE.Vector3[] = []
     for (let k = 0; k <= M; k++) {
       const t = k / M
       const d = from.clone().lerp(tip, t).normalize()
       const close = clumps ? pinch * clamp((t - 0.62) / 0.38, 0, 1) ** 1.5 : 0
-      const a = Math.atan2(d.x, d.z) + pinchTo * close + wave * Math.sin(t * waves * Math.PI + phase) * t
+      let a = Math.atan2(d.x, d.z) + pinchTo * close + wave * Math.sin(t * waves * Math.PI + phase) * t
       const sy = clamp(d.y, -0.98, 0.98)
+      // Jamais sur la fermeture : le brin longe le ruban, du côté où il tombe.
+      if (k > 0) {
+        const off = keepOffZip(dirOf(a, sy), zip, side)
+        a = Math.atan2(off.x, off.z)
+      }
       // Gonflement : nul à la racine, maximal au milieu, retombant à la pointe.
       const puff = volume * depth * Math.sin(Math.PI * Math.min(1, t * 1.15)) * 0.8
       // Pointe retroussée pour un brin sur trois, sur le dernier cinquième.
@@ -856,7 +997,9 @@ function bun(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   const r = yarnR * 0.9
   const spots = two
     ? [-1, 1].map((sx) => onHeadPolar(p, sx * (Math.PI / 2 - 0.35), 0.62 + rnd() * 0.08, 0))
-    : [onHeadPolar(p, Math.PI - (rnd() - 0.5) * 0.6, 0.72 + rnd() * 0.2, 0)]
+    : // Au bout haut de la fermeture : la pelote la termine, au lieu de la
+      // recouvrir à mi-hauteur.
+      [onHeadPolar(p, Math.PI, 0.985 + rnd() * 0.01, 0)]
   const buns = spots.map((s) => s.pos.clone().addScaledVector(s.normal, rb * 0.62))
   for (const [bi, c] of buns.entries()) {
     /*
@@ -912,6 +1055,7 @@ function tuft(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   const rise = R * (0.12 + rnd() * 0.1)
   const r = yarnR * (1 + rnd() * 0.35)
   const limit = hairline(p, -0.1 + rnd() * 0.25)
+  const zip = zipBand(p, r)
   out.movers.push({
     pivot: s.pos.clone(),
     dir: s.normal.clone(),
@@ -931,13 +1075,15 @@ function tuft(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   for (let i = 0; i < count; i++) {
     const az = (i / count) * Math.PI * 2 + (rnd() - 0.5) * 0.08
     const tip = dirOf(az, limit(az) + (rnd() - 0.5) * 0.05)
+    const side = Math.abs(tip.x) > 1e-3 ? Math.sign(tip.x) : i % 2 ? 1 : -1
     const top = s.normal.clone()
     const layer = r * (0.7 + rnd() * 1.2)
     const arc = rise * (0.7 + rnd() * 0.5)
     const pts: THREE.Vector3[] = [s.pos.clone().addScaledVector(s.normal, -r * 2)]
     for (let k = 1; k <= M; k++) {
       const t = k / M
-      const d = top.clone().lerp(tip, t).normalize()
+      // La gerbe s'ouvre sur la fermeture au lieu de la recouvrir.
+      const d = keepOffZip(top.clone().lerp(tip, t).normalize(), zip, side)
       // Bosse de la gerbe : haute au départ, nulle une fois posée.
       const bulge = arc * Math.sin(Math.PI * Math.min(1, t * 1.6)) * (t < 0.62 ? 1 : 0)
       pts.push(onDir(p, d, layer + Math.max(0, bulge)).pos)
@@ -1038,6 +1184,7 @@ function bunch(
   tie: { pos: THREE.Vector3; normal: THREE.Vector3 },
   L: number,
   out: Parts,
+  o: { axis?: (t: number) => THREE.Vector3; spring?: Mover; flare?: number; count?: number; tight?: number } = {},
 ) {
   const R = p.shape.headRadius
   const m = out.movers.length
@@ -1051,14 +1198,16 @@ function bunch(
    * avant de retomber, et ne s'évase qu'en bas.
    */
   const stand = R * (0.16 + rnd() * 0.08)
-  const tight = r * 2.6
-  const flare = r * (5 + rnd() * 3)
-  const axisAt = (t: number) =>
-    tie.pos
-      .clone()
-      .addScaledVector(tie.normal, r * 2 + stand * Math.min(1, t * 2.5) ** 0.7)
-      .addScaledVector(DOWN, L * Math.max(0, t - 0.08) ** 1.25)
-  out.movers.push({
+  const tight = r * (o.tight ?? 2.6)
+  const flare = r * (o.flare ?? 5 + rnd() * 3)
+  const axisAt =
+    o.axis ??
+    ((t: number) =>
+      tie.pos
+        .clone()
+        .addScaledVector(tie.normal, r * 2 + stand * Math.min(1, t * 2.5) ** 0.7)
+        .addScaledVector(DOWN, L * Math.max(0, t - 0.08) ** 1.25))
+  out.movers.push(o.spring ?? {
     pivot: tie.pos.clone().addScaledVector(tie.normal, r * 2),
     // Verticale, comme la frange : un repos penché fait pivoter la touffe au
     // repos, vers la tête.
@@ -1067,7 +1216,7 @@ function bunch(
     cfg: { stiffness: 0.04, drag: 0.16, gravity: 1.2 },
     maxAngle: 0.7,
   })
-  const count = 22 + Math.floor(rnd() * 10)
+  const count = o.count ?? 22 + Math.floor(rnd() * 10)
   const margin = r * 2.5
   const N = 16
   for (let i = 0; i < count; i++) {
@@ -1105,17 +1254,54 @@ function pigtails(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   for (const t of ties) bunch(p, rnd, r, t, L, out)
 }
 
-/** Queue de cheval : cheveux tirés vers une touffe nouée derrière. */
+/**
+ * Queue haute : nouée en haut du crâne, du côté droit de la poupée, elle
+ * **monte** puis s'arque vers l'extérieur et retombe — le croquis de
+ * l'utilisateur. Nouée derrière, elle pendait sur la fermeture et la cachait.
+ *
+ * L'arc est la pose de repos, pas un effet de gravité : son ressort n'a donc
+ * **pas** de gravité (un repos qui n'est pas la verticale, avec de la
+ * gravité, fait glisser la queue au repos). Il ne bouge qu'aux gestes.
+ */
 function ponytail(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   const R = p.shape.headRadius
   const r = yarnR * 0.9
-  const tie = onHeadPolar(p, Math.PI + (rnd() - 0.5) * 0.3, 0.2 + rnd() * 0.45, 0)
-  // Assez longue pour pendre sous l'attache : à la moitié du rayon, elle
-  // restait un moignon planté derrière la tête.
-  const L = R * (0.85 + rnd() * 0.55)
+  // x < 0 : la droite de la poupée, qui fait face à +z.
+  const az = -(Math.PI / 2 + 0.25 + rnd() * 0.25)
+  const tie = onHeadPolar(p, az, 0.72 + rnd() * 0.1, 0)
+  const L = R * (1.0 + rnd() * 0.45)
+  const outward = new THREE.Vector3(Math.sin(az), 0, Math.cos(az)).normalize()
+  const knot = tie.pos.clone().addScaledVector(tie.normal, r * 2)
+  // Bézier cubique : sort le long de la normale en montant, s'arque, retombe.
+  const P1 = knot.clone().addScaledVector(tie.normal, L * 0.25).addScaledVector(UP, L * 0.45)
+  const P2 = knot.clone().addScaledVector(outward, L * 0.75).addScaledVector(UP, L * 0.5)
+  const P3 = knot.clone().addScaledVector(outward, L * (0.95 + rnd() * 0.15)).addScaledVector(UP, -L * (0.25 + rnd() * 0.2))
+  const axis = (t: number) => {
+    const u = clamp(t, 0, 1)
+    const v = 1 - u
+    return knot
+      .clone()
+      .multiplyScalar(v * v * v)
+      .addScaledVector(P1, 3 * v * v * u)
+      .addScaledVector(P2, 3 * v * u * u)
+      .addScaledVector(P3, u * u * u)
+  }
   out.ribbonColor = RIBBONS[Math.floor(rnd() * RIBBONS.length)]
   pulled(p, rnd, r, [tie.pos], out, NAPE_LOW + rnd() * 0.12)
-  bunch(p, rnd, r, tie, L, out)
+  bunch(p, rnd, r, tie, L, out, {
+    axis,
+    flare: 4.5 + rnd() * 2,
+    // Un faisceau épais : le croquis montre une queue pleine, pas un pinceau.
+    count: 52 + Math.floor(rnd() * 14),
+    tight: 3.6,
+    spring: {
+      pivot: knot.clone(),
+      dir: axis(0.6).sub(knot).normalize(),
+      length: L * 0.8,
+      cfg: { stiffness: 0.08, drag: 0.2, gravity: 0 },
+      maxAngle: 0.45,
+    },
+  })
 }
 
 /**
