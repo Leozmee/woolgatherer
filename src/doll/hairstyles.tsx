@@ -44,14 +44,13 @@ export type HairStyle =
   | 'meches'
   | 'chignon'
   | 'houppette'
-  | 'epars'
   | 'couettes'
   | 'queue'
   | 'nattes'
   | 'frange'
 
 export const HAIR_STYLES: readonly HairStyle[] = [
-  'locks', 'boucles', 'meches', 'chignon', 'houppette', 'epars', 'couettes', 'queue', 'nattes', 'frange',
+  'locks', 'boucles', 'meches', 'chignon', 'houppette', 'couettes', 'queue', 'nattes', 'frange',
 ]
 
 export const HAIR_STYLE_NAMES: Record<HairStyle, string> = {
@@ -60,7 +59,6 @@ export const HAIR_STYLE_NAMES: Record<HairStyle, string> = {
   meches: 'mèches',
   chignon: 'chignon',
   houppette: 'houppette',
-  epars: 'trois poils',
   couettes: 'couettes',
   queue: 'queue de cheval',
   nattes: 'nattes',
@@ -74,8 +72,8 @@ export function hairStyleFor(seed: number): HairStyle {
 
 /**
  * Coiffures d'une planche : **toutes différentes**, tirées sans remise.
- * Même règle que pour les laines, les archétypes et les visages ; avec dix
- * coupes pour six poupées, une planche en laisse quatre de côté, jamais les
+ * Même règle que pour les laines, les archétypes et les visages ; avec neuf
+ * coupes pour six poupées, une planche en laisse trois de côté, jamais les
  * mêmes.
  */
 export function boardHairStyles(seed: number, count: number): HairStyle[] {
@@ -763,7 +761,7 @@ function bowlCut(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   const r = yarnR * (0.8 + g * 0.35)
   const count = Math.round(210 - g * 50)
   // Au moins jusqu'aux oreilles : arrêtée plus haut, la coupe laissait nu tout
-  // le bas du crâne — l'effet chauve, réservé à « trois poils ».
+  // le bas du crâne — l'effet chauve, qu'aucune coupe n'a le droit d'avoir.
   const end = -0.2 - rnd() * 0.5
   const wave = rnd() < 0.5 ? 0 : 0.04 + rnd() * 0.06
   // Huit ressorts autour de la tête, bout placé vers leur secteur : à
@@ -1226,75 +1224,6 @@ function tuft(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
       }
       out.yarn.push(yarn(pts, r, { mover: m, free: (t) => t ** 1.1, fling: (t) => t, phase: rnd() * 6, taper: 0.3 }))
     }
-  }
-}
-
-/**
- * Trois poils : **trois**, sur un crâne nu — seule coupe qui a droit d'être
- * chauve, et c'est son gag. Deux à cinq tire-bouchons semblables lisaient
- * comme une calvitie accidentelle ; trois poils de caractères différents
- * lisent comme un personnage.
- *
- * Chacun tire sa forme : **ressort** (hélice qui part d'un rayon nul à la
- * racine — plein rayon, il paraît posé), **crosse** (brin qui monte et se
- * roule en crochet au bout) ou **pic** (droit, effilé en pointe). L'axe fléchit
- * un peu sous son poids : droit, il lit comme une antenne. Racines près du
- * sommet, devant la fermeture. Chacun son ressort, sans gravité (la pose de
- * repos n'est pas la verticale), raide et peu amorti : ça rebondit.
- */
-function wisps(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
-  const R = p.shape.headRadius
-  const r = clamp(yarnR * 1.3, R * 0.022, R * 0.038)
-  const kinds = ['coil', 'hook', 'spike'] as const
-  // Ordre mélangé : le ressort n'est pas toujours au milieu.
-  const order = [0, 1, 2].sort(() => rnd() - 0.5)
-  for (let w = 0; w < 3; w++) {
-    const kind = kinds[order[w]]
-    const s = onHeadPolar(p, (w - 1) * 0.6 + (rnd() - 0.5) * 0.15, 0.86 + rnd() * 0.06, 0)
-    const [t1, t2] = tangentBasis(s.normal)
-    const lean = t1.clone().multiplyScalar((w - 1) * 0.6 + (rnd() - 0.5) * 0.3).addScaledVector(t2, (rnd() - 0.5) * 0.4)
-    const axis0 = s.normal.clone().addScaledVector(lean, 0.7).normalize()
-    const L = R * (kind === 'spike' ? 0.6 + rnd() * 0.2 : 0.55 + rnd() * 0.25)
-    const bend = kind === 'spike' ? 0.1 + rnd() * 0.1 : 0.25 + rnd() * 0.3
-    const m = out.movers.length
-    out.movers.push({
-      pivot: s.pos.clone(),
-      dir: axis0.clone(),
-      length: L,
-      cfg: { stiffness: 0.12 + rnd() * 0.08, drag: 0.06 + rnd() * 0.04, gravity: 0 },
-      maxAngle: 0.5,
-    })
-    const pts: THREE.Vector3[] = [s.pos.clone().addScaledVector(s.normal, -r * 2)]
-    let at = s.pos.clone()
-    const N = kind === 'coil' ? 48 : 20
-    const coil = R * (0.045 + rnd() * 0.025)
-    const turns = 2.5 + rnd() * 2
-    for (let k = 1; k <= N; k++) {
-      const t = k / N
-      const axis = axis0.clone().addScaledVector(DOWN, bend * t).normalize()
-      at = at.clone().addScaledVector(axis, L / N)
-      const [b1, b2] = tangentBasis(axis)
-      const q = at.clone()
-      if (kind === 'coil') {
-        const a = t * turns * Math.PI * 2
-        q.addScaledVector(b1, Math.cos(a) * coil * Math.sqrt(t)).addScaledVector(b2, Math.sin(a) * coil * Math.sqrt(t))
-      } else if (kind === 'hook') {
-        // Crochet sur le dernier tiers : un tour qui s'enroule vers l'extérieur.
-        const h = smooth(0.6, 1, t)
-        const a = h * Math.PI * 1.6
-        q.addScaledVector(b1, (1 - Math.cos(a)) * coil * 1.4).addScaledVector(axis, (Math.sin(a) - a) * coil * 0.8 * h)
-      }
-      pts.push(q)
-    }
-    out.yarn.push(
-      yarn(pts, r * (kind === 'spike' ? 1.15 : 1), {
-        mover: m,
-        free: (t) => t,
-        phase: rnd() * 6,
-        taper: kind === 'spike' ? 0.85 : 0.3,
-        step: kind === 'coil' ? 1.2 : undefined,
-      }),
-    )
   }
 }
 
@@ -1806,7 +1735,6 @@ export function buildHairParts(p: DollParams, style: HairStyle) {
     case 'meches': bowlCut(p, rnd, yarnR, out); break
     case 'chignon': bun(p, rnd, yarnR, out); break
     case 'houppette': tuft(p, rnd, yarnR, out); break
-    case 'epars': wisps(p, rnd, yarnR, out); break
     case 'couettes': pigtails(p, rnd, yarnR, out); break
     case 'queue': ponytail(p, rnd, yarnR, out); break
     case 'nattes': braids(p, rnd, yarnR, out); break

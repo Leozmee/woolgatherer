@@ -328,7 +328,7 @@ export function useDollParams(): { params: DollParams; regenerate: () => void } 
     // Liste littérale pour la même raison : `hairstyles` dépend de ce module.
     hairStyle: {
       value: 'auto',
-      options: ['auto', 'locks', 'boucles', 'meches', 'chignon', 'houppette', 'epars', 'couettes', 'queue', 'nattes', 'frange'],
+      options: ['auto', 'locks', 'boucles', 'meches', 'chignon', 'houppette', 'couettes', 'queue', 'nattes', 'frange'],
       label: 'coiffure (seule)',
     },
   })
