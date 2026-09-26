@@ -1,10 +1,11 @@
 import * as THREE from 'three'
-import { useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { FrameCarry, followLimbs, localFloor, useRigBones } from './rig'
 import { CrossStitch, Thread, Pin, jitterColor, pinColor } from './parts'
 import { armClearance, armSpheres, bodyRadius, bodySpheres, onTorso, onHeadPolar } from './surface'
 import { ClothSheet, type ClothExtras } from '../core/cloth'
+import { SpringBone } from '../core/springBone'
 import { Scarf, scarfMetrics } from './scarf'
 import { Streamer, streamerColliders, type StreamerRest } from './streamer'
 import {
@@ -265,6 +266,74 @@ export function stepNecklace(
   keepAround(n.chain.points, n.chain.prev, n.setup.rest)
   n.drop.anchor(0, n.chain.points[n.hang.top])
   n.drop.step(dt, { gravity: 0.9, damping: 0.05, iterations: 8 }, n.colliders, gravity, undefined, extra)
+}
+
+/**
+ * Couronne d'épingles : de **grandes** épingles plantées en cercle et dressées
+ * vers le haut, chacune sur son ressort — elles vibrent au moindre geste.
+ *
+ * Signature de silhouette : sept épingles de 0,7 rayon plantées à plat sur le
+ * crâne ne se lisaient pas de loin. Plus longues, redressées, elles dessinent
+ * une couronne ; et comme tout ce qui dépasse d'une peluche, elles doivent
+ * réagir quand elle bouge.
+ *
+ * Elles vivent dans le `<Batched>` de la tête mais s'en excluent (`noBatch`) :
+ * fusionnées, elles seraient figées. Le pivot du ressort est le point d'entrée
+ * dans le crâne ; le ressort n'a pas de gravité (le repos n'est pas la
+ * verticale), il vibre et revient.
+ */
+const CROWN_UP = new THREE.Vector3(0, 1, 0)
+function PinCrown({ p }: { p: DollParams }) {
+  const R = p.shape.headRadius
+  const length = R * 1.15
+  const buried = length * 0.4
+  const pins = useMemo(() => {
+    const rnd = mulberry32(p.seed + 4242)
+    const count = 7
+    return Array.from({ length: count }, (_, i) => {
+      const az = ((i + 0.5) / count) * Math.PI * 2
+      const surf = onHeadPolar(p, az, 0.5, 0)
+      // Redressée vers le haut, et un peu de désordre : plantées à la main.
+      const dir = surf.normal
+        .clone()
+        .addScaledVector(CROWN_UP, 0.7 + (rnd() - 0.5) * 0.3)
+        .addScaledVector(new THREE.Vector3(rnd() - 0.5, 0, rnd() - 0.5), 0.2)
+        .normalize()
+      return {
+        pos: surf.pos,
+        quat: new THREE.Quaternion().setFromUnitVectors(CROWN_UP, dir),
+        color: pinColor(rnd),
+        cfg: { stiffness: 0.18 + rnd() * 0.08, drag: 0.1 + rnd() * 0.05, gravity: 0 },
+      }
+    })
+  }, [p])
+  const bones = useRef<(THREE.Group | null)[]>([])
+  const root = useRef<THREE.Group>(null!)
+  const springs = useRef<SpringBone[]>([])
+  // Avant la fusion du `<Batched>` parent (les effets des enfants passent
+  // d'abord) : ses maillages restent à part.
+  useLayoutEffect(() => {
+    root.current.traverse((o) => {
+      o.userData.noBatch = true
+    })
+  }, [pins])
+  useEffect(() => {
+    springs.current = pins.map((_, i) => new SpringBone(bones.current[i]!, length - buried, CROWN_UP))
+  }, [pins, length, buried])
+  useFrame((_, dt) => {
+    springs.current.forEach((s, i) => s.update(dt, pins[i].cfg))
+  })
+  return (
+    <group ref={root}>
+      {pins.map((pin, i) => (
+        <group key={i} position={pin.pos} quaternion={pin.quat}>
+          <group ref={(g) => (bones.current[i] = g)}>
+            <Pin length={length} color={pin.color} position={[0, -buried, 0]} quaternion={new THREE.Quaternion()} />
+          </group>
+        </group>
+      ))}
+    </group>
+  )
 }
 
 /** Écart d'azimut maximal d'un maillon du tour à sa place de repos. */
@@ -1335,35 +1404,7 @@ function useExtra(
 
       // ---------------------------------------------- couronne d'épingles
       case 'couronne': {
-        const length = p.shape.headRadius * 0.7
-        const rnd = mulberry32(p.seed + 4242)
-        const pins = Array.from({ length: 7 }, (_, i) => {
-          const az = (i / 7) * Math.PI * 2
-          const surf = onHeadPolar(p, az, 0.42, -length * 0.68)
-          return {
-            pos: surf.pos,
-            quat: new THREE.Quaternion().setFromUnitVectors(
-              new THREE.Vector3(0, 1, 0),
-              surf.normal,
-            ),
-            color: pinColor(rnd),
-          }
-        })
-        return {
-          head: (
-            <group>
-              {pins.map((pin, i) => (
-                <Pin
-                  key={i}
-                  length={length}
-                  color={pin.color}
-                  position={[pin.pos.x, pin.pos.y, pin.pos.z]}
-                  quaternion={pin.quat}
-                />
-              ))}
-            </group>
-          ),
-        }
+        return { head: <PinCrown p={p} /> }
       }
 
       // --------------------------------------------------------- ceinture
