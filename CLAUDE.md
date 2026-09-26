@@ -695,6 +695,30 @@ arrive ; sinon, reprendre depuis ces branches.
 
 ### Journal
 
+#### 2026-09-26 — fermeture dans les coiffures, queue haute, écharpe (session locale, branche `coupes-anime`)
+
+- **Fermeture éclair dans toutes les coupes** (`hairstyles.tsx`, source unique
+  `zipHole` via `zipBand`) : cheveux tirés partagés exactement sur le ruban et
+  raie **refermée** au-delà de son bout haut (racines croisées non enfouies) ;
+  brins vers une attache de l'autre côté franchissant le méridien au-dessus du
+  bout, par relèvement continu (`zipPath` — un détour binaire séparait deux
+  familles de brins et ouvrait un sillon) ; racines de bord sous le ruban.
+  Coupes rayonnantes : épi au bout haut de la fermeture, brins tenus de leur
+  côté (`keepOffZip`). Bouclettes rangées au bord du ruban. Leo : les
+  **queues** (parties libres) peuvent passer dessus.
+- **Queue haute** à droite (croquis de Leo) : Bézier qui monte puis s'arque,
+  ressort sans gravité, faisceau épais. Chignon seul au sommet.
+- **Mèches** : deux longues mèches devant, une par côté (`sideLocks`), pointes
+  éclaircies (attribut `aTint`, teinte `uTip` = clarté +0,45 en absolu).
+- **Bouclettes** plus denses (pas 1,2 diamètre, ≤ 50 k triangles).
+- **Écharpe** : retour à la version d'avant le pan ×2,7 (il traînait au sol et
+  pendait en cordon) ; borne d'étirement des liens (`MAX_STRAIN` 1,12, après
+  les collisions) et bras `loose` ignorés par le tour de cou retenu. Mesuré
+  dans l'arène : étirement max 1,1–1,3 au lieu de 1,5–2,7.
+- Serveur de la copie de travail : `vite.local.config.ts` (cache séparé),
+  port 5174.
+
+
 #### 2026-09-25 — fermeture éclair, endurance
 
 - **Fermeture éclair** au dos du crâne, sur toutes les poupées (`zip.tsx`) :

@@ -200,6 +200,8 @@ type YarnOpts = {
   segs?: number
   /** Part effilée de la pointe (0,2) ; plus longue, un trait de pinceau. */
   taper?: number
+  /** Éclaircissement le long du brin (0 : laine de la coupe, 1 : teinte de pointe). */
+  tint?: (t: number) => number
 }
 
 /**
@@ -247,12 +249,14 @@ function yarn(points: THREE.Vector3[], radius: number, o: YarnOpts = {}): THREE.
   const free = new Float32Array(n)
   const fling = new Float32Array(n)
   const phase = new Float32Array(n).fill(o.phase ?? 0)
+  const tint = new Float32Array(n)
   const c = new THREE.Vector3()
   const v = new THREE.Vector3()
   for (let i = 0; i <= segs; i++) {
     const t = i / segs
     const f = o.free ? o.free(t) : 0
     const fl = o.fling ? o.fling(t) : f
+    const ti = o.tint ? o.tint(t) : 0
     // Effilage : sommets ramenés vers l'axe sur la part effilée de la pointe.
     const taper = closed ? 1 : Math.sqrt(clamp((1 - t) / (o.taper ?? 0.2), 0, 1))
     if (taper < 1) curve.getPointAt(Math.min(1, t), c)
@@ -260,6 +264,7 @@ function yarn(points: THREE.Vector3[], radius: number, o: YarnOpts = {}): THREE.
       const k = i * (radial + 1) + j
       free[k] = f
       fling[k] = fl
+      tint[k] = ti
       if (taper < 1) {
         v.fromBufferAttribute(pos, k).sub(c).multiplyScalar(Math.max(taper, 0.05)).add(c)
         pos.setXYZ(k, v.x, v.y, v.z)
@@ -270,6 +275,7 @@ function yarn(points: THREE.Vector3[], radius: number, o: YarnOpts = {}): THREE.
   tube.setAttribute('aFree', new THREE.Float32BufferAttribute(free, 1))
   tube.setAttribute('aFling', new THREE.Float32BufferAttribute(fling, 1))
   tube.setAttribute('aPhase', new THREE.Float32BufferAttribute(phase, 1))
+  tube.setAttribute('aTint', new THREE.Float32BufferAttribute(tint, 1))
   return tube
 }
 
@@ -778,6 +784,107 @@ function bowlCut(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   const sector = (az: number) =>
     first + (Math.floor(((((az % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2)) * SECTORS) % SECTORS)
   radiate(p, rnd, r, count, hairline(p, end, 2.3), out, { wave, moverOf: sector, volume: R * 0.045 })
+  sideLocks(p, rnd, r, hairline(p, end, 2.3), out)
+}
+
+/**
+ * Deux longues mèches qui encadrent le visage, une de chaque côté, aux
+ * pointes éclaircies — l'allure anime demandée pour la coupe au bol.
+ *
+ * Chaque mèche part **sous** la coupe, au-delà du bord des boutons
+ * (`faceSafe.sideAz` : elle ne passe jamais devant un œil), descend en
+ * épousant le crâne puis pend sous la mâchoire. Ses brins se referment en
+ * pointe sur le dernier tiers seulement — refermés plus tôt, la mèche lit
+ * comme une corde. Le dégradé commence aux trois cinquièmes : commencé à la
+ * racine, il lirait comme une autre laine, pas comme une pointe éclaircie.
+ *
+ * Un ressort par mèche, pivot au centre du crâne et bout vers la mèche, sans
+ * gravité : la géométrie pend déjà (voir « Repos d'une mèche pendante »).
+ */
+function sideLocks(p: DollParams, rnd: () => number, r: number, limit: (az: number) => number, out: Parts) {
+  const R = p.shape.headRadius
+  const safe = faceSafe(p)
+  const hang = R * (0.55 + rnd() * 0.3)
+  const width = R * (0.13 + rnd() * 0.04)
+  const strands = 16
+  const N = 26
+  for (const sx of [-1, 1]) {
+    const az = sx * (safe.sideAz + 0.05)
+    const sy0 = clamp(limit(az) + 0.35, 0.3, 0.85)
+    const sy1 = -0.45
+    // Axe de la mèche : sur le crâne, au-dessus de la coupe, puis à la verticale.
+    const onHeadPart = 0.55
+    const lift = r * 3.2
+    let rMax = 0
+    const axis: THREE.Vector3[] = []
+    const across: THREE.Vector3[] = []
+    for (let k = 0; k <= N; k++) {
+      const t = k / N
+      let q: THREE.Vector3
+      if (t <= onHeadPart) {
+        const sy = sy0 + (sy1 - sy0) * (t / onHeadPart)
+        q = onHeadPolar(p, az, sy, lift).pos
+        const h = Math.hypot(q.x, q.z)
+        if (sy < 0 && h < rMax) {
+          q.x *= rMax / h
+          q.z *= rMax / h
+        }
+        rMax = Math.max(rMax, Math.hypot(q.x, q.z))
+      } else {
+        const u = (t - onHeadPart) / (1 - onHeadPart)
+        const last = axis[axis.length - 1]
+        // Pend, et la pointe revient un peu vers la joue.
+        const inward = new THREE.Vector3(-last.x, 0, -last.z).normalize()
+        q = axis[Math.round(onHeadPart * N)]
+          .clone()
+          .addScaledVector(DOWN, hang * u)
+          .addScaledVector(inward, R * 0.05 * u * u)
+        clearHead(p, q, r * 2.5)
+      }
+      axis.push(q)
+      across.push(new THREE.Vector3(q.z, 0, -q.x).normalize())
+    }
+    const m = out.movers.length
+    const tip = axis[N]
+    out.movers.push({
+      pivot: new THREE.Vector3(),
+      dir: tip.clone().normalize(),
+      length: tip.length(),
+      cfg: { stiffness: 0.05 + rnd() * 0.02, drag: 0.14 + rnd() * 0.05, gravity: 0 },
+      maxAngle: Math.min(0.22, safe.maxAngle(sy0)),
+    })
+    for (let i = 0; i < strands; i++) {
+      const off = ((i + 0.5) / strands) * 2 - 1 + (rnd() - 0.5) * 0.1
+      const depth = rnd()
+      const len = 0.9 + rnd() * 0.1 - Math.abs(off) * 0.12
+      const pts: THREE.Vector3[] = []
+      for (let k = 0; k <= N; k++) {
+        const t = (k / N) * len
+        const f = t * N
+        const k0 = Math.min(N - 1, Math.floor(f))
+        const a = axis[k0].clone().lerp(axis[k0 + 1], f - k0)
+        const side = across[k0].clone().lerp(across[k0 + 1], f - k0).normalize()
+        const close = smooth(0.62, 1, t)
+        const w = width * (0.7 + 0.3 * Math.sin(Math.PI * Math.min(1, t * 1.6))) * (1 - 0.9 * close)
+        const q = a
+          .clone()
+          .addScaledVector(side, off * w * 0.5)
+          .add(a.clone().setY(0).normalize().multiplyScalar(depth * r * 1.6 * (1 - close)))
+        if (k === 0) q.addScaledVector(axis[0].clone().normalize(), -lift - r * 2)
+        pts.push(q)
+      }
+      out.yarn.push(
+        yarn(pts, r, {
+          mover: m,
+          free: (t) => 0.3 + 0.7 * t,
+          fling: (t) => t,
+          phase: rnd() * 6,
+          taper: 0.3,
+          tint: (t) => smooth(0.5, 0.95, t * len),
+        }),
+      )
+    }
+  }
 }
 
 /**
@@ -1617,6 +1724,8 @@ type HairUniforms = {
   uPivot: { value: THREE.Vector3[] }
   /** Écartement centrifuge, 0 au repos, 1 quand la tête tourne vite. */
   uFling: { value: number }
+  /** Teinte des pointes éclaircies (`YarnOpts.tint`). */
+  uTip: { value: THREE.Color }
 }
 
 /**
@@ -1649,6 +1758,8 @@ attribute float aMover;
 attribute float aFree;
 attribute float aFling;
 attribute float aPhase;
+attribute float aTint;
+varying float vTint;
 uniform vec3 uAxis[${MAX_MOVERS}];
 uniform float uAngle[${MAX_MOVERS}];
 uniform vec3 uPivot[${MAX_MOVERS}];
@@ -1671,7 +1782,8 @@ if (aMover > -0.5 && aFree > 0.0) {
   }
   ha = ha * aFree;
 }
-objectNormal = hairRotate(objectNormal, hk, ha);`,
+objectNormal = hairRotate(objectNormal, hk, ha);
+vTint = aTint;`,
       )
       .replace(
         '#include <begin_vertex>',
@@ -1682,6 +1794,11 @@ transformed = hp + hairRotate(transformed - hp, hk, ha);
 vec3 hOut = vec3(transformed.x, 0.0, transformed.z);
 transformed += (hOut * 0.5 + vec3(0.0, length(hOut) * 0.12, 0.0)) * uFling * aFling;`,
       )
+    // Pointes éclaircies : la couleur de base glisse vers la teinte de pointe
+    // **avant** la carte de fil, qui garde tout son relief.
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vTint;\nuniform vec3 uTip;')
+      .replace('#include <map_fragment>', 'diffuseColor.rgb = mix(diffuseColor.rgb, uTip, vTint);\n#include <map_fragment>')
   }
 }
 
@@ -1726,9 +1843,18 @@ export function Hairdo({
       uAngle: { value: new Array(MAX_MOVERS).fill(0) },
       uPivot: { value: Array.from({ length: MAX_MOVERS }, () => new THREE.Vector3()) },
       uFling: { value: 0 },
+      uTip: { value: new THREE.Color() },
     }),
     [],
   )
+  // Pointe éclaircie d'un **écart absolu** de clarté : un facteur butait
+  // contre le plafond sur une laine déjà claire (voir les locks).
+  useEffect(() => {
+    const hsl = { h: 0, s: 0, l: 0 }
+    new THREE.Color(color).getHSL(hsl)
+    // La carte de fil (0,4 à 1) rabat la clarté : l'écart se prend large.
+    uni.uTip.value.setHSL(hsl.h, Math.max(0, hsl.s - 0.12), Math.min(0.96, hsl.l + 0.45))
+  }, [color, uni])
   const onCompile = useMemo(() => hairShader(uni), [uni])
 
   // Un os invisible par pivot, enfant du repère de la tête : le spring bone
