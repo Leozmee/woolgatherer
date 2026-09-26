@@ -207,6 +207,9 @@ function buildBoard(base: DollParams, offsetX: number) {
   })
 }
 
+/** Recul de la caméra sur la planche, repris tel quel dans l'arène. */
+const BOARD_DISTANCE = 2.6
+
 type Entry = ReturnType<typeof buildBoard>[number]
 
 /** Cadrage de départ, commun à la planche et à l'arène. */
@@ -476,7 +479,10 @@ export default function App() {
           {arena && <Sigil fighter={fighter} />}
           {arena && <ArenaFloor y={floorY} radius={ARENA} />}
           {/* monté avant les poupées : son useFrame doit passer en premier */}
-          <Rig spin={selecting ? p.motion.spin : 0} distanceScale={selecting ? 2.6 : arena ? 1.6 : 1} follow={arena ? fighter : null} />
+          {/* Arène à la distance de la planche : une poupée a la même taille à
+              l'écran dans le jeu que dans le sélecteur, et on y garde la mesure
+              des tailles d'un personnage à l'autre (Leo). */}
+          <Rig spin={selecting ? p.motion.spin : 0} distanceScale={selecting || arena ? BOARD_DISTANCE : 1} follow={arena ? fighter : null} />
           {/* En planche les ombres de contact laissent la place aux blobs :
               une passe hors écran par poupée serait payée pour rien. */}
           <Lights floorY={floorY} contact={!selecting} lighting={look.lighting} follow={arena ? fighter : null} />
