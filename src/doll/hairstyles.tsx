@@ -1230,50 +1230,71 @@ function tuft(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
 }
 
 /**
- * Trois poils : quelques tire-bouchons sur un crâne presque nu.
+ * Trois poils : **trois**, sur un crâne nu — seule coupe qui a droit d'être
+ * chauve, et c'est son gag. Deux à cinq tire-bouchons semblables lisaient
+ * comme une calvitie accidentelle ; trois poils de caractères différents
+ * lisent comme un personnage.
  *
- * L'hélice part d'un rayon nul à la racine : un ressort qui démarre plein
- * rayon paraît posé sur le crâne. Son axe fléchit sous son poids — droit, il
- * lit comme une antenne. Physique : chacun son pivot, raide et à peine amorti.
- * C'est un ressort : il doit rebondir.
+ * Chacun tire sa forme : **ressort** (hélice qui part d'un rayon nul à la
+ * racine — plein rayon, il paraît posé), **crosse** (brin qui monte et se
+ * roule en crochet au bout) ou **pic** (droit, effilé en pointe). L'axe fléchit
+ * un peu sous son poids : droit, il lit comme une antenne. Racines près du
+ * sommet, devant la fermeture. Chacun son ressort, sans gravité (la pose de
+ * repos n'est pas la verticale), raide et peu amorti : ça rebondit.
  */
 function wisps(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   const R = p.shape.headRadius
-  const count = 2 + Math.floor(rnd() * 4)
-  const r = yarnR * (1 + rnd() * 0.4)
-  for (let i = 0; i < count; i++) {
-    const s = onHeadPolar(p, (rnd() - 0.5) * 2.4, 0.8 + rnd() * 0.17, 0)
+  const r = clamp(yarnR * 1.3, R * 0.022, R * 0.038)
+  const kinds = ['coil', 'hook', 'spike'] as const
+  // Ordre mélangé : le ressort n'est pas toujours au milieu.
+  const order = [0, 1, 2].sort(() => rnd() - 0.5)
+  for (let w = 0; w < 3; w++) {
+    const kind = kinds[order[w]]
+    const s = onHeadPolar(p, (w - 1) * 0.6 + (rnd() - 0.5) * 0.15, 0.86 + rnd() * 0.06, 0)
     const [t1, t2] = tangentBasis(s.normal)
-    const lean = t1.clone().multiplyScalar(rnd() - 0.5).addScaledVector(t2, rnd() - 0.5)
-    const axis0 = s.normal.clone().addScaledVector(lean, 0.8).normalize()
-    const L = R * (0.28 + rnd() * 0.3)
-    const coil = R * (0.03 + rnd() * 0.025)
-    const turns = 2.5 + rnd() * 2.5
-    const bend = 0.3 + rnd() * 0.5
+    const lean = t1.clone().multiplyScalar((w - 1) * 0.6 + (rnd() - 0.5) * 0.3).addScaledVector(t2, (rnd() - 0.5) * 0.4)
+    const axis0 = s.normal.clone().addScaledVector(lean, 0.7).normalize()
+    const L = R * (kind === 'spike' ? 0.6 + rnd() * 0.2 : 0.55 + rnd() * 0.25)
+    const bend = kind === 'spike' ? 0.1 + rnd() * 0.1 : 0.25 + rnd() * 0.3
     const m = out.movers.length
     out.movers.push({
       pivot: s.pos.clone(),
       dir: axis0.clone(),
       length: L,
-      cfg: { stiffness: 0.16, drag: 0.07, gravity: 0.3 },
-      maxAngle: 0.55,
+      cfg: { stiffness: 0.12 + rnd() * 0.08, drag: 0.06 + rnd() * 0.04, gravity: 0 },
+      maxAngle: 0.5,
     })
     const pts: THREE.Vector3[] = [s.pos.clone().addScaledVector(s.normal, -r * 2)]
     let at = s.pos.clone()
-    const N = 40
+    const N = kind === 'coil' ? 48 : 20
+    const coil = R * (0.045 + rnd() * 0.025)
+    const turns = 2.5 + rnd() * 2
     for (let k = 1; k <= N; k++) {
       const t = k / N
       const axis = axis0.clone().addScaledVector(DOWN, bend * t).normalize()
       at = at.clone().addScaledVector(axis, L / N)
       const [b1, b2] = tangentBasis(axis)
-      const a = t * turns * Math.PI * 2
-      pts.push(
-        at.clone()
-          .addScaledVector(b1, Math.cos(a) * coil * Math.sqrt(t))
-          .addScaledVector(b2, Math.sin(a) * coil * Math.sqrt(t)),
-      )
+      const q = at.clone()
+      if (kind === 'coil') {
+        const a = t * turns * Math.PI * 2
+        q.addScaledVector(b1, Math.cos(a) * coil * Math.sqrt(t)).addScaledVector(b2, Math.sin(a) * coil * Math.sqrt(t))
+      } else if (kind === 'hook') {
+        // Crochet sur le dernier tiers : un tour qui s'enroule vers l'extérieur.
+        const h = smooth(0.6, 1, t)
+        const a = h * Math.PI * 1.6
+        q.addScaledVector(b1, (1 - Math.cos(a)) * coil * 1.4).addScaledVector(axis, (Math.sin(a) - a) * coil * 0.8 * h)
+      }
+      pts.push(q)
     }
-    out.yarn.push(yarn(pts, r, { mover: m, free: (t) => t, phase: rnd() * 6 }))
+    out.yarn.push(
+      yarn(pts, r * (kind === 'spike' ? 1.15 : 1), {
+        mover: m,
+        free: (t) => t,
+        phase: rnd() * 6,
+        taper: kind === 'spike' ? 0.85 : 0.3,
+        step: kind === 'coil' ? 1.2 : undefined,
+      }),
+    )
   }
 }
 

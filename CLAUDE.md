@@ -271,6 +271,18 @@ src/
 
 **Le recadrage se stocke en unités monde, pas en pixels.** Retraduit à chaque frame avec la distance du moment, un recadrage en pixels enfle en dézoomant et le sujet part hors champ. Le rig republie le barème (`worldPerPixel`) à chaque frame, seul endroit qui connaisse l'ouverture de la caméra et la hauteur du viewport.
 
+**Une raie qui s'arrête doit se refermer, pas seulement cesser de s'ouvrir.** Au-delà du bout haut de la fermeture, des racines posées au ras de la ligne mais **enfouies** laissent quand même un sillon nu : chaque brin sort de la laine en biais, sur toute la longueur de sa sortie. Sur la partie refermée, les racines passent d'un cheveu de l'autre côté et ne sont pas enfouies.
+
+**Contourner un obstacle par un point de passage fixe sépare deux familles de brins.** Les brins qui croisaient la fermeture passaient tous par un même point au-dessus de son bout, les autres allaient droit à l'attache : entre les deux, un sillon. Le point de passage se prend sur le plus court chemin, **relevé** juste ce qu'il faut — continu d'un brin à l'autre.
+
+**Un tissu retenu et un obstacle qui le traverse se battent.** Un bras levé dans le tour de cou : la collision pousse dehors, la retenue ramène, les liens s'étirent de moitié à chaque coup. Ce qui est retenu ignore les obstacles `loose` ; seuls les pans libres les évitent.
+
+**Les contraintes de distance ne bornent pas l'étirement, elles le résorbent.** Au démarrage ou au saut, la partie retenue suit, le pan libre reste en arrière, et le lien qui les joint s'étirait à ×2,7. Une borne d'étirement résolue en entier (`MAX_STRAIN`), **après** les collisions, donne le dernier mot à la longueur : frôler l'intérieur d'un bras une image se voit moins qu'un ruban étiré au triple.
+
+**Une boucle autour du cou doit rester autour du cou.** Au saut écrasé, l'arc avant du collier traversait le cou et se repliait dans le dos, où les obstacles le retenaient. L'azimut de chaque maillon est borné autour du sien (`keepAround`) : une contrainte de topologie, pas de physique.
+
+**Ce qui bouge ne peut pas vivre dans un `<Batched>`, sauf marqué `noBatch`.** Posé dans un slot fusionné, un ressort anime un maillage caché. Les pièces animées (épingles de couronne, languette) sont marquées avant la fusion (effet de l'enfant, qui passe avant celui du parent) ; les rubans simulés vont dans le slot du cou, jamais fusionné.
+
 **Pas de `StrictMode`.** Son double montage en dev libère les géométries et textures que R3F utilise encore.
 
 **Ce que la graine tire, le panneau le multiplie ; le reste est en valeur absolue.** Largeur, pans et frange sont des multiplicateurs — un curseur absolu écraserait la variété d'une poupée à l'autre. Épaisseur, côtes, poids, raideurs sont absolus : ce sont des propriétés du tissu, pas de l'exemplaire.
@@ -735,6 +747,10 @@ arrive ; sinon, reprendre depuis ces branches.
 - **Houppette** refaite : cheveux tirés tenus vers un nœud au sommet, plumet de
   lames aplaties en palmier, un ressort par lame. **Couettes** : queues en
   mèches pointues (`bunch` `clumps`) et deux mèches latérales.
+- **Nattes** : frange balayée en mèches pointues (`sweptFringe`), tresses plus
+  épaisses et longues. **Trois poils** : toujours trois, crosse / ressort / pic.
+- Non fait, volontairement : refonte « anglaises » des bouclettes (Leo les a
+  validées, il a seulement demandé plus de densité).
 
 
 #### 2026-09-25 — fermeture éclair, endurance
