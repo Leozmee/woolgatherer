@@ -168,109 +168,80 @@ export type Archetype = {
   bias?: Partial<Morph>
 }
 
+/**
+ * **Le dégingandé est la base de la série** (choix de Leo, 26 sept. : « de loin
+ * la plus réussie »). Bras qui pendent jusqu'aux genoux, épaules tombantes,
+ * poitrine un peu creuse et dos rond, petite bedaine, genoux mous : c'est ce
+ * laisser-aller qui rend la peluche attachante. Les autres archétypes ne sont
+ * plus des silhouettes à part mais des **variantes du dégingandé** — un gorille
+ * dégingandé, un poupon dégingandé… — qui gardent son allure et n'y ajoutent
+ * que leur différence (`variant`).
+ *
+ * Tirés comme silhouettes indépendantes, ils lisaient comme des personnages
+ * d'autres fabriques, et plusieurs tiraient vers l'effrayant : bâton à petite
+ * tête, insecte, buste chétif sur des cuisses énormes. Partager la base les
+ * ramène dans la même famille.
+ */
+const BASE: Archetype = {
+  id: 'degingande', name: 'dégingandé',
+  build: -0.3, youth: 0,
+  bias: {
+    limbBias: 2.4, shoulders: -1.2, stance: -1, reach: 0.8, head: 0.1, handScale: 0.2,
+    chest: -0.9, hunch: 1.1, belly: 0.7, depth: -0.3, knee: 0.6, elbow: 0.2,
+  },
+}
+
+/** Variante du dégingandé : sa base, plus une différence de type et de signature. */
+function variant(id: string, name: string, build: number, youth: number, delta: Partial<Morph>): Archetype {
+  const bias: Partial<Morph> = { ...BASE.bias }
+  for (const [k, v] of Object.entries(delta) as [keyof Morph, number][]) bias[k] = (bias[k] ?? 0) + v
+  return { id, name, build: BASE.build + build, youth: BASE.youth + youth, bias }
+}
+
 export const ARCHETYPES: readonly Archetype[] = [
-  {
-    // Un bâton : petite tête, tronc long, plat et droit, membres longs et
-    // minces aux articulations saillantes.
-    id: 'echalas', name: 'échalas',
-    build: -1, youth: -1,
-    bias: {
-      head: -0.6, stature: 1.3, reach: 0.9, girth: -0.3, limbGirth: 0.5, stance: -0.4,
-      depth: -1, chest: -0.4, waist: 0.3, hips: -0.3, armUpper: -0.4, legUpper: -0.4,
-    },
-  },
-  {
-    // Thorax en tonneau et dos voûté, bassin étroit ; avant-bras énormes,
-    // bras arqués qui pendent, jambes courtes fléchies.
-    id: 'gorille', name: 'gorille',
-    build: 0.7, youth: -0.8,
-    bias: {
-      shoulders: 1.6, limbBias: 1.8, limbThick: 1.1, head: -0.6, stance: -0.9, reach: 0.2,
-      armTaper: 0.1, handScale: 0,
-      chest: 1.3, hunch: 1.6, belly: 0.4, hips: -0.8, depth: 0.8,
-      armUpper: 0.3, armLower: 1, legUpper: 0.3, elbow: 0.8, knee: 1, kneeOut: 0.5,
-    },
-  },
-  {
-    // Petit corps, membres interminables, effilés et très écartés.
-    id: 'araignee', name: 'araignée',
-    build: -0.8, youth: -0.2,
-    bias: {
-      reach: 1.9, girth: 0, stature: -1.1, stance: 2.2, limbGirth: -0.4, head: 0.2,
-      armTaper: -0.35, legTaper: -0.35, handScale: -0.2, footScale: -0.2,
-      // Taille de guêpe et abdomen rond, genoux et coudes cassés haut.
-      waist: 1.3, belly: 0.9, chest: 0.4, elbow: 0.9, knee: 3, kneeOut: 1,
-    },
-  },
-  {
-    // Bras qui pendent jusqu'aux genoux, épaules tombantes, poitrine creuse
-    // et dos rond, petite bedaine, genoux mous.
-    id: 'degingande', name: 'dégingandé',
-    build: -0.3, youth: 0,
-    bias: {
-      limbBias: 2.4, shoulders: -1.2, stance: -1, reach: 0.8, head: 0.1, handScale: 0.2,
-      chest: -0.9, hunch: 1.1, belly: 0.7, depth: -0.3, knee: 0.6, elbow: 0.2,
-    },
-  },
-  {
-    // Grosse tête de bébé, petit corps, bras et jambes courts mais bien là.
-    id: 'poupon', name: 'poupon',
-    build: -0.1, youth: 1,
-    bias: {
-      head: 1.1, stature: -0.9, girth: -0.2, reach: -0.6, eyeGap: 0.6,
-      // Ventre rond de bébé, tronc épais, cuisses et bras potelés.
-      belly: 1.2, hips: 0.4, depth: 1, chest: -0.3, armUpper: 0.6, legUpper: 0.8, legLower: 0.3,
-    },
-  },
-  {
-    // Torse en V : épaules très larges, taille fine, gros bras, petite tête.
-    id: 'hercule', name: 'hercule',
-    build: 0.5, youth: -0.8,
-    bias: {
-      shoulders: 2.6, girth: 0.3, stature: 0.3, limbThick: 0.7, head: -0.7, handScale: -0.1,
-      torsoSquare: 0.2, legSplay: 0.3,
-      // Le V : pectoraux, taille et bassin serrés ; biceps, mollets.
-      chest: 1.4, waist: 1.3, hips: -1, belly: -0.6, depth: 0.3,
-      armUpper: 1.2, armLower: 0.5, legUpper: 0.9, legLower: 0.9, elbow: 0.5, knee: 0.2,
-    },
-  },
-  {
-    // Accroupi : tronc large et bas, jambes courtes très écartées, grands pieds.
-    id: 'crapaud', name: 'crapaud',
-    build: 0.9, youth: 0.3,
-    bias: {
-      stature: -1.2, girth: 0.9, legSplay: 1.2, stance: 0.8, reach: 0.5, limbThick: 0.3, limbGirth: -0.9,
-      footScale: 0.9, head: 0.3, cheeks: 0.5,
-      // Ventre qui tombe entre les cuisses, hanches larges, accroupi.
-      belly: 1.5, hips: 1.1, chest: -0.5, depth: 0.7, legUpper: 0.5, elbow: 0.8, knee: 3.2, kneeOut: 1.2,
-    },
-  },
-  {
-    // Fine et élancée : longues jambes serrées, petits pieds, bras fins,
-    // épaules étroites.
-    id: 'ballerine', name: 'ballerine',
-    build: -0.8, youth: -0.4,
-    bias: {
-      stature: 0.3, reach: 1, limbBias: -0.7, girth: -0.35, limbGirth: -0.6, shoulders: -0.1,
-      footScale: -0.4, handScale: -0.3, legTaper: -0.35, stance: -0.8, head: -0.1, legSplay: 0.6,
-      // Sablier : taille très marquée entre une poitrine et des hanches rondes,
-      // mollets de danseuse, bras arrondis. Tronc moins fluet que les membres :
-      // sur un tube trop mince, la taille ne se voyait plus.
-      waist: 2.2, hips: 1.9, chest: 1.1, depth: -0.4, legLower: 0.9, legUpper: 0.2, elbow: 0.7,
-    },
-  },
-  {
-    // Cuisses énormes qui s'effilent, grands pieds, petits bras, buste droit.
-    id: 'kangourou', name: 'kangourou',
-    build: 0.2, youth: -0.2,
-    bias: {
-      limbThick: -1.2, legTaper: -0.3, footScale: 1, limbBias: -1.2, handScale: -0.3, stature: 0.3,
-      // Bassin lourd, poitrine menue ; cuisses énormes, petits bras repliés
-      // contre la poitrine, genoux fléchis.
-      hips: 1.2, belly: 0.5, chest: -0.5, hunch: 0.4, depth: 0.4,
-      legUpper: 2, legLower: -0.4, armLower: -0.3, elbow: 2.2, knee: 1.2,
-    },
-  },
+  BASE,
+  // Plus massif du haut : épaules plus larges (encore un peu tombantes), bras
+  // épais et poings généreux, torse plein, jambes plus courtes.
+  variant('gorille', 'gorille', 0.6, -0.3, {
+    shoulders: 1.8, limbThick: 1.2, limbBias: 0.3, head: -0.4, chest: 1.2, hunch: 0.3,
+    armLower: 0.6, armUpper: 0.3, stance: 0.4, handScale: 0.3, stature: -0.3,
+  }),
+  // Grosse tête de bébé sur un petit corps rond ; les bras restent longs et
+  // ballants, c'est ce qui en fait un poupon dégingandé et pas un poupon.
+  variant('poupon', 'poupon', 0.2, 1, {
+    head: 1, stature: -0.8, reach: -0.5, limbBias: -1, belly: 0.5, chest: 0.6, hunch: -0.6,
+    depth: 0.8, eyeGap: 0.5, limbGirth: 0.3, legUpper: 0.4,
+  }),
+  // Bas et large, assis sur ses genoux ouverts, grands pieds ; bras ballants
+  // jusqu'au sol.
+  variant('crapaud', 'crapaud', 0.8, 0.2, {
+    stature: -1, girth: 0.5, legSplay: 1, knee: 0.8, kneeOut: 1, footScale: 0.6,
+    belly: 0.5, hips: 0.6, stance: 1.2, head: 0.2, reach: -0.3,
+  }),
+  // Plus grand et plus long, mais toujours en boudins : la minceur faisait un
+  // bâton inquiétant, la hauteur suffit à la singularité.
+  variant('echalas', 'échalas', -0.4, -0.6, {
+    stature: 1.1, reach: 0.3, head: -0.2, limbGirth: 0.3, depth: -0.2,
+  }),
+  // Membres encore plus longs et grands ouverts, genoux cassés en dehors.
+  variant('araignee', 'araignée', -0.2, -0.1, {
+    stance: 3, legSplay: 1.2, reach: 0.6, stature: -0.8, knee: 0.8, kneeOut: 1, waist: 0.6,
+  }),
+  // Épaules larges et torse bombé, mais le dos reste un peu rond et les bras
+  // ballants : un costaud nonchalant plutôt qu'un bodybuilder.
+  variant('hercule', 'hercule', 0.4, -0.5, {
+    shoulders: 2.6, chest: 1.6, waist: 0.8, hips: -0.5, armUpper: 0.8, limbThick: 0.7,
+    head: -0.4, hunch: -0.6,
+  }),
+  // Bassin lourd, cuisses pleines et grands pieds ; bras un peu moins longs.
+  variant('kangourou', 'kangourou', 0.2, -0.1, {
+    limbThick: -0.8, legUpper: 1.4, hips: 0.9, footScale: 0.8, limbBias: -1, belly: 0.2,
+  }),
+  // Taille marquée entre poitrine et hanches, buste redressé, mollets.
+  variant('ballerine', 'ballerine', -0.4, -0.3, {
+    waist: 1.4, hips: 1.2, chest: 1.3, hunch: -0.9, shoulders: 0.8, legSplay: 0.5,
+    footScale: -0.3, legLower: 0.6, limbBias: -1,
+  }),
 ]
 
 /**
