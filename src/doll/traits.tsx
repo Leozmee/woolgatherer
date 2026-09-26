@@ -624,6 +624,61 @@ export function bowTails(p: DollParams): { shapes: StreamerRest[]; width: number
 }
 
 /**
+ * Couture intégrale : une **grosse aiguille** restée plantée dans la suture,
+ * sur le flanc, avec son fil qui pend du chas et balance — la couture est en
+ * cours, la poupée se promène avec. C'est sa signature de silhouette : une
+ * suture seule ne se voit pas de loin.
+ *
+ * L'aiguille est dans le repère du torse (immobile, fusionnée) ; le fil est un
+ * `Streamer`, dans le repère du cou, accroché au chas.
+ */
+export function seamNeedle(p: DollParams, phase: number, amp: number) {
+  const rnd = mulberry32(p.seed + 6061)
+  const T = p.shape.torsoHeight
+  const az = phase + (rnd() < 0.5 ? -1 : 1) * (Math.PI / 2 + (rnd() - 0.5) * 0.4)
+  const y = Math.cos(az - phase) * amp * T * 0.5
+  const s0 = onTorso(p, az, y, 0)
+  const dir = s0.normal.clone().addScaledVector(new THREE.Vector3(0, 1, 0), 0.9).normalize()
+  const length = p.shape.torsoRadius * 1.5
+  const buried = length * 0.3
+  const radius = p.thread.radius * 2.3
+  const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir)
+  const eye = s0.pos.clone().addScaledVector(dir, length - buried + radius * 1.2)
+
+  // Fil : sort du chas vers l'extérieur, puis pend.
+  const neckY = T * 0.44
+  const L = T * (0.55 + rnd() * 0.2)
+  const rows = 14
+  const cols = 2
+  const width = p.thread.radius * 3.2
+  const out = new THREE.Vector3(s0.normal.x, 0, s0.normal.z).normalize()
+  const across = new THREE.Vector3(-out.z, 0, out.x)
+  const rest: THREE.Vector3[] = []
+  const pin: number[] = []
+  for (let i = 0; i < rows; i++) {
+    const t = i / (rows - 1)
+    const c = eye
+      .clone()
+      // Part du chas même, s'en écarte un peu, puis pend.
+      .addScaledVector(out, L * 0.15 * Math.sin(Math.PI * Math.min(1, t * 1.5)))
+      .addScaledVector(new THREE.Vector3(0, -1, 0), L * t)
+    c.y -= neckY
+    for (let j = 0; j < cols; j++) {
+      rest.push(c.clone().addScaledVector(across, (j - 0.5) * width))
+      pin.push(i === 0 ? 1 : 0)
+    }
+  }
+  return {
+    base: s0.pos,
+    quat,
+    length,
+    buried,
+    radius,
+    thread: { shape: { rest, pin, rows, cols } as StreamerRest, thickness: p.thread.radius * 2 },
+  }
+}
+
+/**
  * Hauteur et emprise de la ceinture.
  *
  * Source unique, comme `bowMetrics` : le rendu de la ceinture **et** la zone
@@ -1378,9 +1433,33 @@ function useExtra(
             0.008,
           )
         })
+        const needle = seamNeedle(p, phase, amp)
+        const thread = needle.thread
         return {
+          neck: (
+            <Streamer
+              p={p}
+              shape={thread.shape}
+              thickness={thread.thickness}
+              colliders={streamerColliders(p, thread.thickness)}
+              cfg={{ gravity: 0.5, damping: 0.05 }}
+            >
+              <meshPhysicalMaterial color={th.color} roughness={0.85} sheen={0.5} />
+            </Streamer>
+          ),
           torso: (
             <group>
+              {/* L'aiguille, immobile dans la couture : fusionnée avec le reste. */}
+              <group position={needle.base} quaternion={needle.quat}>
+                <mesh position={[0, needle.length * 0.5 - needle.buried, 0]} castShadow>
+                  <cylinderGeometry args={[needle.radius, needle.radius * 0.25, needle.length, 10]} />
+                  <meshPhysicalMaterial color="#c9c7c0" metalness={0.65} roughness={0.32} />
+                </mesh>
+                <mesh position={[0, needle.length - needle.buried + needle.radius * 1.2, 0]} castShadow>
+                  <torusGeometry args={[needle.radius * 1.4, needle.radius * 0.45, 8, 16]} />
+                  <meshPhysicalMaterial color="#c9c7c0" metalness={0.65} roughness={0.32} />
+                </mesh>
+              </group>
               {pts.map((s, i) => (
                 <group key={i} position={s.pos} quaternion={s.quat}>
                   <CrossStitch

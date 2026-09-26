@@ -717,6 +717,15 @@ arrive ; sinon, reprendre depuis ces branches.
   dans l'arène : étirement max 1,1–1,3 au lieu de 1,5–2,7.
 - Serveur de la copie de travail : `vite.local.config.ts` (cache séparé),
   port 5174.
+- **Collier** (reprise de `claude/wip-silhouettes`, vérifiée) : cadenas
+  particule, tour installé avant d'accrocher la chaîne pendante et tenu aux
+  épaules (0,6), azimut des maillons borné (`keepAround`) — il traversait le
+  cou au 3e coup. Cadenas au repos à −0,27 demi-torse, pénétration nulle.
+- **Silhouettes** (brique `Streamer`, ruban ClothSheet dans le repère du cou) :
+  nœud papillon ×1,35 avec deux pans en V ; ceinture à grande boucle et deux
+  bouts de cordon pendants ; couronne de grandes épingles dressées sur ressorts
+  (`noBatch` pour sortir du `<Batched>`) ; couture intégrale avec une grosse
+  aiguille plantée dans la suture et son fil qui pend du chas.
 
 
 #### 2026-09-25 — fermeture éclair, endurance
