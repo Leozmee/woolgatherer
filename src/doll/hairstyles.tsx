@@ -1110,7 +1110,7 @@ function radiate(
     const mover = o.clumpMover !== undefined ? o.clumpMover + clump : o.moverOf ? o.moverOf(az) : o.mover
     out.yarn.push(
       mover === undefined
-        ? yarn(pts, r)
+        ? yarn(pts, r, { step: 4.5 })
         : /**
            * **Toute la coupe bouge, racines comprises.** Nulle à la racine, la
            * mobilité laissait le dessus du crâne figé pendant que les pointes
@@ -1125,6 +1125,9 @@ function radiate(
             fling: (t) => (0.45 + 0.55 * reach) * t ** 0.9,
             phase,
             tint: o.tinted?.includes(clump) ? (t) => smooth(0.55, 0.97, t) : undefined,
+            // Arcs lisses : un anneau tous les 4,5 rayons suffit, invisible
+            // sous le trait (budget de 60 k triangles par coupe).
+            step: 4.5,
           }),
     )
   }
@@ -1446,7 +1449,7 @@ function bunch(
       a.addScaledVector(b1, px * spread).addScaledVector(b2, py * spread)
       pts.push(clearHead(p, a, margin))
     }
-    out.yarn.push(yarn(pts, r, { mover: m, free: (t) => t ** 1.2, phase: rnd() * 6 }))
+    out.yarn.push(yarn(pts, r, { mover: m, free: (t) => t ** 1.2, phase: rnd() * 6, step: 4.5 }))
   }
   // Ruban serré autour du faisceau, là où il sort de la tête.
   const knot = axisAt(0.06)
