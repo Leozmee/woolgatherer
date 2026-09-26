@@ -75,7 +75,7 @@ function sample(rnd: () => number, type: Archetype): Morph {
   // Résidu en cloche : il décore le type, il ne doit pas le brouiller.
   const r = (span: number) => (rnd() + rnd() - 1) * span
   const b = (key: keyof Morph) => type.bias?.[key] ?? 0
-  const c = (key: keyof Morph, v: number) => clamp(v + b(key), -1.2, 1.2)
+  const c = (key: keyof Morph, v: number) => clamp(v + b(key), -1.8, 1.8)
 
   return {
     build,
@@ -126,33 +126,33 @@ export type Archetype = {
 export const ARCHETYPES: readonly Archetype[] = [
   {
     id: 'bouboule', name: 'bouboule',
-    build: 0.9, youth: 0.75,
-    bias: { cheeks: 0.4, stance: 0.3 },
+    build: 1, youth: 0.85,
+    bias: { cheeks: 0.5, stance: 0.4, girth: 0.25, stature: -0.45 },
   },
   {
     id: 'crevette', name: 'crevette',
-    build: -0.8, youth: 0.85,
-    bias: { head: 0.15, eyeGap: 0.3 },
+    build: -0.9, youth: 1,
+    bias: { head: 0.3, eyeGap: 0.4, reach: -0.25, stature: -0.35 },
   },
   {
     id: 'costaud', name: 'costaud',
-    build: 0.8, youth: -0.65,
-    bias: { shoulders: 1.1, limbThick: 0.35 },
+    build: 0.85, youth: -0.8,
+    bias: { shoulders: 1.2, limbThick: 0.6, head: -0.2 },
   },
   {
     id: 'echalas', name: 'échalas',
-    build: -0.9, youth: -0.85,
-    bias: { stature: 0.2 },
+    build: -1, youth: -1,
+    bias: { stature: 1, reach: 0.5, head: -0.15 },
   },
   {
     id: 'poire', name: 'poire',
-    build: 0.55, youth: 0.05,
-    bias: { shoulders: -1, egg: 0.9, limbBias: -0.4 },
+    build: 0.6, youth: 0.05,
+    bias: { shoulders: -1.2, egg: 1, limbBias: -0.55, girth: 0.2 },
   },
   {
     id: 'degingande', name: 'dégingandé',
-    build: -0.35, youth: -0.2,
-    bias: { limbBias: 1, shoulders: -0.3, stance: -0.3 },
+    build: -0.4, youth: -0.3,
+    bias: { limbBias: 1.2, shoulders: -0.4, stance: -0.35, reach: 0.4, stature: 0.5 },
   },
 ]
 
@@ -166,7 +166,7 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
   const k = (v: number, span: number) => 1 + v * span * a
 
   // --- tête ---
-  const headRadius = s.headRadius * k(m.head, 0.12)
+  const headRadius = s.headRadius * k(m.head, 0.2)
   // La tête reste **bouffie** quel que soit l'archétype — pas seulement ronde :
   // c'est la signature de la série. Bouffi, c'est des bajoues **basses et
   // latérales** plus un bas de crâne plein ; un crâne simplement agrandi ou
@@ -192,9 +192,9 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
   const headSquash = clamp(s.headSquash * k(clamp(m.squash, 0, 0.3), 0.07), 0.7, 1.4)
 
   // --- torse ---
-  const torsoHeight = s.torsoHeight * k(m.stature, 0.16)
-  const torsoRadius = s.torsoRadius * k(m.girth, 0.16)
-  const torsoTaper = clamp(s.torsoTaper + m.shoulders * 0.09 * a, 0.4, 1.2)
+  const torsoHeight = s.torsoHeight * k(m.stature, 0.3)
+  const torsoRadius = s.torsoRadius * k(m.girth, 0.26)
+  const torsoTaper = clamp(s.torsoTaper + m.shoulders * 0.15 * a, 0.4, 1.25)
   // Une peluche dodue est bourrée plus serré qu'une maigre : moins de bosses.
   const lumps = clamp(s.lumps * k(m.lumps * 0.7 - m.girth * 0.3, 0.45), 0, 0.25)
 
@@ -202,13 +202,13 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
   // L'épaisseur suit l'embonpoint, un peu moins vite que le torse : les
   // membres restent attachés dans l'écart des hanches (`hipX` ∝ torsoRadius).
   // Et un membre long s'affine — sinon l'allonge fabrique des bras de lutteur.
-  const thick = k(m.girth, 0.12) * k(-m.reach, 0.05)
-  const armLength = lb.armLength * k(m.reach + m.limbBias * 0.5, 0.2)
-  const legLength = lb.legLength * k(m.reach - m.limbBias * 0.5, 0.2)
-  const armRadius = lb.armRadius * thick * k(m.limbThick, 0.05)
-  const legRadius = lb.legRadius * thick * k(-m.limbThick, 0.05)
-  const armSpread = clamp(lb.armSpread + m.stance * 0.14 * a, 0, 1.4)
-  const legSpread = clamp(lb.legSpread + m.stance * 0.05 * a, 0.02, 0.8)
+  const thick = k(m.girth, 0.2) * k(-m.reach, 0.08)
+  const armLength = lb.armLength * k(m.reach + m.limbBias * 0.5, 0.32)
+  const legLength = lb.legLength * k(m.reach - m.limbBias * 0.5 + m.stature * 0.3, 0.3)
+  const armRadius = lb.armRadius * thick * k(m.limbThick, 0.09)
+  const legRadius = lb.legRadius * thick * k(-m.limbThick, 0.09)
+  const armSpread = clamp(lb.armSpread + m.stance * 0.2 * a, 0, 1.4)
+  const legSpread = clamp(lb.legSpread + m.stance * 0.08 * a, 0.02, 0.8)
 
   // --- visage : il suit le crâne ---
   // Les cotes du visage sont absolues : sans mise à l'échelle, une grosse tête
@@ -255,7 +255,7 @@ function coherent(base: DollParams, q: DollParams) {
   const h = dollLayout(q).height / dollLayout(base).height
   const ratio =
     q.shape.headRadius / q.shape.torsoRadius / (base.shape.headRadius / base.shape.torsoRadius)
-  return h > 0.87 && h < 1.15 && ratio > 0.82 && ratio < 1.25
+  return h > 0.8 && h < 1.24 && ratio > 0.7 && ratio < 1.45
 }
 
 export type MorphPick = { morph: Morph; archetype: Archetype }
