@@ -192,7 +192,7 @@ export function useDollParams(): { params: DollParams; regenerate: () => void } 
       chest: { value: 0, min: -0.3, max: 0.5, step: 0.01, label: 'poitrine' },
       waist: { value: 0, min: -0.3, max: 0.5, step: 0.01, label: 'taille fine' },
       belly: { value: 0, min: -0.3, max: 0.6, step: 0.01, label: 'ventre' },
-      hips: { value: 0, min: -0.3, max: 0.6, step: 0.01, label: 'hanches' },
+      hips: { value: 0, min: -0.3, max: 0.8, step: 0.01, label: 'hanches' },
       hunch: { value: 0, min: 0, max: 0.6, step: 0.01, label: 'dos voûté' },
       torsoDepth: { value: 0.86, min: 0.6, max: 1.15, step: 0.01, label: 'épaisseur' },
     }),

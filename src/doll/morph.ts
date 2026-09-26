@@ -1,6 +1,6 @@
 import { mulberry32, clamp } from '../core/rand'
 import { dollLayout, legDrop, tipScale } from './layout'
-import { hipX } from './surface'
+import { hipX, torsoPoint } from './surface'
 import type { DollParams } from './params'
 
 /**
@@ -200,23 +200,30 @@ function variant(id: string, name: string, build: number, youth: number, delta: 
 
 export const ARCHETYPES: readonly Archetype[] = [
   BASE,
-  // Plus massif du haut : épaules plus larges (encore un peu tombantes), bras
-  // épais et poings généreux, torse plein, jambes plus courtes.
+  // Plus massif du haut : épaules plus larges (encore un peu tombantes), torse
+  // plein, jambes plus courtes. Bras à peine plus épais que la base : épais
+  // comme des cuisses, ils écrasaient tout le reste (Leo).
   variant('gorille', 'gorille', 0.6, -0.3, {
-    shoulders: 1.8, limbThick: 1.2, limbBias: 0.3, head: -0.4, chest: 1.2, hunch: 0.3,
-    armLower: 0.6, armUpper: 0.3, stance: 0.4, handScale: 0.1, stature: -0.3,
+    shoulders: 1.8, limbThick: 0.5, limbBias: 0.3, head: -0.4, chest: 1.2, hunch: 0.3,
+    armLower: 0.15, stance: 0.4, stature: -0.3,
   }),
   // Grosse tête de bébé sur un petit corps rond ; les bras restent longs et
-  // ballants, c'est ce qui en fait un poupon dégingandé et pas un poupon.
+  // ballants, c'est ce qui en fait un poupon dégingandé et pas un poupon. Tête
+  // modérée : à +1, le corps disparaissait dessous (Leo).
   variant('poupon', 'poupon', 0.2, 1, {
-    head: 1, stature: -0.8, reach: -0.5, limbBias: -1, belly: 0.5, chest: 0.6, hunch: -0.6,
+    head: 0.45, stature: -0.45, reach: -0.4, limbBias: -1, belly: 0.5, chest: 0.6, hunch: -0.6,
     depth: 0.8, eyeGap: 0.5, limbGirth: 0.3, legUpper: 0.4,
   }),
-  // Bas et large, assis sur ses genoux ouverts, grands pieds ; bras ballants
-  // jusqu'au sol.
-  variant('crapaud', 'crapaud', 0.8, 0.2, {
-    stature: -1, girth: 0.5, legSplay: 1, knee: 0.8, kneeOut: 1, footScale: 0.6,
-    belly: 0.5, hips: 0.6, stance: 1.2, head: 0.2, reach: -0.3,
+  // Un crapaud : très large et très bas, plat d'avant en arrière, assis sur
+  // des cuisses ouvertes en grenouille, grands pieds plats ; bras courts posés
+  // devant comme des pattes avant ; tête large aux bajoues pleines, grande
+  // bouche, yeux hauts et écartés. Les bras ballants de la base, sur lui,
+  // faisaient un petit gros ordinaire (Leo : « ne fait pas assez crapaud »).
+  variant('crapaud', 'crapaud', 1, 0.1, {
+    stature: -1.4, girth: 1, depth: -0.4, hips: 1.1, belly: 0.9, hunch: -0.6, chest: 0.4,
+    legSplay: 1.8, knee: 3, kneeOut: 1.2, footScale: 1.2, limbThick: -0.6,
+    limbBias: -1.4, stance: 0.4, elbow: -0.2,
+    head: 0.3, cheeks: 1.2, mouthW: 2.5, eyeGap: 1.5, eyeY: 1.5,
   }),
   // Plus grand et plus long, mais toujours en boudins : la minceur faisait un
   // bâton inquiétant, la hauteur suffit à la singularité.
@@ -235,9 +242,13 @@ export const ARCHETYPES: readonly Archetype[] = [
     head: -0.4, hunch: -0.9, limbBias: -1.2, stance: 0.8,
   }),
   // Bassin lourd, cuisses pleines et grands pieds ; bras plus courts, un peu
-  // repliés devant — la seule variante dont les bras ne ballent pas.
+  // repliés devant — la seule variante dont les bras ne ballent pas. La cuisse
+  // est **la plus épaisse à l'attache** (galbe inversé) et le bas du tronc
+  // s'élargit pour la recevoir : renflée à mi-cuisse, elle se détachait du
+  // bassin comme un pilon (Leo : « pas reliée de manière continue »).
   variant('kangourou', 'kangourou', 0.2, -0.1, {
-    limbThick: -0.8, legUpper: 1.9, hips: 1.1, footScale: 1.1, limbBias: -1.6, belly: 0.2, elbow: 1,
+    limbThick: -0.8, legUpper: 0.7, legTaper: -1.2, hips: 1.8, belly: 0.5, footScale: 1.1,
+    limbBias: -1.6, elbow: 1,
   }),
   // Taille marquée entre poitrine et hanches, buste redressé, mollets.
   variant('ballerine', 'ballerine', -0.4, -0.3, {
@@ -391,11 +402,36 @@ export function applyMorph(p: DollParams, m: Morph, amount = p.board.morph): Dol
 }
 
 /**
+ * Jambes raccordées au tronc : le bas du tronc s'élargit (`hips`) jusqu'à
+ * recouvrir l'attache des cuisses. Sur un tronc fin (échalas) ou sous de
+ * grosses cuisses (kangourou, poupon), la jambe débordait nettement du bassin
+ * qui la reçoit et se lisait comme un pilon rapporté (Leo : « pas reliées de
+ * manière continue »). Critère mesuré en rayons de jambe, entre la largeur du
+ * tronc à l'attache et le bord de la cuisse (à 60 %) : le patron est à −0,13,
+ * le dégingandé à −0,16 — un léger débord est celui d'une peluche cousue — ;
+ * on ne tolère pas plus de −0,1.
+ */
+function fillHips(q: DollParams): DollParams {
+  const lb = q.limbs
+  const top = lb.legRadius * (1 - (lb.legTaper ?? 0) * 0.5)
+  let s = q.shape
+  for (let i = 0; i < 6; i++) {
+    const w = torsoPoint(s, -0.72, Math.PI / 2).x
+    const need = hipX({ ...q, shape: s }) + 0.6 * top - 0.1 * lb.legRadius
+    if (w >= need || (s.hips ?? 0) >= 0.8) break
+    // Le terme des hanches pèse ~0,9 à cette hauteur, sur le flanc.
+    s = { ...s, hips: Math.min(0.8, (s.hips ?? 0) + (need / w - 1) / 0.9 + 0.01) }
+  }
+  return s === q.shape ? q : { ...q, shape: s }
+}
+
+/**
  * Pieds qui ne se chevauchent pas : de grands pieds sous des jambes serrées
  * (poupon, kangourou, échalas) se recouvraient au milieu. On écarte les jambes
  * juste assez — le patron du panneau n'est pas concerné, il n'y passe pas.
  */
-function spreadFeet(q: DollParams): DollParams {
+function spreadFeet(q0: DollParams): DollParams {
+  const q = fillHips(q0)
   const lb = q.limbs
   const half = lb.legRadius * 1.3 * tipScale(lb.legTaper, lb.footScale) * 0.78 * 1.18
   const need = (half + 0.012 - hipX(q)) / legDrop(lb)
