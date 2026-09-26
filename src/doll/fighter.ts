@@ -172,7 +172,7 @@ type Phase = {
 
 type ActionName =
   | 'attack1' | 'attack2' | 'attack3' | 'dodge' | 'parry' | 'hit' | 'ko'
-  | 'jump' | 'plunge' | 'slam'
+  | 'jump' | 'plunge' | 'slam' | 'rise' | 'flip'
 
 type Action = {
   phases: Phase[]
@@ -218,6 +218,66 @@ const WIND: Phase['tune'] = {
   'elbow-1': [6, 0.7, 0],
   hips: [4, 0.82, -0.1],
   weapon: [4.5, 0.82, -0.1],
+}
+
+/**
+ * Relevée après un K.O. : on s'assoit en poussant sur les bras, on se ramasse
+ * accroupie, les mains sur les genoux, puis debout d'une détente — et la tête
+ * qui secoue, sonnée.
+ */
+const RISE: Action = {
+  cancelFrom: 2,
+  phases: [
+    {
+      dur: 0.34,
+      tune: { hips: [3.5, 0.8, 0], hipsPos: [3.5, 0.85, 0] },
+      firm: 0.3,
+      pose: (t, _u, m) => {
+        set(t.hips, -0.4, 0, 0)
+        set(t.hipsPos, 0, m.torsoRadius * 1.1 - m.centerHeight, -m.centerHeight * 0.6)
+        set(t['arm-1'], 0.8, 0, -0.35)
+        set(t.arm1, 0.8, 0, 0.35)
+        bend(t['elbow-1'], -0.15)
+        bend(t.elbow1, -0.15)
+        set(t['leg-1'], -1.4, 0, -0.1)
+        set(t.leg1, -1.3, 0, 0.1)
+        bend(t['knee-1'], 0.9)
+        bend(t.knee1, 1.2)
+        set(t.neck, 0.35, 0, 0)
+        t.squash = 0.95
+        set(t.weapon, -0.8, -0.4, 0.2)
+      },
+    },
+    {
+      dur: 0.3,
+      tune: { hips: [4.5, 0.75, 0], hipsPos: [4.5, 0.8, 0] },
+      firm: 0.4,
+      pose: (t, _u, m) => {
+        set(t.hips, 0.55, 0, 0)
+        set(t.hipsPos, 0, -m.legLength * 0.42, -m.centerHeight * 0.15)
+        set(t['arm-1'], -0.7, 0, 0.2)
+        set(t.arm1, -0.7, 0, -0.2)
+        bend(t['elbow-1'], -0.8)
+        bend(t.elbow1, -0.8)
+        set(t.neck, -0.15, 0, 0)
+        t.squash = 0.9
+        set(t.weapon, -0.6, -0.7, 0.3)
+      },
+    },
+    {
+      dur: 0.4,
+      firm: 0.2,
+      enter: (f) => f.bump(3),
+      pose: (t, u) => {
+        const k = 1 - u
+        set(t.hips, -0.12 * k, 0, 0)
+        bend(t['elbow-1'], -0.4)
+        bend(t.elbow1, -0.3)
+        // Sonnée : la tête secoue, de moins en moins.
+        set(t.neck, 0.05, Math.sin(u * Math.PI * 5) * 0.35 * k, Math.sin(u * Math.PI * 5 + 1) * 0.12 * k)
+      },
+    },
+  ],
 }
 
 /**
@@ -407,31 +467,69 @@ const ACTIONS: Record<ActionName, Action> = {
   },
 
   /**
-   * Esquive : **un pas de côté**, pas une roulade. La poupée garde son cap —
-   * elle reste face à ce qu'elle esquive — et bondit bas dans la direction du
-   * stick (en arrière sans direction). Le corps penche dans le mouvement, la
-   * jambe de tête s'écarte pour recevoir le poids, l'autre se replie, les bras
-   * partent à l'opposé pour l'équilibre, la tête compense. Petit vol
-   * physique : la gravité la repose, et c'est l'atterrissage qui la tasse.
+   * Esquive : **un dash de côté**, pas une roulade ni un simple pas. La
+   * poupée garde son cap — elle reste face à ce qu'elle esquive — et fuse
+   * bas dans la direction du stick (en arrière sans direction), laissant des
+   * images rémanentes derrière elle (`ghost`). Le corps se couche dans le
+   * mouvement, écrasé, la jambe de tête tendue pour recevoir le poids,
+   * l'autre repliée, les bras partent à l'opposé, la tête compense. Petit vol
+   * physique : la gravité la repose, puis elle freine en glissant sur ses
+   * pieds. Tenue, la touche enchaîne sur la glissade (`gliding`).
    */
   dodge: {
     cancelFrom: 1,
     phases: [
       {
-        dur: 0.17,
-        tune: { hips: [7, 0.7, 0.4], hipsPos: [7, 0.7, 0], squash: [7, 0.6, 0], neck: [4, 0.55, 0] },
+        dur: 0.15,
+        tune: { hips: [9, 0.7, 0.6], hipsPos: [8, 0.7, 0], squash: [9, 0.6, 0], neck: [4, 0.55, 0] },
         firm: 0.45,
-        trail: 0.25,
+        trail: 0.35,
         steer: 0,
         enter: (f) => f.sidestep(),
-        pose: (t, u, m, f) => stepPose(t, m, f, Math.sin(Math.PI * Math.min(1, 0.35 + u * 0.8))),
+        pose: (t, u, m, f) => stepPose(t, m, f, Math.sin(Math.PI * Math.min(1, 0.4 + u * 0.8))),
       },
       {
-        dur: 0.18,
+        dur: 0.2,
         firm: 0.3,
         steer: 0,
-        brake: 13,
-        pose: (t, u, m, f) => stepPose(t, m, f, 0.45 * (1 - u)),
+        brake: 11,
+        pose: (t, u, m, f) => stepPose(t, m, f, 0.6 * (1 - u)),
+      },
+    ],
+  },
+
+  /**
+   * Double saut : un salto avant groupé. Le bassin fait un tour complet, les
+   * genoux ramenés, les bras qui les serrent ; il se déplie avant de retomber.
+   * Le tour est ramené à zéro à la fin (`unwind`), sinon les ressorts le
+   * dérouleraient à l'envers.
+   */
+  flip: {
+    cancelFrom: 99,
+    exit: (f) => f.unwind(),
+    phases: [
+      {
+        dur: 0.42,
+        tune: { hips: [6.5, 0.85, 0], squash: [7, 0.6, 0], neck: [5, 0.6, 0] },
+        firm: 0.5,
+        enter: (f) => f.doubleJump(),
+        pose: (t, u) => {
+          const e = 1 - (1 - Math.min(1, u * 1.15)) ** 2
+          // Groupé au milieu du tour, déplié au bout.
+          const tuck = Math.sin(Math.PI * Math.min(1, u * 1.1))
+          set(t.hips, Math.PI * 2 * e, 0, 0)
+          set(t['leg-1'], -1.3 * tuck, 0, -0.1)
+          set(t.leg1, -1.2 * tuck, 0, 0.1)
+          bend(t['knee-1'], 2.1 * tuck + 0.2)
+          bend(t.knee1, 2 * tuck + 0.2)
+          set(t['arm-1'], -1 * tuck - 0.3, 0, 0.3)
+          set(t.arm1, -1.1 * tuck - 0.3, 0, -0.3)
+          bend(t['elbow-1'], -1.5 * tuck - 0.2)
+          bend(t.elbow1, -1.6 * tuck - 0.2)
+          set(t.neck, 0.45 * tuck, 0, 0)
+          t.squash = 1 - 0.1 * tuck
+          set(t.weapon, -0.4, -0.2 + 0.6 * tuck, -0.6)
+        },
       },
     ],
   },
@@ -498,7 +596,11 @@ const ACTIONS: Record<ActionName, Action> = {
     ],
   },
 
-  /** K.O. : bascule sur le dos, et y reste. L'arme tombe à côté. */
+  /**
+   * K.O. : bascule sur le dos, et y reste. L'arme tombe à côté. Le buste et le
+   * bassin ne suivent pas une pose : ils **tombent** (`topple`) — les bras et
+   * la tête, eux, visent cette pose, mollement.
+   */
   ko: {
     cancelFrom: 99,
     hold: true,
@@ -506,7 +608,10 @@ const ACTIONS: Record<ActionName, Action> = {
       {
         dur: 0.9,
         tune: { hips: [2.4, 0.75, 0], hipsPos: [3, 0.8, 0] },
-        enter: (f) => f.knock(),
+        enter: (f) => {
+          f.knock(0.5)
+          f.fall()
+        },
         pose: (t, _u, m) => {
           set(t.hips, -1.5, 0.3, 0)
           set(t.hipsPos, 0, m.torsoRadius * 0.95 - m.centerHeight, -m.centerHeight * 0.5)
@@ -628,6 +733,8 @@ const ACTIONS: Record<ActionName, Action> = {
       },
     ],
   },
+
+  rise: RISE,
 }
 
 /** Frappe au sol, penchée sur l'arme : `k` de 1 (impact) à 0 (relevée). */
@@ -673,8 +780,8 @@ function stepPose(t: Target, m: RigMetrics, f: Fighter, e: number) {
   const lead: -1 | 1 = dx >= 0 ? 1 : -1
   // Le haut penche dans le mouvement (`z` < 0 vers +x) ; en arrière, le buste
   // reste au-dessus des pieds qui fuient.
-  set(t.hips, (0.22 * back - 0.12 * fwd + 0.04) * e, -0.18 * dx * e, -0.34 * dx * e)
-  set(t.hipsPos, 0, -m.legLength * 0.14 * e, 0)
+  set(t.hips, (0.28 * back - 0.15 * fwd + 0.05) * e, -0.22 * dx * e, -0.5 * dx * e)
+  set(t.hipsPos, 0, -m.legLength * 0.2 * e, 0)
   for (const side of [-1, 1] as const) {
     const isLead = side === lead
     const legX = ((isLead ? -0.12 : 0.08) * lat + (side === 1 ? 0.55 : -0.25) * back + (side === 1 ? -0.55 : 0.25) * fwd) * e
@@ -685,8 +792,9 @@ function stepPose(t: Target, m: RigMetrics, f: Fighter, e: number) {
     set(t[ARM[side]], armX, 0, side * (isLead ? -0.15 : 0.95) * lat * e)
     bend(t[ELBOW[side]], ((isLead ? -1.2 : -0.35) * lat - 0.6 * (back + fwd)) * e - 0.25)
   }
-  set(t.neck, 0.15 * back * e, 0.1 * dx * e, 0.26 * dx * e)
-  t.squash = 1 - 0.06 * e
+  set(t.neck, 0.18 * back * e, 0.12 * dx * e, 0.36 * dx * e)
+  // Écrasée par la vitesse : basse et large pendant le dash.
+  t.squash = 1 - 0.13 * e
   set(t.weapon, -0.6 + 0.35 * dx * e, -0.35, 0.25 - 0.5 * back * e)
 }
 
@@ -699,6 +807,13 @@ const LEG_LIM: [number, number][] = [[-1.6, 1.2], [-0.5, 0.5], [-0.8, 0.8]]
 const ELBOW_LIM: [number, number][] = [[-2.4, 0.05], [0, 0], [0, 0]]
 const KNEE_LIM: [number, number][] = [[-0.05, 2.4], [0, 0], [0, 0]]
 const LIMITS: Partial<Record<BoneName, [number, number][]>> = {
+  /*
+   * Bassin : libre en avant (le salto fait un tour complet), borné en torsion
+   * et en bascule. Sans butée, des attaques enchaînées en rafale cumulaient
+   * les élans de leurs ressorts « fouet » : mesuré sur une minute d'appuis au
+   * hasard, jusqu'à 2,9 rad de torsion — la poupée se retrouvait de dos.
+   */
+  hips: [[-Infinity, Infinity], [-1.4, 1.4], [-0.9, 0.9]],
   neck: [[-0.9, 0.9], [-0.9, 0.9], [-0.6, 0.6]],
   'arm-1': ARM_LIM,
   arm1: ARM_LIM,
@@ -712,12 +827,12 @@ const LIMITS: Partial<Record<BoneName, [number, number][]>> = {
 
 // ---------------------------------------------------------------- combattant
 
-/** Course normale, unités par seconde. */
-const RUN_SPEED = 2
-/** Sprint (touche tenue) : deux fois et demie la course. */
-const SPRINT_SPEED = 5
+/** Marche (allure par défaut), unités par seconde. */
+const RUN_SPEED = 2.4
+/** Course (touche tenue) : plus du double de la marche. */
+const SPRINT_SPEED = 5.4
 /** Rayon de l'arène : on ne sort pas du tapis. Assez grand pour y sprinter. */
-export const ARENA = 6
+export const ARENA = 10
 /** Temps pendant lequel un appui reste en file. */
 const BUFFER = 0.28
 /**
@@ -728,11 +843,24 @@ const BUFFER = 0.28
  */
 const G_UP = 20
 const G_DOWN = 34
+/** Angle du corps couché sur le dos, K.O. */
+const KO_REST = 1.5
 /** Sommet du grand saut, en fraction de la hauteur de la poupée. */
 const JUMP_APEX = 0.38
-/** Pas de côté : vitesse et petit bond (≈ 0,16 s de vol). */
-const DODGE_SPEED = 5.4
-const DODGE_HOP = 2.7
+/** Dash d'esquive : vitesse et bond bas (≈ 0,13 s de vol). */
+const DODGE_SPEED = 7
+const DODGE_HOP = 2.2
+/**
+ * Glissade (touche d'esquive tenue) : bien plus vite que la course, mais on
+ * ne braque presque plus — le cap tourne d'au plus `GLIDE_TURN` rad/s et la
+ * vitesse le rejoint lentement. On gagne en vitesse ce qu'on perd en contrôle.
+ */
+const GLIDE_SPEED = 8.5
+const GLIDE_TURN = 2.4
+/** Double saut : part de l'impulsion du premier. */
+const DOUBLE_JUMP = 0.85
+/** Intervalle des images rémanentes, s de jeu. */
+const GHOST_EVERY = 0.03
 
 export type Press = 'attack' | 'dodge' | 'parry' | 'hit' | 'ko' | 'jump'
 
@@ -756,6 +884,23 @@ export class Fighter {
   sprint = false
   /** Saut tenu : la montée garde sa gravité douce tant qu'il l'est. */
   jumpHeld = false
+  /** Esquive tenue : après le dash, la glissade. */
+  dodgeHeld = false
+  /** En glissade. */
+  gliding = false
+  /**
+   * Demande d'image rémanente : la poupée écrit alors sa silhouette
+   * (`silhouette`) dans l'image, et `Ghosts` la copie. Remis à zéro par `Ghosts`.
+   */
+  ghostRequest = false
+  /**
+   * Cercle rituel du double saut : où il s'ouvre (monde, sous les pieds),
+   * et une demande que `Sigil` consomme.
+   */
+  readonly sigilAt = new THREE.Vector3()
+  sigilRequest = false
+  /** Silhouette de la poupée, 14 matrices monde (voir `Doll`). */
+  readonly silhouette = new Float32Array(14 * 16)
   /** Cap de la caméra, publié par le rig : l'entrée est relative à l'écran. */
   camYaw = 0
 
@@ -794,11 +939,21 @@ export class Fighter {
   private action: { name: ActionName; phase: number; t: number } | null = null
   private queued: { press: Press; t: number } | null = null
   private time: number
-  private gait = 0
-  /** Pas en cours : pied posé en dernier, temps écoulé, durée d'un pas. */
-  private step = { side: 1 as -1 | 1, t: 0, dur: 0.15 }
-  /** Report du poids sur le pied d'appui (dandinement), amorti. */
-  private waddle = 0
+  /**
+   * Cycle de locomotion, lu par les pieds (`Stepper`) : phase en tours (la
+   * jambe −1 se pose à 0, la jambe 1 à ½), durée d'un cycle de deux pas, part
+   * d'appui d'un pied, hauteur de levée, talon relevé.
+   */
+  readonly cycle = { phase: 0, period: 0.4, duty: 0.6, lift: 0, kick: 0, active: false }
+  /** Part du cycle dans la pose (fondu à l'entrée et à la sortie). */
+  private cycW = 0
+  /**
+   * Rythme des pas, ajouté **après** les ressorts : rebond du bassin, bascule,
+   * balancier des bras. À cinq ou six pas par seconde, passé par les ressorts
+   * de pose (≈ 3 Hz), il était écrasé et décalé — le corps restait raide
+   * pendant que les jambes moulinaient.
+   */
+  private rhythm = { y: 0, pitch: 0, yaw: 0, roll: 0, sq: 0, arm1: 0, armW: 0, el1: 0, elW: 0 }
   /**
    * Cisaillement du corps (x : côté, z : avant), pieds fixes. Voir `update`.
    */
@@ -812,9 +967,16 @@ export class Fighter {
   /** Vitesse au sol à l'appel : l'élan d'un sprint se garde en l'air. */
   private airSpeed = 0
   private skid = 0
+  /** La glissade peut suivre ce dash si la touche reste tenue. */
+  private glideArmed = false
+  /** Double saut déjà utilisé depuis le dernier appui au sol. */
+  private usedDouble = false
+  private ghostT = 0
   /** Regard d'attente : cible, temps restant, part (0 en mouvement). */
   private glance = { yaw: 0, pitch: 0, shift: 0, t: 1, w: 0, idle: 0 }
   private rnd: () => number
+  /** Bascule du K.O. : angle, vitesse, au sol, recul du bassin. */
+  private topple = { th: 0, w: 0, landed: false, zc: 0 }
 
   constructor(opts: { drive?: boolean; phase?: number } = {}) {
     this.drive = !!opts.drive
@@ -851,12 +1013,25 @@ export class Fighter {
   /** Un appui. Mis en file s'il ne peut pas partir tout de suite. */
   press(p: Press) {
     if (p === 'ko' && this.action?.name === 'ko') {
-      // Relevée : la vie revient.
-      this.action = null
+      // Relevée : la vie revient, et on se remet debout.
       this.hp = 1
+      this.getUp()
       return
     }
     if (p === 'jump') this.jumpHeld = true
+    if (p === 'dodge') {
+      this.dodgeHeld = true
+      /*
+       * **Glissade : seulement en pleine course.** L'esquive pressée pendant
+       * qu'on court (Maj tenue, allure de course atteinte) ne part pas en
+       * dash : elle lance la glissade, tenue tant que les deux touches le sont.
+       */
+      if (this.sprint && this.dash > 0.5 && !this.airborne && !this.action) {
+        this.glideArmed = true
+        return
+      }
+      this.glideArmed = false
+    }
     if (this.action?.name === 'ko') return
     if (p === 'hit') {
       this.hp = Math.max(0, this.hp - 0.18)
@@ -868,6 +1043,7 @@ export class Fighter {
   /** Relâchement : seul le saut s'en sert (hauteur variable). */
   release(p: Press) {
     if (p === 'jump') this.jumpHeld = false
+    if (p === 'dodge') this.dodgeHeld = false
   }
 
   // --- effets appelés par les phases
@@ -898,7 +1074,10 @@ export class Fighter {
     this.dodgeDir.z = wx * s + wz * c
     this.vel.set(wx * DODGE_SPEED, 0, wz * DODGE_SPEED)
     this.takeoff(DODGE_HOP, false)
-    this.dyn.squash.kick(0, -0.7)
+    this.dyn.squash.kick(0, -1.1)
+    // Poussée : la laine part dans l'autre sens.
+    this.puff(this.pos.x - wx * 0.15, this.pos.z - wz * 0.15, 0.4)
+    this.ghostT = 0
   }
 
   /** Poussée du saut, à la fin de l'appel. */
@@ -931,6 +1110,27 @@ export class Fighter {
     this.vel.multiplyScalar(0.5)
   }
 
+  /** Seconde impulsion, en l'air : repart vers le haut quoi qu'on fasse. */
+  doubleJump() {
+    this.usedDouble = true
+    const v0 = Math.sqrt(2 * G_UP * (this.m?.height ?? 2) * JUMP_APEX)
+    this.vy = Math.max(this.vy, 0) * 0.3 + v0 * DOUBLE_JUMP
+    this.jumping = true
+    this.airSpeed = Math.max(this.airSpeed, Math.hypot(this.vel.x, this.vel.z))
+    this.dyn.squash.kick(0, 1.6)
+    // Bouffée d'air sous les pieds, à la hauteur où l'on prend appui, et le
+    // cercle rituel sur lequel elle rebondit.
+    this.puff(this.pos.x, this.pos.z, 0.45, this.floorY + this.pos.y)
+    this.sigilAt.set(this.pos.x, this.floorY + this.pos.y, this.pos.z)
+    this.sigilRequest = true
+  }
+
+  /** Ramène un tour complet du bassin à zéro (salto), état et cible ensemble. */
+  unwind() {
+    const h = this.dyn.hips.y[0]
+    if (h > Math.PI) this.dyn.hips.shift(0, -Math.PI * 2)
+  }
+
   /**
    * Retour au sol. La réception dépend de la vitesse de chute : écrasement,
    * bassin qui descend — les genoux plient —, tête qui pique.
@@ -941,6 +1141,12 @@ export class Fighter {
     this.vy = 0
     this.airborne = false
     this.jumping = false
+    this.usedDouble = false
+    if (this.action?.name === 'flip') {
+      // Atterrie en plein salto : il s'arrête là.
+      this.unwind()
+      this.action = null
+    }
     if (this.action?.name === 'plunge') {
       this.start('slam')
       return
@@ -959,28 +1165,26 @@ export class Fighter {
    * rythme des pas qui rythme le corps — pas une horloge. Au sprint, les pas
    * sont deux fois plus nombreux : chacun tasse moins, et soulève sa bouffée.
    */
-  land(speed: number, side: -1 | 1 = 1, dur = 0.15, at?: THREE.Vector3) {
-    const run = Math.min(1, speed / RUN_SPEED)
+  land(_speed: number, _side: -1 | 1 = 1, _dur = 0.15, at?: THREE.Vector3) {
+    // Plus d'à-coup par pas : chaque appui donnait un coup au bassin et à
+    // l'écrasement, et à huit pas par seconde la poupée grésillait. Le rebond
+    // vient maintenant du cycle, continu (`rhythm`). Reste la poussière.
     const dash = this.dash
-    this.step.side = side
-    this.step.t = 0
-    this.step.dur = dur
-    const k = 1 - 0.55 * dash
-    this.dyn.squash.kick(0, (-0.5 * run - 0.1) * k)
-    this.dyn.hipsPos.kick(1, -0.35 * run * k)
-    if (at && dash > 0.5) this.puff(at.x, at.z, 0.18 + 0.12 * dash)
+    if (at && dash > 0.4) this.puff(at.x, at.z, 0.14 + 0.14 * dash)
   }
 
-  puff(x: number, z: number, size: number) {
+  puff(x: number, z: number, size: number, y = this.floorY) {
     if (!this.drive) return
     if (this.puffs.length > 24) this.puffs.shift()
-    this.puffs.push({ x, y: this.floorY, z, size })
+    this.puffs.push({ x, y, z, size })
   }
 
   /** Au sol et libre d'y marcher : ni en l'air, ni K.O., ni soulevée par un geste. */
   get grounded() {
     if (this.airborne) return false
-    if (this.action?.name === 'ko') return false
+    const a = this.action
+    // Couchée, ou assise en train de se relever : les jambes suivent la pose.
+    if (a?.name === 'ko' || (a?.name === 'rise' && a.phase === 0)) return false
     return this.pose.hipsPos[1] < 0.06
   }
 
@@ -999,17 +1203,71 @@ export class Fighter {
   }
 
   /** Repoussée en arrière, d'un côté ou de l'autre. */
-  knock() {
+  knock(k = 1) {
     this.hitSide = Math.random() < 0.5 ? -1 : 1
     const c = Math.cos(this.facing)
     const s = Math.sin(this.facing)
     // En arrière, et un peu de côté : le coup vient de `hitSide`.
-    this.vel.x += -s * 3 - c * this.hitSide * 0.8
-    this.vel.z += -c * 3 + s * this.hitSide * 0.8
+    this.vel.x += (-s * 3 - c * this.hitSide * 0.8) * k
+    this.vel.z += (-c * 3 + s * this.hitSide * 0.8) * k
     this.dyn.squash.kick(0, -1.2)
     this.dyn.hips.kick(1, 2.5 * this.hitSide)
     this.shake = Math.max(this.shake, 0.5)
     this.freeze = 0.05
+  }
+
+  /**
+   * Chute du K.O. : le corps bascule en arrière **autour des pieds**, comme un
+   * bâton qu'on lâche — lentement d'abord, puis de plus en plus vite
+   * (`θ'' = g/h · sin θ`). Au contact du dos, rebond amorti, bouffée, secousse ;
+   * puis il se balance sur son dos rond jusqu'à s'y poser.
+   */
+  fall() {
+    const T = this.topple
+    T.th = Math.max(0, -this.pose.hips[0])
+    T.w = 1.1
+    T.landed = false
+    T.zc = 0
+  }
+
+  private toppleStep(dt: number, m: RigMetrics) {
+    const T = this.topple
+    const c = m.centerHeight
+    const lie = m.torsoRadius * 0.95
+    if (!T.landed) {
+      // Une peluche tombe moins vite qu'un bâton : gravité ressentie réduite.
+      T.w += (6 / c) * Math.sin(T.th + 0.05) * dt
+      T.th += T.w * dt
+      T.zc = -c * Math.sin(T.th)
+      if (c * Math.cos(T.th) <= lie) {
+        T.landed = true
+        const k = Math.min(1, T.w / 5)
+        T.w *= -0.3
+        this.dyn.squash.kick(0, -1.8 * k)
+        this.dyn.neck.kick(0, -3 * k)
+        this.shake = Math.max(this.shake, 0.45 * k)
+        this.freeze = 0.04
+        const cf = Math.cos(this.facing)
+        const sf = Math.sin(this.facing)
+        this.puff(this.pos.x + sf * T.zc, this.pos.z + cf * T.zc, 0.8)
+      }
+    } else {
+      // Posée : elle se balance sur son dos et s'arrête.
+      T.w += (-55 * (T.th - KO_REST) - 7 * T.w) * dt
+      T.th += T.w * dt
+    }
+    this.pose.hips[0] = -T.th
+    this.pose.hipsPos[1] = Math.max(c * Math.cos(T.th), lie) - c
+    this.pose.hipsPos[2] = T.zc
+  }
+
+  /** Relevée : les ressorts repartent de la pose au sol, pas d'une pose rêvée. */
+  private getUp() {
+    const T = this.topple
+    this.dyn.hips.snap(0, -T.th)
+    this.dyn.hipsPos.snap(1, this.pose.hipsPos[1])
+    this.dyn.hipsPos.snap(2, this.pose.hipsPos[2])
+    this.start('rise')
   }
 
   // --- boucle
@@ -1034,8 +1292,12 @@ export class Fighter {
     }
     // En l'air : seule l'attaque part (en plongeon) ; le reste attend le sol.
     if (this.airborne) {
-      if (p === 'attack' && (!a || a.name === 'dodge')) {
+      if (p === 'attack' && (!a || a.name === 'dodge' || a.name === 'flip')) {
         this.start('plunge')
+        return true
+      }
+      if (p === 'jump' && !this.usedDouble && (!a || a.name === 'dodge')) {
+        this.start('flip')
         return true
       }
       return false
@@ -1061,6 +1323,7 @@ export class Fighter {
   }
 
   private start(name: ActionName) {
+    if (this.action?.name === 'flip') this.unwind()
     // Une attaque part dans la direction du stick : on vise en frappant.
     const w = this.wish()
     if (name.startsWith('attack') && w.lengthSq() > 0.04) this.facing = Math.atan2(w.x, w.z)
@@ -1135,6 +1398,23 @@ export class Fighter {
       firm = cur.firm ?? 0
       trail = cur.trail ?? 0
     }
+    // Glissade : la touche d'esquive, tenue depuis le dash, au sol et hors geste.
+    // Lâcher l'esquive ou la course la termine ; un saut ou un geste la
+    // suspend.
+    if (!this.dodgeHeld || !this.sprint) this.glideArmed = false
+    // Dans l'autre ordre aussi : esquive déjà tenue quand la course atteint
+    // son allure.
+    else if (!this.glideArmed && this.dash > 0.5 && !this.airborne && !this.action) this.glideArmed = true
+    this.gliding = this.drive && this.glideArmed && !this.airborne && !this.action
+    // Images rémanentes : pendant le dash, serrées ; en glissade, espacées.
+    const dashing = this.action?.name === 'dodge'
+    if (dashing || this.gliding) {
+      this.ghostT -= dt
+      if (this.ghostT <= 0) {
+        this.ghostRequest = true
+        this.ghostT = dashing ? GHOST_EVERY : GHOST_EVERY * 3.5
+      }
+    }
     const free = !this.action || !!ph?.free
     const steer = !this.action ? 1 : (ph?.steer ?? 0)
 
@@ -1147,6 +1427,7 @@ export class Fighter {
     let locoTune: Phase['tune'] | undefined
     if (!this.action) {
       if (this.airborne) this.airPose(t, m)
+      else if (this.gliding) this.glidePose(t, m)
       else locoTune = this.locomotion(t, m, dt)
     }
 
@@ -1168,8 +1449,21 @@ export class Fighter {
     this.pose.hipsPos[0] = hp[0]
     this.pose.hipsPos[1] = hp[1]
     this.pose.hipsPos[2] = hp[2]
+    if (this.action?.name === 'ko') this.toppleStep(dt, m)
+    if (this.drive) this.advanceCycle(dt, m)
+    const r = this.rhythm
+    this.pose.hipsPos[1] += r.y
+    this.pose.hips[0] += r.pitch
+    this.pose.hips[1] += r.yaw
+    this.pose.hips[2] += r.roll
+    // La tête garde le cap pendant que les épaules tournent.
+    this.pose.neck[1] -= r.yaw * 0.8
+    this.pose.arm1[0] += r.arm1
+    this.pose['arm-1'][0] += r.armW
+    this.pose.elbow1[0] = Math.min(0.05, this.pose.elbow1[0] + r.el1)
+    this.pose['elbow-1'][0] = Math.min(0.05, this.pose['elbow-1'][0] + r.elW)
     _sq[0] = t.squash
-    this.squash = Math.min(1.45, Math.max(0.6, this.dyn.squash.update(dt, _sq)[0]))
+    this.squash = Math.min(1.45, Math.max(0.6, this.dyn.squash.update(dt, _sq)[0] * (1 + this.rhythm.sq)))
     _wd.set(...t.weapon).normalize()
     const wd = this.dyn.weapon.update(dt, _wd.toArray(_arr))
     this.weaponDir.set(wd[0], wd[1], wd[2])
@@ -1187,13 +1481,13 @@ export class Fighter {
      * chaque pas — « elle remue trop ». Ramené à 0,35 d'un dandinement lui-même
      * divisé par trois.
      */
-    if (this.drive && !this.airborne) {
+    if (this.drive && (!this.airborne || this.action?.name === 'dodge')) {
       const cf = Math.cos(this.facing)
       const sf = Math.sin(this.facing)
       const aFwd = this.accel.x * sf + this.accel.z * cf
       const aSide = this.accel.x * cf - this.accel.z * sf
       const lim = (v: number) => Math.max(-0.13, Math.min(0.13, v))
-      _sh[0] = lim(-aSide * 0.007 - this.waddle * 0.35)
+      _sh[0] = lim(-aSide * 0.007 - this.rhythm.roll * 0.35)
       _sh[1] = lim(-aFwd * 0.009)
     } else {
       _sh[0] = 0
@@ -1225,6 +1519,36 @@ export class Fighter {
       this.vy -= g * dt
       this.pos.y += this.vy * dt
       if (this.pos.y <= 0) this.touchdown()
+    } else if (free && this.gliding) {
+      /*
+       * Glissade : c'est la **direction de la vitesse** qui tourne vers le
+       * stick, à `GLIDE_TURN` rad/s au plus, sans rien perdre de sa norme —
+       * elle carve, comme sur de la glace. La vitesse l'interpolait avant :
+       * dans un virage serré le vecteur coupait la corde et la glissade
+       * s'effondrait. Le corps suit la trajectoire avec un léger retard (il
+       * dérape), et la vitesse monte en douceur de la course à la glissade.
+       */
+      const sp = Math.hypot(this.vel.x, this.vel.z)
+      let dir = sp > 0.5 ? Math.atan2(this.vel.x, this.vel.z) : this.facing
+      if (wl > 0.15) {
+        let d = Math.atan2(w.x, w.z) - dir
+        d = Math.atan2(Math.sin(d), Math.cos(d))
+        const turn = GLIDE_TURN * dt
+        dir += Math.max(-turn, Math.min(turn, d))
+      }
+      const ns = sp + (GLIDE_SPEED - sp) * Math.min(1, dt * 1.6)
+      this.vel.set(Math.sin(dir) * ns, 0, Math.cos(dir) * ns)
+      let df = dir - this.facing
+      df = Math.atan2(Math.sin(df), Math.cos(df))
+      this.facing += df * Math.min(1, dt * 7)
+      this.skid -= dt
+      if (this.skid <= 0) {
+        this.skid = 0.05
+        const sx = Math.cos(this.facing) * 0.12
+        const sz = -Math.sin(this.facing) * 0.12
+        this.puff(this.pos.x + sx, this.pos.z + sz, 0.2)
+        this.puff(this.pos.x - sx, this.pos.z - sz, 0.2)
+      }
     } else if (free) {
       const cap = this.sprint ? SPRINT_SPEED : RUN_SPEED
       _tv.copy(w).multiplyScalar((cap * wl) / wLen)
@@ -1270,7 +1594,7 @@ export class Fighter {
     // Cap : vers la direction voulue, vite mais pas instantanément. Au
     // sprint il tourne plus large ; en l'air, à peine.
     const prevFacing = this.facing
-    if (wl > 0.15 && steer > 0) {
+    if (wl > 0.15 && steer > 0 && !this.gliding) {
       const want = Math.atan2(w.x, w.z)
       let d = want - this.facing
       d = Math.atan2(Math.sin(d), Math.cos(d))
@@ -1283,13 +1607,71 @@ export class Fighter {
   }
 
   /**
-   * Attente, course et sprint.
+   * **Cycle de marche et de course.** Une phase continue, dont la cadence
+   * monte avec la vitesse — 5,2 pas par seconde à la marche, 6,4 à la course
+   * (avant : huit et treize, des micro-pas qui grésillaient). La longueur
+   * d'appui se prend sur la jambe : un pied reste au sol tant qu'il est à
+   * portée, soit une part du cycle `duty = portée · cadence / vitesse`. À la
+   * marche les appuis se chevauchent ; à la course il y a une **phase de vol**.
+   * Les pieds suivent ce cycle (`Stepper`), le corps aussi (`rhythm`).
+   */
+  private advanceCycle(dt: number, m: RigMetrics) {
+    const c = this.cycle
+    const speed = Math.hypot(this.vel.x, this.vel.z)
+    const walk = Math.min(1, speed / RUN_SPEED)
+    const dash = this.dash
+    const L = m.legLength
+    const steps = 3.4 + 0.75 * Math.min(speed, RUN_SPEED) + (6.4 - 5.2) * dash
+    c.period = 2 / steps
+    /*
+     * Demi-appui : 46 % de la portée de la jambe, pied compris. À 60 % la
+     * poupée « marchait » à 2,4 u/s — impossible avec des jambes de 0,38 :
+     * au-delà d'un nombre de Froude de ½ (≈ 1,4 u/s ici) une marche devient
+     * une course. Le pied devait alors rattraper sa foulée en un temps de vol
+     * très court et fouettait à 9 u/s, ce qui se lisait comme un tic. Elle
+     * trottine donc : appuis courts, un peu de vol, pied plus lent en l'air.
+     */
+    const half = 0.46 * L * 1.09
+    c.duty = Math.max(0.28, Math.min(0.66, (half * steps) / Math.max(speed, 0.1)))
+    c.lift = L * (0.26 + 0.26 * dash)
+    c.kick = L * 0.4 * dash
+    c.active = !this.airborne && !this.action && !this.gliding && speed > 0.35
+    if (c.active) c.phase = (c.phase + dt / c.period) % 1
+    this.cycW += ((c.active ? 1 : 0) - this.cycW) * Math.min(1, dt * (c.active ? 10 : 6))
+
+    const w = this.cycW
+    const r = this.rhythm
+    const k = walk * (1 - dash)
+    const ang = Math.PI * 2 * c.phase
+    const cos = Math.cos(ang)
+    const sin = Math.sin(ang)
+    // Rebond, deux fois par cycle : au plus bas au milieu de l'appui (le
+    // poids passe sur la jambe pliée), au plus haut en vol. Souple au trot,
+    // franc à la course.
+    const low = c.duty
+    const bob = -Math.cos(Math.PI * 2 * (2 * c.phase - low))
+    r.y = w * L * (0.055 * k + 0.13 * dash) * bob
+    r.sq = w * (0.03 * k + 0.05 * dash) * bob
+    r.pitch = w * 0.05 * dash * bob
+    // Épaules : la libre (côté 1) part devant avec la jambe −1 ; tout le buste
+    // tourne un peu avec elles, la tête compense. Bascule sur l'appui, à peine.
+    r.yaw = -w * (0.05 * k + 0.07 * dash) * cos
+    r.roll = w * 0.015 * k * sin
+    // Balancier : le bras libre en opposition de la jambe, l'avant-bras qui
+    // remonte quand il passe devant ; le bras de l'arme, lesté, bat moins.
+    r.arm1 = -w * (0.5 * k + 0.9 * dash) * cos
+    r.armW = w * (0.2 * k + 0.4 * dash) * cos
+    r.el1 = -w * (0.3 * k + 0.45 * dash) * Math.max(0, cos)
+    r.elW = -w * (0.15 * k + 0.3 * dash) * Math.max(0, -cos)
+  }
+
+  /**
+   * Attente, marche et course : la pose de fond, sous le rythme des pas.
    *
-   * Course en petits bonds — une peluche sautille — avec l'écrasement à chaque
-   * appui. Le corps penche dans l'accélération et dans les virages, l'arme
-   * traîne derrière, pointe au sol. Au sprint : buste penché loin devant,
-   * tête relevée pour compenser, bras pliés qui pompent, arme couchée
-   * derrière — et presque plus de roulis.
+   * Le corps se penche et se tasse avec la vitesse, penche dans
+   * l'accélération et dans les virages, l'arme traîne derrière, pointe au
+   * sol. À la course : buste penché loin devant, tête relevée pour compenser,
+   * coudes en équerre, arme couchée derrière.
    *
    * À l'arrêt, la poupée n'est pas une statue : elle respire, et au bout d'un
    * moment regarde ailleurs (`glance`) — la tête d'abord, le buste suit un
@@ -1299,23 +1681,6 @@ export class Fighter {
     const speed = Math.hypot(this.vel.x, this.vel.z)
     const run = Math.min(1, speed / RUN_SPEED)
     const dash = this.dash
-    /*
-     * Phase de la foulée, **calée sur les vrais pas** (`land`) : chaque pied
-     * posé fait un demi-tour de phase. Réglée sur une horloge ou la distance,
-     * elle se décalait des pas et les bras balançaient à contretemps des pieds.
-     */
-    this.step.t += dt
-    const stepU = Math.min(1, this.step.t / this.step.dur)
-    this.gait = (this.step.side === -1 ? 0 : Math.PI) + Math.PI * stepU
-    const s = Math.sin(this.gait)
-    const hop = Math.abs(s)
-    /*
-     * Dandinement : le poids passe sur le pied d'appui. **Discret** : à 0,1 rad
-     * de roulis par pas, relayé par le cisaillement et la tête, la poupée
-     * tanguait comme un culbuto. Presque rien au sprint : on court droit.
-     */
-    const wTarget = run > 0.1 ? -this.step.side * 0.035 * run * (1 - 0.6 * dash) : 0
-    this.waddle += (wTarget - this.waddle) * Math.min(1, dt * 10)
     const breathe = Math.sin(this.time * 2.3)
     const sway = Math.sin(this.time * 1.15)
 
@@ -1351,68 +1716,76 @@ export class Fighter {
       t.hips,
       // Inertie : le corps reste en arrière quand on accélère et continue
       // vers l'avant quand on freine — la racine obéit, le corps traîne.
-      0.04 * armed + 0.16 * run + 0.3 * dash + hop * 0.04 * run * (1 - dash) - clampA(aFwd, 0.045, 0.4),
-      // Torsion de foulée : à 0,16 rad elle se lisait comme un roulis de plus.
-      s * 0.06 * run * (1 - 0.5 * dash) + g.yaw * 0.25 * gw,
+      0.04 * armed + 0.12 * run + 0.3 * dash - clampA(aFwd, 0.045, 0.4),
+      g.yaw * 0.25 * gw,
       // Penché vers l'arme au repos (son poids, arène seulement), dans le
-      // virage — plus fort au sprint, comme un coureur qui prend un virage —,
-      // sur le pied d'appui. Le report de poids du regard d'attente, lui
-      // aussi, ne vaut que dans l'arène : sur la planche la poupée reste droite.
+      // virage — plus fort à la course, comme un coureur qui prend un virage.
+      // Le report de poids du regard d'attente ne vaut que dans l'arène.
       0.07 * armed * (1 - run) +
         clampA(this.turnRate, -0.07 - 0.06 * dash, 0.35 + 0.15 * dash) +
         sway * 0.02 * swayK * (1 - run) +
-        this.waddle +
         g.shift * gw * armed,
     )
-    // Le rebond de course vient surtout des pas posés (`land`) ; ici un fond.
-    // Corps plus bas en course, plus encore au sprint : les genoux plient.
-    // Genoux souples à l'arrêt aussi (arène seulement : sur la planche, pas
-    // d'IK, les pieds s'enfonceraient).
+    // Corps plus bas en marche, plus encore à la course : les genoux plient
+    // (IK), c'est ce qui donne la portée aux foulées. Genoux souples à l'arrêt
+    // aussi (arène seulement : sur la planche, pas d'IK, les pieds
+    // s'enfonceraient).
     const soft = this.drive ? -0.04 * m.legLength * (1 - run) : 0
     set(
       t.hipsPos,
       0,
-      (hop * 0.05 * (1 - 0.5 * dash) - 0.12 - 0.06 * dash) * m.legLength * run + breathe * m.torsoRadius * 0.015 + soft,
+      -(0.07 * run + 0.12 * dash) * m.legLength + breathe * m.torsoRadius * 0.015 + soft,
       0,
     )
-    t.squash = 1 + breathe * 0.015 * (1 - run) + (hop - 0.55) * 0.05 * run * (1 - 0.6 * dash)
-    set(t['leg-1'], -s * 0.8 * run, 0, 0)
-    set(t.leg1, s * 0.8 * run, 0, 0)
+    t.squash = 1 + breathe * 0.015 * (1 - run)
     bend(t['knee-1'], 0.15 + 0.3 * run)
     bend(t.knee1, 0.15 + 0.3 * run)
     // Bras de l'arme tiré vers l'arrière et vers le bas par le poids ; l'autre
-    // balance à contretemps et compense. Coudes pliés d'autant plus qu'on
-    // court : bras ballants à l'arrêt, repliés en course, en équerre au sprint.
-    // Le poids de l'arme ne tire le bras que dans l'arène.
-    set(t['arm-1'], 0.35 * run - 0.1 * armed + 0.5 * dash, 0, 0.3 * armed - 0.1 * run)
-    bend(t['elbow-1'], -0.4 - 0.3 * run - 0.4 * dash + breathe * 0.03 * (1 - run))
-    const swing = s * (0.9 + 0.3 * dash) * run
-    set(t.arm1, swing - 0.1 * armed + sway * 0.05 * swayK * (1 - run) + 0.1 * dash, 0, -0.1 * run + 0.08 * armed)
-    // L'avant-bras remonte quand le bras part devant : un vrai balancier.
-    bend(t.elbow1, -0.25 - 0.45 * run - 0.6 * dash - 0.35 * Math.max(0, -s) * run + breathe * 0.04 * (1 - run))
+    // plus libre. Coudes pliés d'autant plus qu'on va vite : bras ballants à
+    // l'arrêt, repliés en marche, en équerre à la course. Le balancier des pas
+    // s'ajoute par-dessus (`rhythm`).
+    set(t['arm-1'], 0.3 * run - 0.1 * armed + 0.35 * dash, 0, 0.3 * armed - 0.1 * run)
+    bend(t['elbow-1'], -0.4 - 0.3 * run - 0.5 * dash + breathe * 0.03 * (1 - run))
+    set(t.arm1, -0.1 * armed + sway * 0.05 * swayK * (1 - run) + 0.1 * dash, 0, -0.1 * run + 0.08 * armed)
+    bend(t.elbow1, -0.25 - 0.35 * run - 0.75 * dash + breathe * 0.04 * (1 - run))
     // La tête exagère ce que fait le corps, avec retard : elle part en
-    // arrière au démarrage, pique en avant à l'arrêt, contre le dandinement.
-    // Au sprint elle se relève contre le buste penché.
+    // arrière au démarrage, pique en avant à l'arrêt. À la course elle se
+    // relève contre le buste penché.
     set(
       t.neck,
-      -0.12 * run - 0.24 * dash + Math.sin(this.time * 2.3 + 1) * 0.04 - clampA(aFwd, 0.05, 0.45) + g.pitch * gw,
+      -0.1 * run - 0.24 * dash + Math.sin(this.time * 2.3 + 1) * 0.04 - clampA(aFwd, 0.05, 0.45) + g.pitch * gw,
       clampA(this.turnRate, 0.06, 0.4) + g.yaw * 0.75 * gw,
-      -sway * 0.05 * swayK * (1 - run) - this.waddle * 0.8,
+      -sway * 0.05 * swayK * (1 - run),
     )
     // Au repos, plantée pointe au sol devant elle, du côté de l'arme : on la
-    // voit, et on voit qu'elle est trop grande. En course elle traîne derrière,
-    // au sprint elle se couche presque à l'horizontale.
+    // voit, et on voit qu'elle est trop grande. En marche elle traîne derrière,
+    // à la course elle se couche presque à l'horizontale.
     set(
       t.weapon,
       -0.5 + 0.28 * run + 0.2 * dash,
       -0.72 + 0.34 * run + 0.35 * dash,
       0.42 - 1.3 * run - 0.1 * dash,
     )
-    if (dash <= 0) return undefined
-    // Au sprint le balancier bat deux fois plus vite : le bras libre doit suivre.
-    _locoTune.arm1![0] = 2.6 + 4 * dash
-    _locoTune.elbow1![0] = 3.2 + 3 * dash
-    return _locoTune
+    return undefined
+  }
+
+  /**
+   * Glissade : basse, de trois-quarts, un pied devant l'autre, les deux au
+   * sol (`Stepper`, mode glissade) ; buste couché, bras rejetés derrière,
+   * tête qui regarde droit devant, arme couchée qui traîne. Elle se penche
+   * fort dans les virages — le seul moyen qu'elle a de tourner.
+   */
+  private glidePose(t: Target, m: RigMetrics) {
+    const bank = Math.max(-0.6, Math.min(0.6, -this.turnRate * 0.35))
+    set(t.hips, 0.32, 0.45, bank)
+    set(t.hipsPos, 0, -m.legLength * 0.26, 0)
+    set(t['arm-1'], 0.9, 0, -0.35)
+    set(t.arm1, 1.05, 0, 0.45)
+    bend(t['elbow-1'], -0.25)
+    bend(t.elbow1, -0.2)
+    set(t.neck, -0.3, -0.4, -bank * 0.5)
+    t.squash = 0.95
+    set(t.weapon, -0.2, 0.12, -1)
   }
 
   /**
@@ -1448,4 +1821,3 @@ const _wd = new THREE.Vector3()
 const _sq = [1]
 const _sh = [0, 0]
 const _arr: number[] = [0, 0, 0]
-const _locoTune: NonNullable<Phase['tune']> = { arm1: [2.6, 0.55, 0.25], elbow1: [3.2, 0.45, 0.1] }

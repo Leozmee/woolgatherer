@@ -174,6 +174,17 @@ const newFoot = (): Foot => ({
 
 const _ideal = new THREE.Vector3()
 const _prev = new THREE.Vector3()
+const _fwd = new THREE.Vector3()
+
+/** Cycle de locomotion publié par le combattant (voir `Fighter.cycle`). */
+export type Cycle = {
+  phase: number
+  period: number
+  duty: number
+  lift: number
+  kick: number
+  active: boolean
+}
 
 /**
  * Pas procéduraux : un pied à la fois, posé là où la poupée va être.
@@ -215,6 +226,13 @@ export class Stepper {
       grounded: boolean
       legLength: number
       onLand?: (side: -1 | 1, speed: number, dur: number) => void
+      /**
+       * Cycle de marche : quand il est actif, les pieds le suivent au lieu de
+       * partir quand ils sont trop loin. Sa phase peut être recalée à l'entrée.
+       */
+      cycle?: Cycle
+      /** Glissade : les deux pieds au sol, l'un devant l'autre, qui glissent. */
+      glide?: boolean
     },
   ) {
     this.weight += ((o.grounded ? 1 : 0) - this.weight) * Math.min(1, dt * 14)
@@ -230,6 +248,35 @@ export class Stepper {
         return _ideal.set(h.x + lx * cf, o.root.y + r.y, h.z - lx * sf)
       }
       return _ideal.set(o.root.x + r.x * cf + r.z * sf, o.root.y + r.y, o.root.z - r.x * sf + r.z * cf)
+    }
+
+    if (o.glide && o.grounded && this.ready) {
+      // Le pied du côté tourné vers l'avant (−1, le bassin étant tourné) mène.
+      const fx = Math.sin(o.facing)
+      const fz = Math.cos(o.facing)
+      for (const side of [-1, 1] as const) {
+        const f = this.feet[side]
+        _prev.copy(f.pos)
+        const lead = side === -1 ? 0.5 : -0.45
+        f.pos.copy(ideal(side))
+        f.pos.x += fx * lead * o.legLength
+        f.pos.z += fz * lead * o.legLength
+        f.plant.copy(f.pos)
+        f.swinging = false
+        f.vel.subVectors(f.pos, _prev).divideScalar(Math.max(dt, 1e-4))
+      }
+      this.cycling = false
+      return
+    }
+    const cyc = !!o.cycle?.active && o.grounded && this.ready
+    if (cyc && !this.cycling) this.enterCycle(o.cycle!, ideal)
+    if (!cyc && this.cycling) this.leaveCycle()
+    this.cycling = cyc
+    if (cyc) {
+      // Portée de la jambe, pied compris (`legLength` × 1,09).
+      this.followCycle(dt, o.legLength * 1.09, o.cycle!, o.vel, ideal, speed, o.onLand)
+      this.ready = true
+      return
     }
 
     for (const side of [-1, 1] as const) {
@@ -343,5 +390,126 @@ export class Stepper {
     }
     f.t = 0
     f.swinging = true
+  }
+
+  /** Dans le cycle de marche. */
+  private cycling = false
+
+  /**
+   * Entrée dans le cycle : la phase est recalée pour que le pied **le plus en
+   * arrière** parte le premier — celui qui en a le plus besoin. L'autre garde
+   * son appui s'il en a un.
+   */
+  private enterCycle(c: Cycle, ideal: (side: -1 | 1) => THREE.Vector3) {
+    let back: -1 | 1 = -1
+    let worst = -Infinity
+    for (const side of [-1, 1] as const) {
+      const f = this.feet[side]
+      const i = ideal(side)
+      const e = Math.hypot(f.plant.x - i.x, f.plant.z - i.z)
+      if (e > worst) {
+        worst = e
+        back = side
+      }
+    }
+    c.phase = (((c.duty - (back === -1 ? 0 : 0.5)) % 1) + 1) % 1
+    for (const side of [-1, 1] as const) {
+      const f = this.feet[side]
+      f.swinging = false
+      f.plant.copy(f.pos)
+    }
+  }
+
+  /** Sortie : un pied en l'air finit son pas par un pas réactif. */
+  private leaveCycle() {
+    for (const side of [-1, 1] as const) {
+      const f = this.feet[side]
+      if (!f.swinging) continue
+      f.from.copy(f.pos)
+      f.t = 0
+      f.dur = 0.1
+      f.lift = 0
+    }
+  }
+
+  /**
+   * Pieds sur le cycle. Chaque pied est au sol pendant `duty` de son cycle —
+   * **fixe**, en repère monde : c'est ce qui l'empêche de glisser — puis vole
+   * vers son prochain appui, recalculé à chaque image (là où sera la hanche
+   * au milieu de cet appui), en arc : haut et bref à la course, talon relevé
+   * en arrière au départ. Le genou, lui, sort de l'IK.
+   */
+  private followCycle(
+    dt: number,
+    reach: number,
+    c: Cycle,
+    vel: THREE.Vector3,
+    ideal: (side: -1 | 1) => THREE.Vector3,
+    speed: number,
+    onLand?: (side: -1 | 1, speed: number, dur: number) => void,
+  ) {
+    const swingT = (1 - c.duty) * c.period
+    _fwd.set(vel.x, 0, vel.z)
+    if (_fwd.lengthSq() > 1e-8) _fwd.normalize()
+    for (const side of [-1, 1] as const) {
+      const f = this.feet[side]
+      _prev.copy(f.pos)
+      const psi = (c.phase + (side === -1 ? 0 : 0.5)) % 1
+      if (psi < c.duty) {
+        if (f.swinging) {
+          // Pose : au point visé en fin de vol.
+          f.swinging = false
+          // Posé il y a `psi · période` : la hanche a déjà avancé d'autant.
+          // Sans ce décompte, le pied sautait de 1,3 cm à chaque pose.
+          f.plant.copy(ideal(side)).addScaledVector(vel, (c.duty / 2 - psi) * c.period)
+          f.plant.y = ideal(side).y
+          onLand?.(side, speed, c.period / 2)
+        }
+        /*
+         * Rattrapage : si la hanche s'éloigne trop du pied planté — demi-tour
+         * brusque, poussée —, le pied glisse juste assez pour rester à
+         * portée. Mesuré sur une minute d'appuis au hasard, sans lui : jambe
+         * d'appui jusqu'à deux fois sa portée, le pied décrochait du sol.
+         */
+        const i = ideal(side)
+        const dx = f.plant.x - i.x
+        const dz = f.plant.z - i.z
+        const d = Math.hypot(dx, dz)
+        const max = reach * 0.7
+        if (d > max) {
+          f.plant.x = i.x + (dx / d) * max
+          f.plant.z = i.z + (dz / d) * max
+        }
+        f.pos.copy(f.plant)
+      } else {
+        if (!f.swinging) {
+          f.swinging = true
+          f.from.copy(f.pos)
+        }
+        const u = (psi - c.duty) / (1 - c.duty)
+        /*
+         * Courbes à **vitesse nulle aux deux bouts**. La levée partait en
+         * `sin(π·u^0,75)`, de pente infinie au décollage : le pied sautait
+         * d'un coup vers le haut, cinq ou six fois par seconde — mesuré, le
+         * pic d'accélération du pied tombait pile au décollage (0,053
+         * u/image² à la marche, 0,106 à la course), c'était le « saccadé ».
+         * Le pied rejoint aussi son point de pose un peu avant la fin du vol,
+         * pour ne pas y sauter à la pose.
+         */
+        const x = Math.min(1, u / 0.9)
+        const e = x * x * x * (x * (x * 6 - 15) + 10)
+        f.to.copy(ideal(side)).addScaledVector(vel, (1 - u) * swingT + (c.duty * c.period) / 2)
+        f.pos.lerpVectors(f.from, f.to, e)
+        // Levée : monte vite, redescend en douceur ; talon relevé derrière au
+        // début de l'envol (course).
+        const up = Math.sin(Math.PI * Math.pow(x, 0.8))
+        f.pos.y += c.lift * up * up
+        const heel = Math.sin(Math.PI * x)
+        const kick = heel * heel * (1 - x)
+        f.pos.addScaledVector(_fwd, -c.kick * kick)
+        f.pos.y += c.kick * 0.6 * kick
+      }
+      f.vel.subVectors(f.pos, _prev).divideScalar(Math.max(dt, 1e-4))
+    }
   }
 }

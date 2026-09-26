@@ -17,7 +17,7 @@ import { Outline } from './scene/Outline'
 import { KeepPrograms } from './scene/KeepPrograms'
 import { RENDER_LOOK, setRenderLook } from './scene/toon'
 import { ARENA, Fighter, type Press } from './doll/fighter'
-import { ArenaFloor, Dust, WeaponTrail } from './scene/Arena'
+import { ArenaFloor, Dust, Ghosts, Sigil, WeaponTrail } from './scene/Arena'
 
 /**
  * Gestes de l'arène : touche clavier, boutons de manette (disposition
@@ -37,6 +37,9 @@ const MOVES: { press: Press; keys: string[]; pad: number[] }[] = [
 const SPRINT_KEY = 'shift'
 const SPRINT_PAD = [6, 7, 10]
 const JUMP_PAD = 0
+/** Esquive tenue → glissade. */
+const DODGE_KEY = 'l'
+const DODGE_PAD = 1
 /** Directions tenues : ZQSD (AZERTY), WASD, flèches. */
 const DIRS: Record<string, [number, number]> = {
   z: [0, 1], w: [0, 1], arrowup: [0, 1],
@@ -101,6 +104,7 @@ function Controls({ fighter }: { fighter: Fighter }) {
     }
     let sprint = mods.has(SPRINT_KEY)
     let jump = mods.has(' ')
+    let dodge = mods.has(DODGE_KEY)
     const pad = navigator.getGamepads?.().find((g) => g)
     if (pad) {
       const down = pad.buttons.map((b) => b.pressed)
@@ -108,6 +112,7 @@ function Controls({ fighter }: { fighter: Fighter }) {
       was.current = down
       sprint ||= SPRINT_PAD.some((i) => down[i])
       jump ||= !!down[JUMP_PAD]
+      dodge ||= !!down[DODGE_PAD]
       const ax = pad.axes[0] ?? 0
       const ay = pad.axes[1] ?? 0
       // Zone morte, puis l'amplitude du stick passe telle quelle : on peut
@@ -122,6 +127,8 @@ function Controls({ fighter }: { fighter: Fighter }) {
     fighter.sprint = sprint
     if (fighter.jumpHeld && !jump) fighter.release('jump')
     else fighter.jumpHeld = jump
+    if (fighter.dodgeHeld && !dodge) fighter.release('dodge')
+    else fighter.dodgeHeld = dodge
   }, -3)
   return null
 }
@@ -360,7 +367,7 @@ export default function App() {
         e.preventDefault()
         return
       }
-      if (k === SPRINT_KEY || k === ' ') {
+      if (k === SPRINT_KEY || k === ' ' || k === DODGE_KEY) {
         mods.add(k)
         e.preventDefault()
       }
@@ -459,6 +466,8 @@ export default function App() {
           {arena && <Controls fighter={fighter} />}
           {arena && <WeaponTrail fighter={fighter} />}
           {arena && <Dust fighter={fighter} />}
+          {arena && <Ghosts fighter={fighter} />}
+          {arena && <Sigil fighter={fighter} />}
           {arena && <ArenaFloor y={floorY} radius={ARENA} />}
           {/* monté avant les poupées : son useFrame doit passer en premier */}
           <Rig spin={selecting ? p.motion.spin : 0} distanceScale={selecting ? 2.6 : arena ? 1.6 : 1} follow={arena ? fighter : null} />
@@ -514,10 +523,10 @@ export default function App() {
           <Hud fighter={fighter} name={chosen.trait.name} sub={chosen.subtitle} />
           <div id="legend">
             <div><b>ZQSD</b> · stick — se déplacer</div>
-            <div><b>Maj</b> · gâchette — sprinter</div>
-            <div><b>espace</b> · A — sauter (tenir : plus haut)</div>
+            <div><b>Maj</b> · gâchette — courir</div>
+            <div><b>espace</b> · A — sauter (tenir : plus haut · ×2 : double saut)</div>
             <div><b>J</b> · clic · X — attaquer (×3, en l'air : plongeon)</div>
-            <div><b>L</b> · B — pas de côté</div>
+            <div><b>L</b> · B — esquive · en courant, tenir : glissade</div>
             <div><b>K</b> · RB — parer</div>
             <div><b>glisser</b> — caméra · <b>échap</b> — quitter</div>
           </div>

@@ -32,8 +32,26 @@ export type ClothStiffness = {
 
 type Link = { a: number; b: number; len: number; k: number }
 
+/** Options d'un pas de simulation au-delà de la gravité et des obstacles. */
+export type ClothExtras = {
+  /**
+   * Transport du repère : la matrice qui envoie un point du repère de l'image
+   * précédente dans celui-ci (`FrameCarry`). Appliquée aux particules libres,
+   * elle leur garde leur place **dans le monde** quand le corps tourne ou se
+   * déplace — la torsion d'une attaque fouette alors les pans. L'accélération
+   * seule (`accel`) ne voit que la translation : un buste qui pivote emportait
+   * l'écharpe comme un décor collé.
+   */
+  carry?: THREE.Matrix4 | null
+  /** Part du transport (0 à 1), sur les particules libres. */
+  carryK?: number
+  /** Sol, dans le repère de la nappe : normale unitaire et `n·p ≥ d`. */
+  floor?: { n: THREE.Vector3; d: number } | null
+}
+
 const _d = new THREE.Vector3()
 const _push = new THREE.Vector3()
+const _c = new THREE.Vector3()
 
 /**
  * Nappe de tissu simulée en Verlet — une **grille** de particules, pas une ligne.
@@ -132,12 +150,25 @@ export class ClothSheet {
      * emporte son écharpe comme un décor collé, qui ne traîne jamais derrière.
      */
     accel?: THREE.Vector3,
+    extra?: ClothExtras,
   ) {
     // Pas borné : une frame longue (onglet en arrière-plan) ferait exploser
     // l'intégration.
     const h = Math.min(dt, 1 / 45)
     const g = cfg.gravity * h * h * 60
     const n = this.points.length
+
+    const carry = extra?.carry
+    if (carry) {
+      const k = extra?.carryK ?? 1
+      for (let i = 0; i < n; i++) {
+        const w = k * (1 - this.pin[i])
+        if (w <= 0) continue
+        this.points[i].lerp(_c.copy(this.points[i]).applyMatrix4(carry), w)
+        this.prev[i].lerp(_c.copy(this.prev[i]).applyMatrix4(carry), w)
+      }
+    }
+    const floor = extra?.floor
 
     for (let i = 0; i < n; i++) {
       const p = this.points[i]
@@ -181,7 +212,25 @@ export class ClothSheet {
           const d = _push.length()
           if (d > 1e-6 && d < s.radius) p.copy(s.center).addScaledVector(_push, s.radius / d)
         }
+        // Sol : on remonte, et le frottement mange la glissade.
+        if (floor) {
+          const under = floor.d - floor.n.dot(p)
+          if (under > 0) {
+            p.addScaledVector(floor.n, under)
+            this.prev[i].lerp(p, 0.35)
+          }
+        }
       }
     }
+  }
+
+  /**
+   * Accroche la particule `i` à `v`, sans vitesse : le bout d'une chaîne
+   * pendue à une autre, qui la suit (à retenir avec `pin` = 1).
+   */
+  anchor(i: number, v: THREE.Vector3) {
+    this.points[i].copy(v)
+    this.prev[i].copy(v)
+    this.rest[i].copy(v)
   }
 }

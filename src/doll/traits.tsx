@@ -1,12 +1,11 @@
 import * as THREE from 'three'
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { Inertia, followLimbs, useRigBones } from './rig'
+import { FrameCarry, followLimbs, localFloor, useRigBones } from './rig'
 import { CrossStitch, Thread, Pin, jitterColor, pinColor } from './parts'
 import { armClearance, armSpheres, bodyRadius, bodySpheres, onTorso, onHeadPolar } from './surface'
 import { ClothSheet } from '../core/cloth'
 import { Scarf, scarfMetrics } from './scarf'
-import { useDisposable } from '../core/useDisposable'
 import {
   buildPatches,
   patchHoles,
@@ -62,11 +61,22 @@ export const TRAITS: TraitDef[] = [
  * Le pas est plus court que le diamètre : deux anneaux voisins doivent se
  * chevaucher pour se traverser. Au-delà la chaîne se disloque en perles.
  */
+/**
+ * **Signature de silhouette : un collier énorme et lourd.** Maillons près de
+ * deux fois plus gros qu'un collier ordinaire, et devant, une chaîne qui pend
+ * jusqu'au ventre avec un cadenas au bout. Tout ce qui pend garde son élan dans
+ * le monde (`FrameCarry`) : quand la poupée frappe, la chaîne et le cadenas
+ * suivent le coup avec retard, balancent, reviennent cogner le ventre.
+ */
+const HEFT = 1.75
+/** Longueur de la chaîne pendante, en fraction de la hauteur du torse. */
+const HANG = 0.42
+
 function Necklace({ p, seed }: { p: DollParams; seed: number }) {
   const rnd = mulberry32(seed + 4903)
   // Rayon en travers de la chaîne, allongement du maillon le long d'elle, et
   // grosseur du fil.
-  const across = p.shape.torsoRadius * (0.1 + rnd() * 0.022) * p.chain.size
+  const across = p.shape.torsoRadius * (0.1 + rnd() * 0.022) * p.chain.size * HEFT
   const elong = (1.4 + rnd() * 0.3) * p.chain.elong
   const tube = across * p.chain.wire
   const half = across * elong
@@ -75,14 +85,6 @@ function Necklace({ p, seed }: { p: DollParams; seed: number }) {
   // métal ne sont jamais exactement du même ton.
   const [metalBase, roughness] = CHAIN_METALS[Math.floor(rnd() * CHAIN_METALS.length)]
   const metal = jitterColor(metalBase, rnd, 0.07)
-
-  const geo = useDisposable(
-    () =>
-      Object.assign(new THREE.TorusGeometry(across, tube, 8, 26), {
-        dispose() {},
-      }) as never,
-    [across, tube],
-  ) as unknown as THREE.TorusGeometry
 
   const setup = useMemo(() => {
     // La chaîne passe **par-dessus la boule d'épaule**, pas au-dessus d'elle.
@@ -152,6 +154,28 @@ function Necklace({ p, seed }: { p: DollParams; seed: number }) {
     return { rest, pin, roll, tilt, count }
   }, [p, seed, across, tube, half])
 
+  /**
+   * Chaîne pendante : accrochée au point le plus bas du tour, devant, elle
+   * descend contre la poitrine. Au repos, chaque maillon est posé au rayon du
+   * corps à sa hauteur, un peu en avant.
+   */
+  const hang = useMemo(() => {
+    const top = Math.round(setup.count / 4)
+    const from = setup.rest[top]
+    const pitch = half * 1.2
+    // Compte déduit de la longueur voulue : fixé, sept gros maillons
+    // faisaient descendre le cadenas sous les pieds.
+    const links = Math.max(2, Math.min(6, Math.round((p.shape.torsoHeight * HANG) / pitch)))
+    const rest: THREE.Vector3[] = []
+    for (let j = 0; j <= links; j++) {
+      const y = from.y - j * pitch
+      const z = Math.max(from.z, bodyRadius(p, y) + tube * 2 + across)
+      rest.push(new THREE.Vector3(from.x, y, j === 0 ? from.z : z))
+    }
+    const pin = rest.map((_, j) => (j === 0 ? 1 : 0))
+    return { top, rest, pin, links }
+  }, [setup, half, tube, across, p])
+
   const chain = useMemo(
     () =>
       new ClothSheet(
@@ -165,6 +189,10 @@ function Necklace({ p, seed }: { p: DollParams; seed: number }) {
       ),
     [setup, seed],
   )
+  const drop = useMemo(
+    () => new ClothSheet(hang.rest, hang.pin, hang.rest.length, 1, { shear: 0, bend: 0.02, slack: 0 }, seed + 1),
+    [hang, seed],
+  )
 
   const colliders = useMemo(
     () => [
@@ -174,8 +202,28 @@ function Necklace({ p, seed }: { p: DollParams; seed: number }) {
     [p, tube],
   )
 
+  /**
+   * Tous les maillons en **un seul dessin** : un maillage par maillon coûtait
+   * un appel de rendu chacun — plus de trente pour ce seul collier.
+   */
+  const links = useMemo(() => {
+    const geo = new THREE.TorusGeometry(across, tube, 8, 22)
+    const mat = new THREE.MeshStandardMaterial({ color: metal, metalness: 0.9, roughness })
+    const mesh = new THREE.InstancedMesh(geo, mat, setup.count + hang.links)
+    mesh.castShadow = true
+    mesh.frustumCulled = false
+    return mesh
+  }, [across, tube, metal, roughness, setup.count, hang.links])
+  useEffect(
+    () => () => {
+      links.geometry.dispose()
+      ;(links.material as THREE.Material).dispose()
+    },
+    [links],
+  )
+
   const group = useRef<THREE.Group>(null!)
-  const links = useRef<(THREE.Object3D | null)[]>([])
+  const lock = useRef<THREE.Group>(null!)
   const scratch = useRef({
     quat: new THREE.Quaternion(),
     gravity: new THREE.Vector3(),
@@ -185,70 +233,97 @@ function Necklace({ p, seed }: { p: DollParams; seed: number }) {
     y: new THREE.Vector3(),
     z: new THREE.Vector3(),
     m: new THREE.Matrix4(),
+    o: new THREE.Object3D(),
   }).current
 
   const rig = useRigBones()
-  const inertia = useMemo(() => new Inertia(), [])
+  const carry = useMemo(() => new FrameCarry(), [])
+  const floor = useMemo(() => ({ n: new THREE.Vector3(0, 1, 0), d: -1e9 }), [])
   useFrame((_, dt) => {
-    const { quat, gravity, tan, radial, x, y, z, m } = scratch
+    const { quat, gravity, tan, radial, x, y, z, m, o } = scratch
     // Obstacles des bras sur la pose animée (en fin de liste).
     if (rig) followLimbs(rig, group.current, colliders, colliders.length - 8, 'arm', p.limbs.armLength)
     group.current.getWorldQuaternion(quat)
     gravity.set(0, -1, 0).applyQuaternion(quat.invert())
-    // Chaîne légère : elle doit pendre, pas rebondir.
+    const delta = carry.update(group.current)
+    if (rig) localFloor(group.current, rig.floorY + tube, floor)
+    const extra = { carry: delta, carryK: 1, floor: rig ? floor : null }
+    // Lourd : le tour pèse et balance, la chaîne pendante plus encore, peu
+    // amortie — un pendule, pas une ficelle.
     chain.step(
       dt,
-      { gravity: p.chain.weight, damping: p.chain.drape, iterations: 10 },
+      { gravity: Math.max(p.chain.weight, 0.4), damping: Math.min(p.chain.drape, 0.2), iterations: 10 },
       colliders,
       gravity,
-      inertia.update(group.current, dt),
+      undefined,
+      extra,
     )
+    drop.anchor(0, chain.points[hang.top])
+    drop.step(dt, { gravity: 0.9, damping: 0.05, iterations: 8 }, colliders, gravity, undefined, extra)
 
-    const pts = chain.points
-    const n = setup.count
-    for (let i = 0; i < n; i++) {
-      const o = links.current[i]
-      if (!o) continue
-      o.position.copy(pts[i])
-
-      // La tangente vient des **voisins simulés**, pas du tracé de repos : c'est
-      // elle qui fait suivre l'orientation des maillons quand la chaîne bouge.
-      tan.subVectors(pts[(i + 1) % n], pts[(i + n - 1) % n])
+    // Orientation d'un maillon : tangente des voisins simulés, plans
+    // alternés à ±45° de la radiale.
+    const place = (k: number, pts: readonly THREE.Vector3[], i: number, loop: boolean, roll: number, tilt: number) => {
+      const n = pts.length
+      const a = loop ? (i + n - 1) % n : Math.max(0, i - 1)
+      const b = loop ? (i + 1) % n : Math.min(n - 1, i + 1)
+      tan.subVectors(pts[b], pts[a])
       if (tan.lengthSq() < 1e-12) tan.set(1, 0, 0)
       tan.normalize()
       radial.set(pts[i].x, 0, pts[i].z)
       if (radial.lengthSq() < 1e-10) radial.set(0, 0, 1)
       radial.normalize()
-
-      // Le tore a son axe en +Z ; la tangente va en X, et Z sur la normale du
-      // plan du maillon. Tous les plans contiennent la tangente — sans quoi les
-      // maillons ne s'enfilent pas — et deux voisins sont à quatre-vingt-dix
-      // degrés l'un de l'autre, ce qui fait l'entrelacement. L'alternance est
-      // posée à ±45° de la radiale : à 0/90 un maillon sur deux se retrouve à
-      // plat dans le plan horizontal, sur la tranche vu de face, et il disparaît.
-      z.copy(radial).applyAxisAngle(tan, setup.roll[i])
-      x.copy(tan).applyAxisAngle(z, setup.tilt[i])
+      z.copy(radial).applyAxisAngle(tan, roll)
+      x.copy(tan).applyAxisAngle(z, tilt)
       y.crossVectors(z, x)
       m.makeBasis(x, y, z)
+      o.position.copy(pts[i])
       o.quaternion.setFromRotationMatrix(m)
+      o.scale.set(elong, 1, 1)
+      o.updateMatrix()
+      links.setMatrixAt(k, o.matrix)
     }
+    const n = setup.count
+    for (let i = 0; i < n; i++) place(i, chain.points, i, true, setup.roll[i], setup.tilt[i])
+    // La chaîne pendante : le maillon 0 est l'accroche, déjà dessinée.
+    const hl = hang.links
+    for (let j = 1; j <= hl; j++) {
+      place(n + j - 1, drop.points, j, false, (j % 2 ? 1 : -1) * Math.PI * 0.25, 0)
+    }
+    links.instanceMatrix.needsUpdate = true
+
+    // Cadenas au bout : pendu dans l'axe du dernier maillon, face dehors.
+    const last = drop.points[hl]
+    tan.subVectors(last, drop.points[hl - 1]).normalize()
+    radial.set(last.x, 0, last.z).normalize()
+    y.copy(tan).negate()
+    z.copy(radial).addScaledVector(y, -radial.dot(y)).normalize()
+    x.crossVectors(y, z)
+    m.makeBasis(x, y, z)
+    lock.current.position.copy(last)
+    lock.current.quaternion.setFromRotationMatrix(m)
   })
 
+  // Cadenas : anse en demi-tore, corps bombé, trou de serrure. Proportionné au
+  // maillon — un cadenas de poupée, gros comme sa main.
+  const L = across * 3.2
   return (
     <group ref={group}>
-      {setup.rest.map((_, i) => (
-        <mesh
-          key={i}
-          ref={(el) => {
-            links.current[i] = el
-          }}
-          geometry={geo}
-          scale={[elong, 1, 1]}
-          castShadow
-        >
+      <primitive object={links} />
+      <group ref={lock}>
+        <mesh position={[0, -L * 0.28, 0]} rotation={[0, 0, 0]} castShadow>
+          <torusGeometry args={[L * 0.3, tube * 1.3, 8, 20, Math.PI]} />
           <meshStandardMaterial color={metal} metalness={0.9} roughness={roughness} />
         </mesh>
-      ))}
+        <mesh position={[0, -L * 0.72, 0]} scale={[1, 0.85, 0.45]} castShadow>
+          <sphereGeometry args={[L * 0.45, 20, 14]} />
+          <meshStandardMaterial color={jitterColor('#8a6a3a', mulberry32(seed + 7), 0.05)} metalness={0.85} roughness={0.35} />
+        </mesh>
+        <mesh position={[0, -L * 0.75, L * 0.2]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[L * 0.06, L * 0.06, L * 0.04, 10]} />
+          <meshStandardMaterial color="#1c1612" roughness={0.8} />
+        </mesh>
+      </group>
     </group>
   )
 }

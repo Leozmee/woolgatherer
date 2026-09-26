@@ -24,6 +24,7 @@ import {
   shellShader,
 } from './fuzz'
 import { dollLayout } from './layout'
+import { Zip, zipFuzzShader, zipHole } from './zip'
 import type { PatchHoles } from './patch'
 import { headWidth, onHeadPolar, onTorso } from './surface'
 import type { DollParams } from './params'
@@ -78,12 +79,15 @@ function Fuzz({
   p,
   holes,
   joint,
+  zip,
 }: {
   geometry: THREE.BufferGeometry
   maps: WoolMaps
   p: DollParams
   /** Pli du membre porteur (genou, coude) : le duvet le suit. */
   joint?: Joint
+  /** Bande du crâne sans duvet, sous la fermeture éclair (`zipHole`). */
+  zip?: ReturnType<typeof zipHole>
   /** Pièces cousues sous lesquelles retirer la laine — le torse seul en a. */
   holes?: PatchHoles
 }) {
@@ -105,12 +109,14 @@ function Fuzz({
     const hole = holes ? holeShader(uni) : null
     const shell = shellShader(shellUni)
     const bend = joint ? jointShader(joint) : null
+    const zipCut = zip ? zipFuzzShader(zip) : null
     return (sh: THREE.WebGLProgramParametersWithUniforms) => {
       hole?.(sh)
       shell(sh)
       bend?.(sh)
+      zipCut?.(sh)
     }
-  }, [uni, shellUni, holes, joint])
+  }, [uni, shellUni, holes, joint, zip])
   useMemo(() => {
     uni.uHoleMask.value = holes?.mask ?? null
     uni.uHoleCount.value = holes?.count ?? 0
@@ -122,7 +128,9 @@ function Fuzz({
     <mesh geometry={shells} renderOrder={1}>
       <meshPhysicalMaterial
         onBeforeCompile={compile}
-        customProgramCacheKey={() => `fuzz${holes ? '-holes' : ''}${joint ? '-joint' : ''}`}
+        customProgramCacheKey={() =>
+          `fuzz${holes ? '-holes' : ''}${joint ? '-joint' : ''}${zip ? `-zip${zip.half.toFixed(4)}${zip.top.toFixed(4)}${zip.bottom.toFixed(4)}` : ''}`
+        }
         map={maps[0]}
         alphaMap={maps[3]}
         // Hors de la profondeur : le contour d'encre la lit, et chaque
@@ -386,6 +394,9 @@ export function Doll({
     hair.crown,
   )
 
+  // Fermeture éclair : bande de duvet retirée sous son ruban.
+  const zipBand = useMemo(() => zipHole(p), [p])
+
   // --- visage ---
   const lift = s.lumps * s.headRadius * 0.7 + 0.004
   /**
@@ -543,6 +554,7 @@ export function Doll({
       leg: { [-1]: null, 1: null },
       forearm: { [-1]: null, 1: null },
       shin: { [-1]: null, 1: null },
+      floorY: 0,
     }),
     [],
   )
@@ -590,6 +602,9 @@ export function Doll({
       bones.forearm[side] = lowerSpring.current[`arm${side}`]
       bones.shin[side] = lowerSpring.current[`leg${side}`]
     }
+    root.current.getWorldPosition(_rootW)
+    // Sol sous la poupée : sous la racine, pas sous le bassin (qui saute).
+    bones.floorY = (fighter.drive ? _rootW.y - fighter.pos.y : _rootW.y) + L.floorY
     bones.arm[-1] = armL.current
     bones.arm[1] = armR.current
     bones.leg[-1] = legL.current
@@ -642,8 +657,12 @@ export function Doll({
     // Avant-bras et tibias : plus mous que le haut du membre. C'est eux qui
     // arrivent en dernier — le fouet d'un coup, le ballant d'un bras.
     const lowCfg = { ...limbCfg, stiffness: limbCfg.stiffness * 0.7 }
-    springs.current.foreL.update(dt, lowCfg)
-    springs.current.foreR.update(dt, lowCfg)
+    // Les mains ne rentrent ni dans le ventre ni dans la tête : en parade ou
+    // au revers, le bras s'enroule autour du corps au lieu de le traverser.
+    updateBodyColliders()
+    const hands = bodyColliders.hands
+    springs.current.foreL.update(dt, lowCfg, hands)
+    springs.current.foreR.update(dt, lowCfg, hands)
     springs.current.shinL.update(dt, lowCfg)
     springs.current.shinR.update(dt, lowCfg)
     // Pied planté : les ressorts de la jambe s'effacent, sinon ils
@@ -672,6 +691,7 @@ export function Doll({
     }
 
     if (weaponRef.current) aimWeapon(weaponRef.current)
+    if (fighter.ghostRequest) writeSilhouette()
     // Atelier : de quoi mesurer le ressenti (voir les audits de CLAUDE.md).
     if (import.meta.env.DEV && fighter.drive)
       Object.assign(window, { __doll: { head: headBone.current, hips: hips.current, joints, squash: squash.current } })
@@ -701,6 +721,8 @@ export function Doll({
       grounded: fighter.grounded,
       legLength: lb.legLength,
       onLand: (side, speed, dur) => fighter.land(speed, side, dur, stepper.feet[side].pos),
+      cycle: fighter.cycle,
+      glide: fighter.gliding,
     })
     const w = stepper.weight
     if (import.meta.env.DEV) Object.assign(window, { __stepper: stepper, __legK: _legK })
@@ -728,6 +750,73 @@ export function Doll({
       joints.leg[side].uStretch.value = 1 + (st - 1) * w
     }
     return w
+  }
+
+  /**
+   * Silhouette pour les images rémanentes (`Ghosts`) : quatorze ellipsoïdes
+   * en repère monde — tête, torse, et pour chaque membre ses deux segments et
+   * son bout. Écrite seulement quand le combattant la demande (dash,
+   * glissade) : c'est la poupée entière en quatorze matrices, lisible en
+   * ombre, pour le prix d'un seul dessin instancié.
+   */
+  const writeSilhouette = () => {
+    const out = fighter.silhouette
+    let k = 0
+    const put = (obj: THREE.Object3D, y: number, sx: number, sy: number, sz: number) => {
+      _sm.makeTranslation(0, y, 0)
+      _ss.makeScale(sx, sy, sz)
+      _sm.multiply(_ss).premultiply(obj.matrixWorld)
+      _sm.toArray(out, k * 16)
+      k++
+    }
+    headBone.current.updateWorldMatrix(true, false)
+    put(headBone.current, L.headY, s.headRadius * 1.05, s.headRadius * s.headSquash, s.headRadius)
+    put(body.current, 0, s.torsoRadius, s.torsoHeight * 0.5, s.torsoRadius * 0.86)
+    for (const side of [-1, 1] as const) {
+      for (const kind of ['arm', 'leg'] as const) {
+        const upper = kind === 'arm' ? (side === -1 ? armL.current : armR.current) : side === -1 ? legL.current : legR.current
+        const lowerObj = lowerSpring.current[`${kind}${side}`]
+        if (!lowerObj) continue
+        const len = kind === 'arm' ? lb.armLength : lb.legLength
+        const r = kind === 'arm' ? lb.armRadius : lb.legRadius
+        const st = kind === 'leg' ? joints.leg[side].uStretch.value : 1
+        const a = len * JOINT * st
+        const b = len * (1 - JOINT) * st
+        lowerObj.updateWorldMatrix(true, false)
+        put(upper, -a * 0.5, r, a * 0.5 + r * 0.5, r)
+        put(lowerObj, -b * 0.5, r, b * 0.5 + r * 0.5, r)
+        const tip = kind === 'arm' ? r * 1.35 : r * 1.3
+        put(lowerObj, -b - (kind === 'arm' ? r * 0.35 : r * 0.3), tip, tip, tip)
+      }
+    }
+  }
+
+  /**
+   * Volumes du corps en repère monde, relus chaque image : tête, haut et bas
+   * du torse. `list` pour la lame (rayons nus), `hands` pour les mains (rayon
+   * de la main ajouté : c'est le centre de la main qui est contraint).
+   */
+  const bodyColliders = useMemo(() => {
+    const mk = () => ({ center: new THREE.Vector3(), radius: 0 })
+    return { list: [mk(), mk(), mk()], hands: [mk(), mk(), mk()] }
+  }, [])
+  const updateBodyColliders = () => {
+    const [head, chest, belly] = bodyColliders.list
+    headBone.current.updateWorldMatrix(true, false)
+    head.center.set(0, L.headY, 0).applyMatrix4(headBone.current.matrixWorld)
+    head.radius = s.headRadius * 1.02
+    body.current.updateWorldMatrix(true, false)
+    // Le torse est un ellipsoïde effilé vers le haut et aplati d'avant en
+    // arrière (0,86) : rayon pris à la hauteur de chaque sphère, un peu rentré.
+    const at = (y: number) => s.torsoRadius * (1 + (s.torsoTaper - 1) * (y + 0.5)) * 0.88
+    chest.center.set(0, s.torsoHeight * 0.12, 0).applyMatrix4(body.current.matrixWorld)
+    chest.radius = at(0.12)
+    belly.center.set(0, -s.torsoHeight * 0.18, 0).applyMatrix4(body.current.matrixWorld)
+    belly.radius = at(-0.18)
+    bodyColliders.list.forEach((c, i) => {
+      bodyColliders.hands[i].center.copy(c.center)
+      bodyColliders.hands[i].radius = c.radius + lb.armRadius * 1.1
+    })
   }
 
   /**
@@ -764,6 +853,8 @@ export function Doll({
      * dépassait sous le sol (mesuré : 200 images sur 600 d'appuis au hasard).
      * On relève alors la lame juste assez, sans changer son cap.
      */
+    // Le corps d'abord, le sol ensuite : c'est le sol qui a le dernier mot.
+    for (const c of bodyColliders.list.slice(0, 3)) avoidSphere(_hand, _dir, weaponLength, c.center, c.radius + s.headRadius * 0.04)
     const minY = (floor - _hand.y) / weaponLength
     if (_dir.y < minY) {
       const dy = Math.max(-1, Math.min(1, minY))
@@ -910,7 +1001,12 @@ export function Doll({
               <mesh geometry={headGeo} castShadow receiveShadow>
                 <Wool maps={headMaps} p={p} />
               </mesh>
-              <Fuzz geometry={headGeo} maps={headMaps} p={p} />
+              <Fuzz geometry={headGeo} maps={headMaps} p={p} zip={zipBand} />
+              {/* Fermeture éclair à l'arrière du crâne : ruban, dents et
+                  curseur fusionnés, languette sur ressort (voir `zip.tsx`). */}
+              <Batched deps={batchDeps}>
+                <Zip p={p} />
+              </Batched>
               <Batched deps={batchDeps}>{slots.head}</Batched>
 
               {style === 'locks' ? (
@@ -976,6 +1072,30 @@ export function Doll({
 function isInside(o: THREE.Object3D, parent: THREE.Object3D) {
   for (let p = o.parent; p; p = p.parent) if (p === parent) return true
   return false
+}
+
+const _v = new THREE.Vector3()
+const _n = new THREE.Vector3()
+const _sm = new THREE.Matrix4()
+const _ss = new THREE.Matrix4()
+
+/**
+ * Écarte une lame (de `from`, direction unitaire `dir`, longueur `len`) d'une
+ * sphère, en la faisant pivoter autour de la main : le point le plus proche
+ * du centre est ramené sur la surface. Rien si la main est déjà dedans (une
+ * parade devant le visage) — on ne sait pas de quel côté sortir.
+ */
+function avoidSphere(from: THREE.Vector3, dir: THREE.Vector3, len: number, center: THREE.Vector3, radius: number) {
+  _v.subVectors(center, from)
+  if (_v.lengthSq() <= radius * radius) return
+  const t = Math.max(0, Math.min(len, _v.dot(dir)))
+  _n.copy(from).addScaledVector(dir, t).sub(center)
+  const d = _n.length()
+  if (d >= radius || t < 1e-4) return
+  if (d < 1e-5) _n.set(0, 1, 0).addScaledVector(dir, -dir.y)
+  _n.normalize()
+  // Nouveau point à la surface, la lame repasse par lui.
+  dir.copy(center).addScaledVector(_n, radius).sub(from).normalize()
 }
 
 const _hand = new THREE.Vector3()
