@@ -11,7 +11,7 @@ import { headGeometry, torsoGeometry, limbGeometry, tipGeometry } from './geomet
 import { Pin, jitterColor, pinColor } from './parts'
 import { EYE_SCALE, Face, faceLook, type FaceLook } from './face'
 import { makeWoodTexture } from './wood'
-import { hairLook, useTraitSlots, woolTone, type LimbSlot, type TraitId } from './traits'
+import { crownPins, hairLook, useTraitSlots, woolTone, type LimbSlot, type TraitId } from './traits'
 import { makeCordTexture, makeYarnTexture } from '../core/cord'
 import { Hairdo, hairStyleFor, type HairStyle } from './hairstyles'
 import { Locks, useLockAnchors } from './hair'
@@ -186,7 +186,10 @@ export function Doll({
   hairStyle: forcedStyle,
   fighter: forcedFighter,
   weapon = false,
+  crown = false,
 }: {
+  /** Couronne d'épingles : un accessoire tiré par la planche (`boardCrowns`). */
+  crown?: boolean
   p: DollParams
   /**
    * Lecteur d'animation piloté de l'extérieur (arène, jeu). Sans lui la
@@ -436,8 +439,9 @@ export function Doll({
   const headPins = useMemo(() => {
     const rnd = mulberry32(p.seed + 4711)
     const length = s.headRadius * 0.85
-    // Une poupée déjà couronnée d'épingles n'en porte pas une isolée en plus.
-    const count = trait === 'couronne' ? 0 : p.pins.head
+    // Une poupée couronnée d'épingles n'en porte pas une isolée en plus.
+    if (crown) return crownPins(p)
+    const count = p.pins.head
 
     return Array.from({ length: count }, () => {
       // Sur le côté du crâne, à hauteur de tempe : de face on voit la tige
@@ -454,7 +458,7 @@ export function Doll({
 
       return { pos: surf.pos, quat, length, color: pinColor(rnd) }
     })
-  }, [p, s.headRadius, trait])
+  }, [p, s.headRadius, crown])
 
   // --- épingles plantées dans le torse ---
   const pins = useMemo(() => {
@@ -510,7 +514,7 @@ export function Doll({
   })
 
   // Tout ce qui change le contenu des pièces fusionnées : la fusion est refaite.
-  const batchDeps = [p, trait, tone, look, eyes, style, weapon]
+  const batchDeps = [p, trait, tone, look, eyes, style, weapon, crown]
 
   // --- ressorts ---
   const springs = useRef<Record<string, SpringBone> | null>(null)

@@ -322,7 +322,7 @@ export function useDollParams(): { params: DollParams; regenerate: () => void } 
     // ce module, un import en valeur créerait un cycle.
     single: {
       value: 'couture',
-      options: ['couture', 'echarpe', 'couronne', 'collier', 'ceinture', 'noeudPap'],
+      options: ['couture', 'echarpe', 'nu', 'collier', 'ceinture', 'noeudPap'],
       label: 'variante (seule)',
     },
     // Liste littérale pour la même raison : `hairstyles` dépend de ce module.

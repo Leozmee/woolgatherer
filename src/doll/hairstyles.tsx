@@ -167,6 +167,9 @@ function still(geo: THREE.BufferGeometry, mover = -1, free = 0, fling = free): T
   geo.setAttribute('aFree', new THREE.Float32BufferAttribute(new Float32Array(n).fill(free), 1))
   geo.setAttribute('aFling', new THREE.Float32BufferAttribute(new Float32Array(n).fill(fling), 1))
   geo.setAttribute('aPhase', new THREE.Float32BufferAttribute(new Float32Array(n), 1))
+  // Mêmes attributs que `yarn`, sinon la fusion de la coupe échoue en entier
+  // (la pelote du chignon faisait disparaître toute la chevelure).
+  geo.setAttribute('aTint', new THREE.Float32BufferAttribute(new Float32Array(n), 1))
   return geo
 }
 
@@ -782,7 +785,9 @@ function bowlCut(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   const sector = (az: number) =>
     first + (Math.floor(((((az % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2)) * SECTORS) % SECTORS)
   radiate(p, rnd, r, count, hairline(p, end, 2.3), out, { wave, moverOf: sector, volume: R * 0.045 })
-  sideLocks(p, rnd, r, hairline(p, end, 2.3), out)
+  // Les mèches partent de l'épi, au bout haut de la fermeture, comme les autres.
+  const zip = zipBand(p, r)
+  sideLocks(p, rnd, r, hairline(p, end, 2.3), out, () => dirOf(Math.PI, Math.min(0.99, zip.top + 0.04)))
 }
 
 /**
@@ -799,19 +804,40 @@ function bowlCut(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
  * Un ressort par mèche, pivot au centre du crâne et bout vers la mèche, sans
  * gravité : la géométrie pend déjà (voir « Repos d'une mèche pendante »).
  */
-function sideLocks(p: DollParams, rnd: () => number, r: number, limit: (az: number) => number, out: Parts) {
+function sideLocks(
+  p: DollParams,
+  rnd: () => number,
+  r: number,
+  limit: (az: number) => number,
+  out: Parts,
+  /**
+   * Racine de la mèche, direction depuis le centre du crâne : là où partent
+   * les autres cheveux de la coupe (épi, raie). Partie de la tempe, elle
+   * sortait de nulle part à mi-hauteur, collée par-dessus la coupe.
+   */
+  rootOf: (sx: number) => THREE.Vector3,
+) {
   const R = p.shape.headRadius
   const safe = faceSafe(p)
   const hang = R * (0.55 + rnd() * 0.3)
   const width = R * (0.13 + rnd() * 0.04)
-  const strands = 16
-  const N = 26
+  const strands = 12
+  const N = 22
   for (const sx of [-1, 1]) {
     const az = sx * (safe.sideAz + 0.05)
     const sy0 = clamp(limit(az) + 0.35, 0.3, 0.85)
     const sy1 = -0.45
-    // Axe de la mèche : sur le crâne, au-dessus de la coupe, puis à la verticale.
-    const onHeadPart = 0.55
+    const root = rootOf(sx).normalize()
+    const temple = dirOf(az, sy0)
+    const low = dirOf(az, sy1)
+    // Part du trajet sur le crâne jusqu'à la tempe (depuis la racine), en
+    // proportion des angles parcourus.
+    const a1 = root.angleTo(temple)
+    const a2 = temple.angleTo(low)
+    const split = a1 / Math.max(1e-6, a1 + a2)
+    // Axe de la mèche : de la racine à la tempe, descend sur le crâne au-dessus
+    // de la coupe, puis à la verticale.
+    const onHeadPart = 0.68
     const lift = r * 3.2
     let rMax = 0
     const axis: THREE.Vector3[] = []
@@ -820,8 +846,13 @@ function sideLocks(p: DollParams, rnd: () => number, r: number, limit: (az: numb
       const t = k / N
       let q: THREE.Vector3
       if (t <= onHeadPart) {
-        const sy = sy0 + (sy1 - sy0) * (t / onHeadPart)
-        q = onHeadPolar(p, az, sy, lift).pos
+        const u = t / onHeadPart
+        const d =
+          u < split
+            ? root.clone().lerp(temple, u / Math.max(1e-6, split)).normalize()
+            : temple.clone().lerp(low, (u - split) / Math.max(1e-6, 1 - split)).normalize()
+        const sy = d.y
+        q = onDir(p, d, u === 0 ? -r * 2 : lift, POLE).pos
         const h = Math.hypot(q.x, q.z)
         if (sy < 0 && h < rMax) {
           q.x *= rMax / h
@@ -833,7 +864,7 @@ function sideLocks(p: DollParams, rnd: () => number, r: number, limit: (az: numb
         const last = axis[axis.length - 1]
         // Pend, et la pointe revient un peu vers la joue.
         const inward = new THREE.Vector3(-last.x, 0, -last.z).normalize()
-        q = axis[Math.round(onHeadPart * N)]
+        q = axis[Math.floor(onHeadPart * N)]
           .clone()
           .addScaledVector(DOWN, hang * u)
           .addScaledVector(inward, R * 0.05 * u * u)
@@ -863,12 +894,12 @@ function sideLocks(p: DollParams, rnd: () => number, r: number, limit: (az: numb
         const a = axis[k0].clone().lerp(axis[k0 + 1], f - k0)
         const side = across[k0].clone().lerp(across[k0 + 1], f - k0).normalize()
         const close = smooth(0.62, 1, t)
-        const w = width * (0.7 + 0.3 * Math.sin(Math.PI * Math.min(1, t * 1.6))) * (1 - 0.9 * close)
+        // Serrée à la racine, elle s'élargit en quittant le sommet.
+        const w = width * (0.25 + 0.75 * smooth(0, 0.3, t)) * (1 - 0.9 * close)
         const q = a
           .clone()
           .addScaledVector(side, off * w * 0.5)
           .add(a.clone().setY(0).normalize().multiplyScalar(depth * r * 1.6 * (1 - close)))
-        if (k === 0) q.addScaledVector(axis[0].clone().normalize(), -lift - r * 2)
         pts.push(q)
       }
       out.yarn.push(
@@ -938,6 +969,8 @@ function radiate(
     pinch?: number
     /** Un pivot par mèche : index du pivot de la mèche 0, les suivants à la suite. */
     clumpMover?: number
+    /** Mèches (index) dont la pointe s'éclaircit (`YarnOpts.tint`). */
+    tinted?: readonly number[]
     /**
      * Évasement de l'arrière : les pointes de la nuque et des côtés arrière
      * partent vers l'extérieur, en unités monde. C'est ce qui donne l'allure
@@ -1085,6 +1118,7 @@ function radiate(
             free: (t) => 0.4 + 0.6 * t ** 0.9,
             fling: (t) => (0.45 + 0.55 * reach) * t ** 0.9,
             phase,
+            tint: o.tinted?.includes(clump) ? (t) => smooth(0.55, 0.97, t) : undefined,
           }),
     )
   }
@@ -1336,7 +1370,7 @@ function pigtails(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
   pulled(p, rnd, r, ties.map((t) => t.pos), out, NAPE_LOW + rnd() * 0.12)
   for (const t of ties) bunch(p, rnd, r, t, L, out, { clumps: 5, count: 34 + Math.floor(rnd() * 8), flare: 7 + rnd() * 2 })
   // Deux mèches qui encadrent le visage : l'allure des couettes d'anime.
-  sideLocks(p, rnd, r, hairline(p, NAPE_LOW), out)
+  sideLocks(p, rnd, r, hairline(p, NAPE_LOW), out, (sx) => dirOf(sx * 0.12, 0.9))
 }
 
 /**
@@ -1377,7 +1411,7 @@ function ponytail(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
     axis,
     flare: 4.5 + rnd() * 2,
     // Un faisceau épais : le croquis montre une queue pleine, pas un pinceau.
-    count: 52 + Math.floor(rnd() * 14),
+    count: 46 + Math.floor(rnd() * 10),
     tight: 3.6,
     spring: {
       pivot: knot.clone(),
@@ -1517,6 +1551,24 @@ function sweptFringe(p: DollParams, rnd: () => number, r: number, frontLine: (az
 }
 
 /**
+ * Mèches aux pointes éclaircies de la grande frange : aucune, une ou deux,
+ * prises parmi celles qu'on voit de face (sur les côtés du visage, pas dans le
+ * dos). Tirage à part (`seed + 9191`) : la suite de la graine de la coupe ne
+ * bouge pas, la chevelure reste la même, seules des pointes s'éclaircissent.
+ */
+function tintedClumps(p: DollParams, clumps: number): number[] {
+  const rnd = mulberry32(p.seed + 9191)
+  const count = Math.floor(rnd() * 3)
+  const seen = Array.from({ length: clumps }, (_, c) => c).filter((c) => {
+    const az = ((c + 0.5) / clumps) * Math.PI * 2
+    return Math.cos(az) > -0.3 && Math.abs(Math.sin(az)) > 0.35
+  })
+  const out: number[] = []
+  while (out.length < count && seen.length) out.push(seen.splice(Math.floor(rnd() * seen.length), 1)[0])
+  return out
+}
+
+/**
  * Grande frange : cheveux longs et raides, et une frange épaisse qui balance.
  *
  * Deux pivots. Les longueurs ballottent autour du centre du crâne, comme la
@@ -1595,6 +1647,7 @@ function bangs(p: DollParams, rnd: () => number, yarnR: number, out: Parts) {
     // lieu de retomber — une chevelure qui ne tombe pas.
     flare: R * 0.09,
     extend: 0 * rnd(),
+    tinted: tintedClumps(p, CLUMPS),
   })
 
   /**

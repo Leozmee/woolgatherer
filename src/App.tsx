@@ -5,7 +5,7 @@ import { Leva } from 'leva'
 import { Doll } from './doll/Doll'
 import { useDollParams, type DollParams } from './doll/params'
 import { dollLayout } from './doll/layout'
-import { TRAITS, boardHair, boardTones } from './doll/traits'
+import { TRAITS, boardCrowns, boardHair, boardTones } from './doll/traits'
 import { applyMorph, boardMorphs, dollMorph } from './doll/morph'
 import { boardFaces } from './doll/face'
 import { boardHairStyles, HAIR_STYLE_NAMES, type HairStyle } from './doll/hairstyles'
@@ -175,6 +175,7 @@ function buildBoard(base: DollParams, offsetX: number) {
   const morphs = boardMorphs(base, TRAITS.length)
   const faces = boardFaces(base.seed, TRAITS.length)
   const hairStyles = boardHairStyles(base.seed, TRAITS.length)
+  const crowns = boardCrowns(base.seed, TRAITS.length)
   // Les pieds d'une rangée restent sur une même ligne de sol : chaque poupée
   // est recentrée sur sa propre hauteur, donc sans ce décalage une poupée
   // trapue flotterait au-dessus de ses voisines.
@@ -192,6 +193,7 @@ function buildBoard(base: DollParams, offsetX: number) {
       hair: hairs[i] as string | undefined,
       face: faces[i] as (typeof faces)[number] | undefined,
       hairStyle: hairStyles[i] as HairStyle | undefined,
+      crown: crowns[i],
       // À 0, la variation morpho rend le patron nu : pas d'archétype à nommer.
       subtitle: [base.board.morph > 0 ? morphs[i].archetype.name : null, HAIR_STYLE_NAMES[hairStyles[i]]]
         .filter(Boolean)
@@ -310,6 +312,7 @@ export default function App() {
       hair: undefined,
       face: undefined,
       hairStyle: p.board.hairStyle === 'auto' ? undefined : (p.board.hairStyle as HairStyle),
+      crown: false,
       subtitle: '',
       params,
       layout: dollLayout(params),
@@ -489,6 +492,7 @@ export default function App() {
                 hairColor={d.hair}
                 face={d.face}
                 hairStyle={d.hairStyle}
+                crown={d.crown}
                 fighter={arena ? fighter : undefined}
                 weapon={!!chosen}
               />

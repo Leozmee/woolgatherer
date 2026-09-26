@@ -1,11 +1,10 @@
 import * as THREE from 'three'
-import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { FrameCarry, followLimbs, localFloor, useRigBones } from './rig'
-import { CrossStitch, Thread, Pin, jitterColor, pinColor } from './parts'
+import { CrossStitch, Thread, jitterColor, pinColor } from './parts'
 import { armClearance, armSpheres, bodyRadius, bodySpheres, onTorso, onHeadPolar } from './surface'
 import { ClothSheet, type ClothExtras } from '../core/cloth'
-import { SpringBone } from '../core/springBone'
 import { Scarf, scarfMetrics } from './scarf'
 import { Streamer, streamerColliders, type StreamerRest } from './streamer'
 import {
@@ -36,7 +35,6 @@ export type TraitId =
   | 'collier'
   | 'echarpe'
   | 'ceinture'
-  | 'couronne'
   | 'noeudPap'
 
 export type TraitDef = { id: TraitId; name: string; note: string }
@@ -44,7 +42,10 @@ export type TraitDef = { id: TraitId; name: string; note: string }
 export const TRAITS: TraitDef[] = [
   { id: 'couture', name: 'COUTURE INTÉGRALE', note: 'suture faisant le tour du corps' },
   { id: 'echarpe', name: 'ÉCHARPE', note: 'laine enroulée au cou, deux pans' },
-  { id: 'couronne', name: 'COURONNE D’ÉPINGLES', note: 'épingles plantées en cercle' },
+  // Sans signe distinctif : le fond commun seul. La couronne d'épingles n'est
+  // plus un signe, c'est un accessoire tiré par une ou deux poupées de chaque
+  // planche, quel que soit leur signe (voir `crownPins`, `boardCrowns`).
+  { id: 'nu', name: 'SANS SIGNE', note: 'fond commun seul' },
   { id: 'collier', name: 'COLLIER', note: 'chaîne de petits anneaux entrelacés' },
   { id: 'ceinture', name: 'CEINTURE', note: 'cordon noué à la taille, boucle de bois' },
   { id: 'noeudPap', name: 'NŒUD PAPILLON', note: 'nœud de tissu au col' },
@@ -266,74 +267,6 @@ export function stepNecklace(
   keepAround(n.chain.points, n.chain.prev, n.setup.rest)
   n.drop.anchor(0, n.chain.points[n.hang.top])
   n.drop.step(dt, { gravity: 0.9, damping: 0.05, iterations: 8 }, n.colliders, gravity, undefined, extra)
-}
-
-/**
- * Couronne d'épingles : de **grandes** épingles plantées en cercle et dressées
- * vers le haut, chacune sur son ressort — elles vibrent au moindre geste.
- *
- * Signature de silhouette : sept épingles de 0,7 rayon plantées à plat sur le
- * crâne ne se lisaient pas de loin. Plus longues, redressées, elles dessinent
- * une couronne ; et comme tout ce qui dépasse d'une peluche, elles doivent
- * réagir quand elle bouge.
- *
- * Elles vivent dans le `<Batched>` de la tête mais s'en excluent (`noBatch`) :
- * fusionnées, elles seraient figées. Le pivot du ressort est le point d'entrée
- * dans le crâne ; le ressort n'a pas de gravité (le repos n'est pas la
- * verticale), il vibre et revient.
- */
-const CROWN_UP = new THREE.Vector3(0, 1, 0)
-function PinCrown({ p }: { p: DollParams }) {
-  const R = p.shape.headRadius
-  const length = R * 1.15
-  const buried = length * 0.4
-  const pins = useMemo(() => {
-    const rnd = mulberry32(p.seed + 4242)
-    const count = 7
-    return Array.from({ length: count }, (_, i) => {
-      const az = ((i + 0.5) / count) * Math.PI * 2
-      const surf = onHeadPolar(p, az, 0.5, 0)
-      // Redressée vers le haut, et un peu de désordre : plantées à la main.
-      const dir = surf.normal
-        .clone()
-        .addScaledVector(CROWN_UP, 0.7 + (rnd() - 0.5) * 0.3)
-        .addScaledVector(new THREE.Vector3(rnd() - 0.5, 0, rnd() - 0.5), 0.2)
-        .normalize()
-      return {
-        pos: surf.pos,
-        quat: new THREE.Quaternion().setFromUnitVectors(CROWN_UP, dir),
-        color: pinColor(rnd),
-        cfg: { stiffness: 0.18 + rnd() * 0.08, drag: 0.1 + rnd() * 0.05, gravity: 0 },
-      }
-    })
-  }, [p])
-  const bones = useRef<(THREE.Group | null)[]>([])
-  const root = useRef<THREE.Group>(null!)
-  const springs = useRef<SpringBone[]>([])
-  // Avant la fusion du `<Batched>` parent (les effets des enfants passent
-  // d'abord) : ses maillages restent à part.
-  useLayoutEffect(() => {
-    root.current.traverse((o) => {
-      o.userData.noBatch = true
-    })
-  }, [pins])
-  useEffect(() => {
-    springs.current = pins.map((_, i) => new SpringBone(bones.current[i]!, length - buried, CROWN_UP))
-  }, [pins, length, buried])
-  useFrame((_, dt) => {
-    springs.current.forEach((s, i) => s.update(dt, pins[i].cfg))
-  })
-  return (
-    <group ref={root}>
-      {pins.map((pin, i) => (
-        <group key={i} position={pin.pos} quaternion={pin.quat}>
-          <group ref={(g) => (bones.current[i] = g)}>
-            <Pin length={length} color={pin.color} position={[0, -buried, 0]} quaternion={new THREE.Quaternion()} />
-          </group>
-        </group>
-      ))}
-    </group>
-  )
 }
 
 /** Écart d'azimut maximal d'un maillon du tour à sa place de repos. */
@@ -578,6 +511,40 @@ export function bowMetrics(p: DollParams) {
   const fold = Math.atan2(Math.max(0, z - tipZ), tipX)
 
   return { r, wing, half, localY, torsoY, z, fold }
+}
+
+/**
+ * Couronne d'épingles : sept épingles plantées en cercle autour du crâne,
+ * **fixes**, comme de vraies épingles. Un accessoire, plus un signe : une ou
+ * deux poupées par planche la portent (`boardCrowns`), quel que soit leur
+ * signe distinctif.
+ */
+export function crownPins(p: DollParams) {
+  const length = p.shape.headRadius * 0.7
+  const rnd = mulberry32(p.seed + 4242)
+  return Array.from({ length: 7 }, (_, i) => {
+    const az = (i / 7) * Math.PI * 2
+    const surf = onHeadPolar(p, az, 0.42, -length * 0.68)
+    return {
+      pos: surf.pos,
+      quat: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), surf.normal),
+      length,
+      color: pinColor(rnd),
+    }
+  })
+}
+
+/** Poupées couronnées d'une planche : une ou deux, n'importe lesquelles. */
+export function boardCrowns(seed: number, count: number): boolean[] {
+  const rnd = mulberry32(seed + 8081)
+  const n = rnd() < 0.5 ? 1 : 2
+  const idx = Array.from({ length: count }, (_, i) => i)
+  for (let i = idx.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1))
+    ;[idx[i], idx[j]] = [idx[j], idx[i]]
+  }
+  const picked = new Set(idx.slice(0, n))
+  return idx.map((_, i) => picked.has(i))
 }
 
 /**
@@ -1481,11 +1448,6 @@ function useExtra(
         return { neck: <Necklace p={p} seed={p.seed} /> }
 
 
-      // ---------------------------------------------- couronne d'épingles
-      case 'couronne': {
-        return { head: <PinCrown p={p} /> }
-      }
-
       // --------------------------------------------------------- ceinture
       case 'ceinture': {
         const rnd = mulberry32(p.seed + 404)
@@ -1804,11 +1766,11 @@ export function useTraitSlots(id: TraitId, ctx: TraitCtx): TraitSlots {
     }
   }, [seam, bowZone, beltZone, ctx.p.shape.torsoHeight])
 
-  // La couronne d'épingles n'a rien d'autre sur le buste : sans pièce imposée,
-  // une génération sur plusieurs la laisse entièrement nue de face, et la
-  // variante n'a plus rien à montrer sous le visage.
+  // La poupée sans signe n'a rien d'autre sur le buste : sans pièce imposée,
+  // une génération sur plusieurs la laisse entièrement nue de face, et elle
+  // n'a plus rien à montrer sous le visage.
   const firstZone: PatchZone | undefined =
-    id === 'couronne' ? { az: [-0.75, 0.75], y: [-0.1, 0.3] } : undefined
+    id === 'nu' ? { az: [-0.75, 0.75], y: [-0.1, 0.3] } : undefined
 
   const patches = useMemo(
     () => buildPatches(ctx.p, ctx.p.seed + 900, avoid, firstZone),
