@@ -173,7 +173,7 @@ export type Archetype = {
  * la plus réussie »). Bras qui pendent jusqu'aux genoux, épaules tombantes,
  * poitrine un peu creuse et dos rond, petite bedaine, genoux mous : c'est ce
  * laisser-aller qui rend la peluche attachante. Les autres archétypes ne sont
- * plus des silhouettes à part mais des **variantes du dégingandé** — un gorille
+ * plus des silhouettes à part mais des **variantes du dégingandé** — un hercule
  * dégingandé, un poupon dégingandé… — qui gardent son allure et n'y ajoutent
  * que leur différence (`variant`).
  *
@@ -200,13 +200,6 @@ function variant(id: string, name: string, build: number, youth: number, delta: 
 
 export const ARCHETYPES: readonly Archetype[] = [
   BASE,
-  // Plus massif du haut : épaules plus larges (encore un peu tombantes), torse
-  // plein, jambes plus courtes. Bras à peine plus épais que la base : épais
-  // comme des cuisses, ils écrasaient tout le reste (Leo).
-  variant('gorille', 'gorille', 0.6, -0.3, {
-    shoulders: 1.8, limbThick: 0.5, limbBias: 0.3, head: -0.4, chest: 1.2, hunch: 0.3,
-    armLower: 0.15, stance: 0.4, stature: -0.3,
-  }),
   // Grosse tête de bébé sur un petit corps rond ; les bras restent longs et
   // ballants, c'est ce qui en fait un poupon dégingandé et pas un poupon. Tête
   // modérée : à +1, le corps disparaissait dessous (Leo).
@@ -235,8 +228,8 @@ export const ARCHETYPES: readonly Archetype[] = [
     stance: 3, legSplay: 1.2, reach: 0.6, stature: -0.8, knee: 0.8, kneeOut: 1, waist: 0.6,
   }),
   // Épaules larges et torse bombé, buste redressé ; bras de longueur normale
-  // et un peu écartés — c'est le V qui domine. Avec les longs bras épais de la
-  // base il se confondait avec le gorille.
+  // et un peu écartés — c'est le V qui domine. Le gorille, qui faisait redite
+  // avec lui, a été retiré (Leo, 27 sept.).
   variant('hercule', 'hercule', 0.4, -0.5, {
     shoulders: 2.6, chest: 1.6, waist: 0.8, hips: -0.5, armUpper: 0.8, limbThick: 0.7,
     head: -0.4, hunch: -0.9, limbBias: -1.2, stance: 0.8,

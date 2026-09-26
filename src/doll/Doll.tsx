@@ -638,7 +638,7 @@ export function Doll({
     poseLegL.current.rotation.fromArray(pose['leg-1'])
     poseLegR.current.rotation.fromArray(pose.leg1)
     // Pli de repos de la morpho (`elbowRest`, `kneeRest`), ajouté à celui du
-    // geste : un gorille se bat bras arqués, un crapaud reste accroupi. Genou
+    // geste : un kangourou garde ses bras repliés, un crapaud reste accroupi. Genou
     // fléchi de θ : cuisse en avant de θ/2, pied sous la hanche (`legDrop`).
     // Genou en dehors (`kneeOut`) : le pli passe dans le plan d'écartement,
     // cuisse vers l'extérieur et tibia ramené dessous — la grenouille.

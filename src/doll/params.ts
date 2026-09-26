@@ -375,7 +375,7 @@ export function useDollParams(): { params: DollParams; regenerate: () => void } 
     // Archétype de la poupée seule (atelier) ; liste littérale, même raison.
     archetype: {
       value: 'auto',
-      options: ['auto', 'echalas', 'gorille', 'araignee', 'degingande', 'poupon', 'hercule', 'crapaud', 'kangourou', 'ballerine'],
+      options: ['auto', 'echalas', 'araignee', 'degingande', 'poupon', 'hercule', 'crapaud', 'kangourou', 'ballerine'],
       label: 'archétype (seule)',
     },
     // Liste littérale pour la même raison : `hairstyles` dépend de ce module.
