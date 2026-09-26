@@ -194,24 +194,37 @@ function blob(
 }
 
 /**
- * Main en **moufle** : une paume aplatie qui pend dans l'axe de l'avant-bras,
- * plus un pouce devant, écarté vers le bas. Une boule ne disait ni « main » ni
- * « tient quelque chose » ; la moufle a un sens (paume côté corps, pouce
- * devant) et le creux entre pouce et paume est l'endroit où se referme une
- * arme. Le pouce est dans le plan médian : la même moufle sert aux deux mains.
- * `r` : rayon de l'ancienne boule, pour garder l'échelle et la mise en page.
+ * Main en **moufle**, taillée pour la main **droite** : la paume regarde −x
+ * (vers le corps), le pouce part devant (+z). La main gauche est son miroir
+ * (échelle −1 en x dans `Doll.tsx`) : une moufle symétrique ne peut ni
+ * refermer ses doigts ni poser son pouce **côté paume**, et c'est ce creux
+ * entre pouce et doigts repliés qui dira plus tard « elle tient son arme ».
+ *
+ * Trois pièces, comme une vraie moufle cousue : le revers du poignet, plus
+ * large que l'avant-bras qu'il coiffe ; la poche des doigts, coussin plat qui
+ * s'élargit et se referme vers la paume au bout ; le pouce, côté paume, pointe
+ * en bas et vers l'avant, un peu rentré lui aussi.
+ * `r` : rayon de l'ancienne boule (échelle et mise en page), `arm` : rayon de
+ * l'avant-bras, que le revers doit couvrir quelle que soit la taille de main.
  */
-export function mittenGeometry(r: number, lumps: number, lumpScale: number, seed: number) {
-  // Paume : un coussin plat (aux arêtes rondes, pas un œuf), plus large au
-  // bout des doigts qu'au poignet.
-  const palm = blob(r * 0.5, r * 1.1, r * 0.8, [0, -r * 0.4, 0], (v) => {
-    const t = clamp(-v.y / (r * 1.1), -1, 1)
-    v.z *= 1 + 0.1 * t
+export function mittenGeometry(r: number, arm: number, lumps: number, lumpScale: number, seed: number) {
+  const cuffR = Math.max(r * 0.84, arm * 1.14)
+  const cuff = blob(cuffR, r * 0.2, cuffR, [0, r * 0.22, 0], undefined, 0, 2.4)
+  const palm = blob(r * 0.48, r * 1.05, r * 0.8, [0, -r * 0.48, 0], (v) => {
+    // −1 au poignet, +1 au bout des doigts.
+    const t = clamp(-v.y / (r * 1.05), -1, 1)
+    v.z *= 1 + 0.12 * t
+    // Doigts refermés vers la paume : la courbure croît vers le bout.
+    const c = Math.max(0, t)
+    v.x -= r * 0.34 * c * c
   }, 0, 3)
-  // Pouce attaché haut sur la paume, bien détaché, pointe en bas et vers
-  // l'avant : la main pend dans l'axe du bras.
-  const thumb = blob(r * 0.3, r * 0.55, r * 0.3, [0, -r * 0.2, r * 0.86], undefined, -0.8)
-  const geo = mergeGeometries([palm, thumb])!
+  const thumb = blob(r * 0.27, r * 0.52, r * 0.3, [-r * 0.12, -r * 0.24, r * 0.8], (v) => {
+    // Bout du pouce rentré vers la paume, lui aussi.
+    const c = Math.max(0, -v.y / (r * 0.52))
+    v.x -= r * 0.1 * c * c
+  }, -0.8)
+  const geo = mergeGeometries([cuff, palm, thumb])!
+  cuff.dispose()
   palm.dispose()
   thumb.dispose()
   geo.computeVertexNormals()
@@ -219,19 +232,26 @@ export function mittenGeometry(r: number, lumps: number, lumpScale: number, seed
 }
 
 /**
- * Pied de peluche : semelle plate, talon sous la cheville, pointe arrondie et
- * un peu plus large devant. Même bas que l'ancienne boule (`−r`) : la mise en
- * page du sol ne change pas.
+ * Pied de peluche : semelle plate, talon rond et plus étroit sous la cheville,
+ * cou-de-pied qui descend vers une pointe large et **relevée** — un bout
+ * retroussé lit « pied » et pas « savon », même de loin. Même bas que
+ * l'ancienne boule (`−r`) : la mise en page du sol ne change pas. Tourné un peu
+ * vers l'extérieur au montage (`Doll.tsx`).
  */
 export function footGeometry(r: number, lumps: number, lumpScale: number, seed: number) {
-  const h = r * 0.62
-  const geo = blob(r * 0.8, h, r * 1.4, [0, -r + h * 0.5, r * 0.45], (v) => {
+  const h = r * 0.6
+  const geo = blob(r * 0.78, h, r * 1.45, [0, -r + h * 0.45, r * 0.42], (v) => {
+    // −1 au talon, +1 à la pointe.
+    const f = v.z / (r * 1.45)
     // Semelle : la moitié basse écrasée, presque à plat.
-    if (v.y < 0) v.y *= 0.5
-    // Avant-pied plus large que le talon, cou-de-pied qui descend vers la pointe.
-    const f = v.z / (r * 1.4)
-    v.x *= 1 + 0.16 * f
-    if (v.y > 0) v.y *= 1 - 0.3 * Math.max(0, f)
+    if (v.y < 0) v.y *= 0.45
+    // Talon plus étroit, avant-pied plus large.
+    v.x *= 1 + 0.18 * f - 0.08 * Math.max(0, -f)
+    // Cou-de-pied : le dessus descend de la cheville vers la pointe.
+    if (v.y > 0) v.y *= 1 - 0.42 * Math.max(0, f)
+    // Pointe relevée, dessous compris.
+    const toe = Math.max(0, f - 0.45) / 0.55
+    v.y += r * 0.14 * toe * toe
   }, 0, 2.6)
   geo.computeVertexNormals()
   return stuff(geo, lumps * r * 0.7, lumpScale / Math.max(r, 0.05), seed + 37)

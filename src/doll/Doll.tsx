@@ -336,8 +336,8 @@ export function Doll({
   const handGeo = useDisposable(
     // Main et pied suivent le galbe du membre (le bout d'une massue est plus
     // gros) et leur propre échelle (`handScale`, `footScale`).
-    () => mittenGeometry(lb.armRadius * 1.35 * tipScale(lb.armTaper, lb.handScale), s.lumps, s.lumpScale, p.seed),
-    [lb.armRadius, lb.armTaper, lb.handScale, s.lumps, s.lumpScale, p.seed],
+    () => mittenGeometry(lb.armRadius * 1.35 * tipScale(lb.armTaper, lb.handScale), lb.armRadius * (1 + (lb.armLower ?? 0) * 0.3), s.lumps, s.lumpScale, p.seed),
+    [lb.armRadius, lb.armTaper, lb.handScale, lb.armLower, s.lumps, s.lumpScale, p.seed],
   )
   const footGeo = useDisposable(
     () => footGeometry(lb.legRadius * 1.3 * tipScale(lb.legTaper, lb.footScale), s.lumps, s.lumpScale, p.seed + 5),
@@ -731,7 +731,7 @@ export function Doll({
       if (!f) continue
       f.parent!.updateWorldMatrix(true, false)
       f.parent!.getWorldQuaternion(_qd).invert().multiply(_qc)
-      f.quaternion.identity().slerp(_qd, footFlat.current)
+      f.quaternion.identity().slerp(_qd, footFlat.current).multiply(TOE_OUT[side])
     }
 
     if (weaponRef.current) aimWeapon(weaponRef.current)
@@ -951,10 +951,13 @@ export function Doll({
         {lower('arm', side, lb.armLength, (
           <>
             <group position={[0, -lb.armLength * (1 - JOINT) - lb.armRadius * 0.35, 0]}>
-              <mesh geometry={handGeo} castShadow>
-                <Wool maps={armMaps} p={p} color={slots.tints?.[key]} />
-              </mesh>
-              <Fuzz geometry={handGeo} maps={armMaps} p={p} />
+              {/* Moufle taillée pour la main droite : la gauche en miroir. */}
+              <group scale={[side, 1, 1]}>
+                <mesh geometry={handGeo} castShadow>
+                  <Wool maps={armMaps} p={p} color={slots.tints?.[key]} />
+                </mesh>
+                <Fuzz geometry={handGeo} maps={armMaps} p={p} />
+              </group>
               {weapon && side === -1 && (
                 <group ref={weaponRef}>
                   <Weapon length={weaponLength} size={s.headRadius} />
@@ -1158,6 +1161,11 @@ const _qId = new THREE.Quaternion()
 const _legK: Record<number, number> = {}
 const _kneeDir = new THREE.Vector3()
 const _qc = new THREE.Quaternion()
+/** Pointes de pied tournées un peu vers l'extérieur : parallèles, ils lisent comme des patins. */
+const TOE_OUT = {
+  [-1]: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -0.14),
+  1: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.14),
+} as Record<-1 | 1, THREE.Quaternion>
 const _qd = new THREE.Quaternion()
 const _qa = new THREE.Quaternion()
 const _qb = new THREE.Quaternion()
