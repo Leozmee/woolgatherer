@@ -75,10 +75,16 @@ const _c = new THREE.Vector3()
  */
 export class ClothSheet {
   readonly points: THREE.Vector3[]
-  private prev: THREE.Vector3[]
+  readonly prev: THREE.Vector3[]
   private rest: THREE.Vector3[]
   private pin: number[]
   private links: Link[] = []
+  /**
+   * Épaisseur propre de chaque particule, ajoutée au rayon des obstacles et au
+   * sol : un cadenas au bout d'une chaîne a un volume que la particule seule
+   * ne porte pas.
+   */
+  pad: number[] | null = null
 
   constructor(
     rest: THREE.Vector3[],
@@ -212,16 +218,18 @@ export class ClothSheet {
         const p = this.points[i]
         // Ce qui est retenu fort ignore les obstacles `loose` (voir `Collider`).
         const held = this.pin[i] >= 0.25
+        const extraR = this.pad ? this.pad[i] : 0
         for (let c = 0; c < colliders.length; c++) {
           const s = colliders[c]
           if (held && s.loose) continue
+          const rad = s.radius + extraR
           _push.subVectors(p, s.center)
           const d = _push.length()
-          if (d > 1e-6 && d < s.radius) p.copy(s.center).addScaledVector(_push, s.radius / d)
+          if (d > 1e-6 && d < rad) p.copy(s.center).addScaledVector(_push, rad / d)
         }
         // Sol : on remonte, et le frottement mange la glissade.
         if (floor) {
-          const under = floor.d - floor.n.dot(p)
+          const under = floor.d + extraR - floor.n.dot(p)
           if (under > 0) {
             p.addScaledVector(floor.n, under)
             this.prev[i].lerp(p, 0.35)

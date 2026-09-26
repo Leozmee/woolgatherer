@@ -232,7 +232,11 @@ export function localFloor(obj: THREE.Object3D, floorY: number, out: { n: THREE.
   obj.getWorldPosition(_t)
   _t.y = floorY
   _t.applyMatrix4(_inv2)
-  out.n.set(0, 1, 0).transformDirection(_inv2)
+  // La normale d'un plan se ramène par la **transposée** de la matrice monde,
+  // pas par son inverse : les deux ne coïncident que pour une rotation. Or le
+  // corps est écrasé et cisaillé (`fighter.squash`, `shear`) : le sol penchait.
+  const e = obj.matrixWorld.elements
+  out.n.set(e[1], e[5], e[9]).normalize()
   out.d = out.n.dot(_t)
   return out
 }
