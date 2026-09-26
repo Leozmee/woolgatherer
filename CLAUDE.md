@@ -726,6 +726,10 @@ arrive ; sinon, reprendre depuis ces branches.
   bouts de cordon pendants ; couronne de grandes épingles dressées sur ressorts
   (`noBatch` pour sortir du `<Batched>`) ; couture intégrale avec une grosse
   aiguille plantée dans la suture et son fil qui pend du chas.
+- **Expressions réactives** (reprise de `claude/wip-visages`, `expression.tsx`) :
+  fils du visage à cibles de morphing, paupières de feutre ; mesuré dans
+  l'arène : concentration 0,92 au coup, grimace 0,84 au coup reçu, croix 1 au
+  K.O. Le combattant passé est celui de la poupée (`fighter`), planche comprise.
 
 
 #### 2026-09-25 — fermeture éclair, endurance

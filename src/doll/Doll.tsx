@@ -1042,6 +1042,8 @@ export function Doll({
                   lift={lift}
                   mouthLift={mouthLift}
                   stitchDip={stitchDip}
+                  fighter={fighter}
+                  felt={tone.base}
                 />
 
                 {headPins.map((pin, i) => (
